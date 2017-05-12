@@ -1,0 +1,100 @@
+/* Applyfillowner test engine
+
+   For all new style owner nodes, if the extent field equals 0,
+   replace it with the actual number of processors.
+   */
+
+.. File: applyfillowner.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors DistrExpr_list
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "applyfillowner.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+static DistrExpr_list rewrite_DistrExpr_list_action(
+    DistrExpr_list e, global_context gc )
+{
+    if (e == DistrExpr_listNIL)
+	return e;
+    ArrayProcDecl apd = get_processor_decl(gc);
+    assert (e->sz == 1 || e->sz == apd->sizes->sz);
+    for (unsigned i=0; i<e->sz; i++)
+    {
+	expression procs;
+	if (e->sz == 1)
+	    procs = build_numberOfProcessors_expression(gc);
+	else
+	    procs = new_ExprInt(apd->sizes->arr[i]);
+	switch (e->arr[i]->tag)
+	{
+	    case TAGNewDistCyclic:
+	    {
+		NewDistCyclic ndc = to_NewDistCyclic(e->arr[i]);
+		if (isIntValue(ndc->extent,0))
+		{
+		    rfre_expression(ndc->extent);
+		    ndc->extent=rdup_expression(procs);
+		}
+		break;
+	    }
+	    case TAGNewDistBC:
+	    {
+		NewDistBC ndbc = to_NewDistBC(e->arr[i]);
+		if (isIntValue(ndbc->extent,0))
+		{
+		    rfre_expression(ndbc->extent);
+		    ndbc->extent=rdup_expression(procs);
+		}
+		break;
+	    }
+	    case TAGNewDistBlock:
+	    {
+		NewDistBlock ndb = to_NewDistBlock(e->arr[i]);
+		if (isIntValue(ndb->size,0))
+		{
+		    internal_error("FO: block distribution has blocksize 0");
+		}
+		break;
+	    }
+	    case TAGNewDistDontCare:
+	    case TAGNewDistReplicated:
+	    case TAGNewDistLocal:
+	    case TAGNewDistAlign:
+		break;
+	}
+	rfre_expression(procs);
+    }
+    return e;
+}
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_fillowner( vnusprog e, global_context gc )
+{
+.call generate_descent_call "    " e vnusprog vnusprog
+    return e;
+}
+

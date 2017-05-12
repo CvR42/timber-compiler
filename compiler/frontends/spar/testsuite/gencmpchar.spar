@@ -1,0 +1,9 @@
+
+public class gencmpchar {
+    public static void main( String args[] ){
+             switch (args.length) {
+                 case 0:
+                 case (('a' == 'a') ? 1 : 0):
+             }
+    }
+}

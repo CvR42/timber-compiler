@@ -1,0 +1,4 @@
+c='1' upper(c)='1' lower(c)='1'
+c='a' upper(c)='A' lower(c)='a'
+c='A' upper(c)='A' lower(c)='a'
+c='#' upper(c)='#' lower(c)='#'

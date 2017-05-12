@@ -1,0 +1,27 @@
+// After JLS2 14.19.2    Execution of try-catch-finally
+
+
+class BlewIt extends Exception {
+  BlewIt() { }
+  BlewIt(String s) { super(s); }
+}
+
+public class rtejlsunex {
+
+    static void blowUp() throws BlewIt {
+
+        throw new NullPointerException();
+
+    }
+
+    public static void main(String[] args) {
+        try {
+            blowUp();
+        } catch (BlewIt b) {
+            System.out.println("BlewIt");
+        } finally {
+            System.out.println("Uncaught Exception");
+        }
+    }
+
+}

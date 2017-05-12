@@ -1,0 +1,10 @@
+// After JLS2 15.10.2    Example: Array Creation Evaluation Order
+
+
+public class okjlsaeval {
+    public static void main(String[] args) {
+        int i = 4;
+        int ia[][] = new int[i][i=3];
+        __println( 1, "[" , ia.length , "," , ia[0].length , "]");
+    }
+}

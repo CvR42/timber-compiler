@@ -1,0 +1,65 @@
+/* Applyopasszap engine
+
+   As most analysis doesn't process operator assignments correctly,
+   we replace them with normal assignments.
+   */
+
+.. File: applyopasszap.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtAssignOp
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "applyopasszap.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+static statement rewrite_SmtAssignOp_action(
+    SmtAssignOp e, global_context /*gc*/ )
+{
+    SmtAssign ns = new_SmtAssign(
+	rdup_origsymbol(e->label),
+	rdup_origin(e->orig),
+	rdup_Pragma_list(e->pragmas),
+	rdup_OwnerExpr_list(e->on),
+	e->lhs,
+	new_ExprBinop(
+	    location_to_expression(e->lhs),
+	    e->op,
+	    e->rhs));
+    e->lhs = locationNIL;
+    e->rhs = expressionNIL;
+    rfre_SmtAssignOp(e);
+    if (warning_level >= WARN_RULE)
+	fprintf(stderr,"OAZ: zapped an operator assignment\n");
+    return ns;
+}
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_op_ass_zap( vnusprog e, global_context gc )
+{
+.call generate_descent_call "    " e vnusprog vnusprog
+    return e;
+}
+

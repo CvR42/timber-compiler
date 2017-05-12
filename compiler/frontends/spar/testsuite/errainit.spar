@@ -1,0 +1,10 @@
+// Test the error handling of array initialization.
+
+package spar.testsuite;
+
+public class errainit {
+    public static void main()
+    {
+	int a[*,*] = { 1, 2, 3 };	// Not enough nested inits for 2d array
+    }
+}

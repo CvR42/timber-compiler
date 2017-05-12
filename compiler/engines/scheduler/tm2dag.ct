@@ -1,0 +1,428 @@
+.. File: tm2dag.ct
+..
+.. Tree walker for extracting a task graph tm representation.
+..
+..
+.. Return 'walk' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.macro generate_empty_walker_body indent var type
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the data structure we are walking on, and a type 't', of that variable,
+.. generate a return statement.
+.macro generate_walker_return indent var t
+$(indent)return $(var);
+.endmacro
+..
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+.if ${member ${stemname $t} ${typelist}}
+$(indent)if( $(var) == 0 ){
+$(indent)    return $(var);
+$(indent)}
+.endif
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+$t tm2dag_$t_walker($t $(var))
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we are walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+$t tm2dag_$t_walker($t $(var));
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(nowtype)) tm2dag_$(type)_action ($(var));
+.else
+$(indent)$(var) = ($(nowtype)) tm2dag_$(type)_action (to_$(type)($(var)));
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(nowtype)) tm2dag_$(type)_walker ($(var));
+.else
+$(indent)$(var) = ($(nowtype)) tm2dag_$(type)_walker (to_$(type)($(var)));
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.endmacro
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtForall SmtForeach
+.append actors SmtIf
+.append actors Pragma_list
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+/* File: tm2dag.c
+ *
+ * Extract task graph from the tm representation of a v-nus program.
+ */
+
+#include <assert.h>
+#include <tmc.h>
+#include "vnusbasetypes.h"
+#include "tmadmin.h"
+
+#include "tm2dag.h"
+#include "defs.h"
+#include "tmadmin.h"
+#include "io.h"
+#include "cardinals.h"
+#include "evaluate.h"
+#include "task.h"
+#include "dag_interface.h"
+#include "vnusctl.h"
+
+#define TM2DAG_STEP_TASK 0
+#define TM2DAG_STEP_DEPEND 1
+#define TM2DAG_STEPS 2
+
+
+.call generate_walker_forwards "$(visit_types)"
+
+SmtForall tm2dag_SmtForall_action (SmtForall e);
+SmtForall tm2dag_SmtForeach_action (SmtForall e);
+SmtIf tm2dag_SmtIf_action (SmtIf e);
+
+long tm2dag_GetTask (ValuePragma e);
+void tm2dag_GetDepend (ValuePragma e);
+ListPragmaExpression tm2dag_GetDepend_list (ListPragmaExpression e);
+ListPragmaExpression tm2dag_GetDepend_if (ListPragmaExpression e);
+ListPragmaExpression tm2dag_GetDepend_for (ListPragmaExpression e);
+ListPragmaExpression tm2dag_GetDepend_dep (ListPragmaExpression e);
+
+int get_first_iteration (uint lower_bound, uint upper_bound);
+int get_next_iteration (uint lower_bound, uint upper_bound);
+
+static long next_task = -1;
+static int step;
+
+Cardinals cardinals;
+Cardinals pragma_cardinals;
+
+
+.foreach t SmtForall SmtForeach
+$t
+tm2dag_$t_action ($t e)
+{
+  uint lower_bound = cardinals.size();
+  uint i;
+  int k;
+
+  for (i = 0; i < e->cards->sz; i++)
+  {
+    int bound = cardinality_evaluate (e->cards->arr[i]);
+    cardinals.add ((tmstring) e->cards->arr[i]->name->sym->name, bound);
+  }
+
+  if (get_first_iteration (lower_bound, lower_bound + e->cards->sz) == true)
+  {
+    while (true)
+    {
+.call generate_descent_call  "  " e->body block block
+
+      if (get_next_iteration (lower_bound, lower_bound+e->cards->sz) == false)
+        break;
+    }
+  }
+
+  for (k = e->cards->sz - 1; k >= 0; k--)
+  {
+    cardinals.remove ((tmstring) e->cards->arr[k]->name->sym->name);
+  }
+
+  return e;
+}
+.endforeach
+
+SmtIf
+tm2dag_SmtIf_action (SmtIf e)
+{
+  if (expression_evaluate (e->cond))
+  {
+.call generate_descent_call  "  " e->thenbody block block
+  }
+  else
+  {
+.call generate_descent_call  "  " e->elsebody block block
+  }
+
+  return e;
+}
+
+
+Pragma_list
+tm2dag_Pragma_list_action (Pragma_list e)
+{
+    if (e == Pragma_listNIL || e->sz == 0)
+	return e;
+    int task_check=0;
+    for (unsigned i=0; i<e->sz; i++)
+    {
+	if (e->arr[i]->name->sym == add_tmsymbol("task2"))
+	{
+	    assert (e->arr[i]->tag == TAGValuePragma);
+	    next_task = tm2dag_GetTask(to_ValuePragma(e->arr[i]));
+	    task_check++;
+	}
+    }
+    if (next_task == -1)
+	return e;
+    assert (next_task != -1 && task_check == 1);
+    switch (step)
+    {
+	case TM2DAG_STEP_TASK:
+	{
+	    char s[256];
+	    sprintf(s,"%ld",next_task);
+	    ValuePragma vp = new_ValuePragma(
+		add_origsymbol("task_id"),
+		new_NumberPragmaExpression(new_tmstring(s)));
+	    e = append_Pragma_list(e, vp);
+	    break;
+	}
+	case TM2DAG_STEP_DEPEND:
+	    for (unsigned i=0; i<e->sz; i++)
+	    {
+		if (e->arr[i]->name->sym == add_tmsymbol("receive"))
+		{
+		    assert (e->arr[i]->tag == TAGValuePragma);
+		    tm2dag_GetDepend(to_ValuePragma(e->arr[i]));
+		}
+	    }
+	    break;
+    }
+	// Be sure that task and dependencies go together.
+    next_task = -1;
+    return e;
+}
+
+
+long
+tm2dag_GetTask (ValuePragma e)
+{
+  ListPragmaExpression lpe, lpe2;
+  char *task_name;
+  int task_no;
+  int task_cost;
+  int task_id = -1;
+  int nr_card;
+  uint* card;
+  int i;
+
+  assert (e->x->tag == TAGListPragmaExpression);
+  lpe = to_ListPragmaExpression (e->x);
+  assert (lpe->l->sz == 2);
+
+  assert (lpe->l->arr[0]->tag == TAGNamePragmaExpression);
+  task_name = (char*) to_NamePragmaExpression(lpe->l->arr[0])->name->sym->name;
+
+  task_cost = pragma_expression_evaluate (lpe->l->arr[1]);
+
+  nr_card = cardinals.size();
+  card = (uint*) malloc (nr_card * sizeof (uint));
+
+  for (i = 0; i < nr_card; i++)
+    card[i] = cardinals.get_value_i (i);
+
+  switch (step)
+  {
+      case TM2DAG_STEP_TASK:
+	  task_id = add_task_to_dag (task_name, nr_card, card, task_cost);
+	  set_task_label (task_name, task_id);
+	  
+//	  printf ("%s ", task_name);
+//	  for (i = 0; i < nr_card; i++)
+//	      printf ("%c%d", (i==0)?'[':',', card[i]);
+//	  printf ("] = %d -> %d\n", task_id, task_cost);
+	  break;
+      case TM2DAG_STEP_DEPEND:
+	  task_id = get_task_label(task_name, card);
+	  break;
+  }
+
+  return task_id;
+}
+
+void
+tm2dag_GetDepend (ValuePragma e)
+{
+  ListPragmaExpression lpe;
+
+  assert (e->x->tag == TAGListPragmaExpression);
+  lpe = to_ListPragmaExpression (e->x);
+  tm2dag_GetDepend_list (lpe);
+}
+ListPragmaExpression
+tm2dag_GetDepend_list (ListPragmaExpression e)
+{
+  char *name;
+
+  if (e->l->sz == 0)
+    return e;
+
+  assert (e->l->arr[0]->tag == TAGNamePragmaExpression);
+  name = (char*) to_NamePragmaExpression(e->l->arr[0])->name->sym->name;
+  if (strcmp (name, "if") == 0)
+    tm2dag_GetDepend_if (e);
+  else if (strcmp (name, "for") == 0)
+    tm2dag_GetDepend_for (e);
+  else
+    tm2dag_GetDepend_dep (e);
+  return e;
+}
+ListPragmaExpression
+tm2dag_GetDepend_if (ListPragmaExpression e)
+{
+  assert (e->l->sz == 4);  /* (if cond true_expr false_expr) */
+
+  if (pragma_expression_evaluate(e->l->arr[1]))
+  {
+    assert (e->l->arr[2]->tag == TAGListPragmaExpression);
+    tm2dag_GetDepend_list (to_ListPragmaExpression(e->l->arr[2]));
+  }
+  else
+  {
+    assert (e->l->arr[3]->tag == TAGListPragmaExpression);
+    tm2dag_GetDepend_list (to_ListPragmaExpression(e->l->arr[3]));
+  }
+  return e;
+}
+
+ListPragmaExpression
+tm2dag_GetDepend_for (ListPragmaExpression e)
+{
+  assert (e->l->sz == 4);  /* (for index bound expr) */
+  assert (e->l->arr[1]->tag == TAGNamePragmaExpression);
+  NamePragmaExpression npe = to_NamePragmaExpression(e->l->arr[1]);
+  const_tmstring card_name = npe->name->sym->name;
+  int bound = pragma_expression_evaluate(e->l->arr[2]);
+  pragma_cardinals.add (card_name, bound);
+
+  for (int i = 0; i < bound; i++)
+  {
+    pragma_cardinals.set_value (card_name, i);
+    tm2dag_GetDepend_list (to_ListPragmaExpression(e->l->arr[3]));
+  }
+
+  pragma_cardinals.remove (card_name);
+  return e;
+}
+
+ListPragmaExpression
+tm2dag_GetDepend_dep (ListPragmaExpression e)
+{
+  assert (e->l->sz == 3);  /* (task_name indices comm_cost) */
+
+  assert (e->l->arr[0]->tag == TAGNamePragmaExpression);
+  NamePragmaExpression npe = to_NamePragmaExpression (e->l->arr[0]);
+  const_tmstring from_task_name = npe->name->sym->name;
+  const uint nr_card = get_task_nr_card (from_task_name);
+  uint *card = new uint [nr_card];
+
+  if (nr_card == 1)
+    card[0] = pragma_expression_evaluate (e->l->arr[1]);
+  else
+  {
+    assert (e->l->arr[1]->tag == TAGListPragmaExpression);
+    ListPragmaExpression lpe = to_ListPragmaExpression (e->l->arr[1]);
+    assert (lpe->l->sz == nr_card);
+    for (uint i = 0; i < nr_card; i++)
+      card[i] = pragma_expression_evaluate (lpe->l->arr[i]);
+  }
+  int from_task_id = get_task_label (from_task_name, card);
+  assert (from_task_id >= 0);
+
+  int depend_cost = pragma_expression_evaluate (e->l->arr[2]);
+
+  add_depend_to_dag (from_task_id, next_task, depend_cost);
+
+  delete[] card;
+  return e;
+}
+
+int
+get_first_iteration (uint lower_bound, uint upper_bound)
+{
+  uint i;
+
+  for (i = lower_bound; i < upper_bound; i++)
+  {
+    if (cardinals.get_bound_i (lower_bound) <= 0)
+      return false;
+
+    cardinals.set_value_i (i, 0);
+  }
+
+  return true;
+}
+
+int
+get_next_iteration (uint lower_bound, uint upper_bound)
+{
+  int card_val;
+
+  if (lower_bound >= upper_bound)
+    return false;
+
+  if (get_next_iteration (lower_bound + 1, upper_bound))
+    return true;
+  
+  cardinals.inc_value_i (lower_bound);
+  card_val = (int) cardinals.get_value_i (lower_bound);
+  if (card_val < cardinals.get_bound_i (lower_bound))
+    return true;
+
+  cardinals.set_value_i (lower_bound, 0);
+  return false;
+}
+      
+
+.call generate_walker "$(visit_types)"
+
+
+void
+Tm2DAG (vnusprog the_prog)
+{
+    for (step=0; step<TM2DAG_STEPS; step++)
+    {
+.call generate_descent_call  "  " the_prog vnusprog vnusprog
+    }
+}

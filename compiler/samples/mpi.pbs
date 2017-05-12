@@ -1,0 +1,24 @@
+#!/bin/bash
+#PBS -l nodes=4:ppn=2,walltime=00:05:00
+#PBS -N matmul
+MPICH=/usr/local/mpich/mpich-gm
+PATH=$MPICH/bin:$PATH
+PROG=a.out
+PROGARGS=""
+GMCONF=~/.gmpi/conf.$PBS_JOBID
+mkdir -p ~/.gmpi
+if /usr/local/xcat/bin/pbsnodefile2gmconf $PBS_NODEFILE > $GMCONF; then :; else
+    echo "pbsnodefile2gmconf failed to create GM config file!" >&2
+    exit 1
+fi
+
+NP=`head -1 $GMCONF`
+# To only start one process per SMP node, uncomment the next line:
+#NP=`expr $NP / 2`
+
+cd $PBS_O_WORKDIR
+GM_OPTS="--gm-recv polling --gm-f $GMCONF --gm-use-shmem --gm-kill 5"
+mpirun.ch_gm $GM_OPTS -np $NP PBS_JOBID=$PBS_JOBID $PROG $PROGARGS
+
+rm -f $GMCONF
+exit 0

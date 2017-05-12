@@ -1,0 +1,32 @@
+// File: okgc.spar
+//
+// Initial test of the garbage collector.
+
+// Garbage collection fodder.
+class thingy {
+    private thingy next;
+    public thingy() { next = null; }
+    public thingy( thingy x ) { next = x; ; }
+}
+
+public final class okgc {
+    public static void main(){
+	thingy chain = null;
+
+	for( i :- 0:2 ){
+	    chain = new thingy( chain );
+	}
+	__println( 1, "Active blocks: ", spar.compiler.GC.countActiveBlocks() );
+	int val = spar.compiler.GC.collect();
+	if( val != 0 ){
+	    __println( 1, "collect() result (should be 0): ", val );
+	    System.exit( 1 );
+	}
+	chain = null;
+	__println( 1, "Active blocks: ", spar.compiler.GC.countActiveBlocks() );
+	val = spar.compiler.GC.collect();
+	__println( 1, "collect() result: ", val );
+	__println( 1, "Active blocks: ", spar.compiler.GC.countActiveBlocks() );
+    }
+}
+

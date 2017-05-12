@@ -1,0 +1,134 @@
+.. File: ispure.ct
+..
+.. Tree analyzer
+..
+.set reduction_type bool
+.set neutral_element true
+.set analysis_name ispure
+..
+.macro generate_formal_parameters nm t
+.return "( const_$t $(nm) )"
+.endmacro
+..
+.macro generate_actual_parameters nm should_type is_type
+.if ${eq $(should_type) $(is_type)}
+.return "( $(nm) )"
+.else
+.return "( (const_$(should_type)) $(nm) )"
+.endif
+.endmacro
+..
+.macro generate_reduction_operation a b
+.return "($a)&&($b)"
+.endmacro
+..
+.. Generate a test expression that evaluates to true iff there is
+.. no point in continuing the analyzis.
+.macro generate_termination_test v
+.return "(!$v)"
+.endmacro
+..
+.macro generate_setup_code t indent elm res
+.if ${member ${metatype $t} list class constructor constructorbase}
+$(indent)if( $(elm) == $tNIL ){
+$(indent)$(indent)return $(neutral_element);
+$(indent)}
+.endif
+.endmacro
+..
+.. For which types are there actions defines?
+.set actors
+.append actors ${nonvirtual expression ${subclasses expression}}
+..
+.. Actions for all visited types
+.set analyze_action_AnnotationExpression reduction
+.set analyze_action_AssignOpExpression constant false
+.set analyze_action_BinopExpression reduction
+.set analyze_action_BooleanExpression constant true
+.set analyze_action_BracketExpression reduction
+.set analyze_action_ByteExpression constant true
+.set analyze_action_ByteExpression constant true
+.set analyze_action_CastExpression reduction
+.set analyze_action_CharExpression constant true
+.set analyze_action_ClassExpression constant true
+.set analyze_action_ClassIdExpression constant true
+.set analyze_action_ComplexExpression reduction
+.set analyze_action_ConstructorInvocationExpression constant false
+.set analyze_action_DefaultValueExpression constant true
+.set analyze_action_DoubleExpression constant true
+.set analyze_action_FieldExpression reduction
+.set analyze_action_FieldInvocationExpression constant false
+.set analyze_action_FloatExpression constant true
+.set analyze_action_ForcedCastExpression reduction
+.set analyze_action_GetLengthExpression reduction
+.set analyze_action_GetSizeExpression reduction
+.set analyze_action_IfExpression reduction
+.set analyze_action_InstanceOfExpression reduction
+.set analyze_action_IntExpression constant true
+.set analyze_action_InternalizeExpression reduction
+.set analyze_action_LongExpression constant true
+.set analyze_action_MethodInvocationExpression constant false
+.set analyze_action_NewInitArrayExpression constant false
+.set analyze_action_NewInnerClassExpression constant false
+.set analyze_action_NewRecordExpression constant false
+.set analyze_action_NotNullAssertExpression reduction
+.set analyze_action_NullExpression constant true
+.set analyze_action_OuterSuperFieldExpression reduction
+.set analyze_action_OuterSuperInvocationExpression constant false
+.set analyze_action_OuterThisExpression constant false
+.set analyze_action_PostDecrementExpression constant false
+.set analyze_action_PostIncrementExpression constant false
+.set analyze_action_PreDecrementExpression constant false
+.set analyze_action_PreIncrementExpression constant false
+.set analyze_action_ShortExpression constant true
+.set analyze_action_ShortopExpression reduction
+.set analyze_action_SizeofExpression constant true
+.set analyze_action_StringExpression constant true
+.set analyze_action_SubscriptExpression reduction
+.set analyze_action_SuperFieldExpression reduction
+.set analyze_action_SuperInvocationExpression constant false
+.set analyze_action_TypeExpression constant true
+.set analyze_action_TypeFieldExpression reduction
+.set analyze_action_TypeInstanceOfExpression constant true
+.set analyze_action_TypeInvocationExpression constant false
+.set analyze_action_UnopExpression reduction
+.set analyze_action_VariableNameExpression constant true
+.set analyze_action_VectorExpression reduction
+.set analyze_action_VectorSubscriptExpression reduction
+.set analyze_action_type constant true
+.. TODO: have a better look.
+.set analyze_action_InterfaceInstanceOfExpression constant false
+.set analyze_action_ArrayInitExpression constant false
+.set analyze_action_NewArrayExpression constant false
+.set analyze_action_NewClassExpression constant false
+.set analyze_action_WhereExpression constant false
+.set analyze_action_ClassInstanceOfExpression constant false
+.set analyze_action_GetBufExpression constant false
+..
+.insert tmcanalyze.t
+..
+.set visit_types ${call calc_analyzer "expression" "$(actors)"}
+..
+/* File: ispure.c
+ *
+ * Return true iff the given expression is pure. That is, if in
+ * a given context the expression always evaluates to the same value.
+ * This is true for most expressions, but a notable exception is
+ * a function invocation.
+ */
+
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "ispure.h"
+
+.call generate_analyzer_forwards "$(visit_types)"
+
+.call generate_analyzer "$(visit_types)"
+
+bool is_pure( const_expression x )
+{
+    return $(analysis_name)_expression${call generate_actual_parameters x expression expression};
+}
+

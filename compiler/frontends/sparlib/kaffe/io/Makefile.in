@@ -1,0 +1,57 @@
+MAKEFILE = Makefile
+
+@SET_MAKE@
+
+COMPILERSRCROOT=../../../..
+
+# All this stuff is filled in by configure
+prefix=@prefix@
+exec_prefix=@exec_prefix@
+INSTALL = @INSTALL@
+INSTALL_PROGRAM = @INSTALL_PROGRAM@
+INSTALL_SCRIPT = @INSTALL_SCRIPT@
+INSTALL_DATA = @INSTALL_DATA@
+
+SRCFILES = $(wildcard *.java *.spar)
+DISTFILES = Makefile.in configure configure.ac $(SRCFILES)
+
+SUBDIRS =
+
+JUNK = dist.lst
+PRECIOUSJUNK =
+MYPATH = @libdir@/sparlib/kaffe/io
+
+include $(COMPILERSRCROOT)/Makefiles/Make.dist
+include $(COMPILERSRCROOT)/Makefiles/Make.configure
+
+all:
+ifdef SUBDIRS
+	for i in $(SUBDIRS); do cd $$i && $(MAKE) all && cd ..; done
+endif
+
+check:
+ifdef SUBDIRS
+	for i in $(SUBDIRS); do cd $$i && $(MAKE) check && cd ..; done
+endif
+
+tests:
+ifdef SUBDIRS
+	for i in $(SUBDIRS); do cd $$i && $(MAKE) tests && cd ..; done
+endif
+
+clean:
+	rm -f $(JUNK)
+ifdef SUBDIRS
+	for i in $(SUBDIRS); do cd $$i && $(MAKE) clean && cd ..; done
+endif
+
+empty:
+	rm -f $(JUNK) $(PRECIOUSJUNK)
+ifdef SUBDIRS
+	for i in $(SUBDIRS); do cd $$i && $(MAKE) empty && cd ..; done
+endif
+
+install:
+	$(INSTALL) -d $(MYPATH)
+	for i in $(SRCFILES); do $(INSTALL_DATA) $$i $(MYPATH)/$$i; done
+

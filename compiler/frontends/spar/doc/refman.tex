@@ -1,0 +1,960 @@
+\documentclass[a4paper]{article}
+\newcommand{\langnm}{Sugar Vnus}
+\newlength{\keywordwidth} % Used to format the list of keywords.
+% take a more relaxed attitude to figures.
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.9}
+\renewcommand{\dbltopfraction}{0.9}
+\renewcommand{\textfraction}{0.1}
+\renewcommand{\floatpagefraction}{0.9}
+\newcommand{\defn}[1]{{\em #1}\index{#1}}
+\newcommand{\fnname}[1]{{\it #1}}
+\newcommand{\mymod}{{\ \bmod \ }}
+\newcommand{\bdiv}{\fnname{div}}
+\newcommand{\floor}[1]{{\left \lfloor #1 \right \rfloor}}
+\newcommand{\ceil}[1]{{\left \lceil #1 \right \rceil}}
+\newcommand{\set}[1]{{\{\ #1\ \}}}
+\newcommand{\nonterm}[1]{{\tt #1}}
+\newtheorem{remark}{Remark}
+\title{{\langnm} reference manual}
+\author{C. van Reeuwijk}
+\begin{document}
+\maketitle
+\section{Introduction}
+This reference manual describes {\langnm}. The language has been developed to
+provide a readable version of Vnus, but it may evolve into a separate
+programming language.
+\par
+\begin{remark}
+Since {\langnm} is still under development, a number of details have
+not yet been finalized, or are still subject of debate. This is
+explained in remarks like this.
+\end{remark}
+\par
+This manual describes the language in full detail. It is not intended
+as a tutorial.
+
+\section{Lexical conventions}
+\subsection{Tokens}
+There are five classes of tokens: identifiers, keywords, constants,
+operators, and separators.
+Blanks, tabs, newlines, and comments (collectively,
+"white space") are ignored except that they separate tokens.
+Some white space is required to separate otherwise adjacent identifiers,
+keywords, and constants.
+If the input stream has been separated into tokens up to a given character,
+the next token is the longest string of characters that can constitute
+a token.
+\subsection{Comments}
+The characters \verb"//" introduce a comment, which terminates at the end
+of the line.
+The characters \verb"/*" introduce a comment, which terminates at the
+characters \verb"*/".
+Comment does not occur within strings.
+\subsection{Identifiers}
+An identifier is a sequence of letters and digits. The first character
+must be a letter; the underscore \verb"_" counts as a letter.
+All identifiers containing a sequence of two underscores are reserved for
+use within the compiler, and should not be used in a program.
+Upper and lower case letters are different. Identifiers may have any
+length.
+\subsection{Keywords}
+The following identifiers are reserved for use as keywords, and may not be
+used otherwise: 
+\settowidth{\keywordwidth}{\tt redistribute1}
+\begin{quote}
+\makebox[\keywordwidth][l]{\tt and}
+\makebox[\keywordwidth][l]{\tt barrier}
+\makebox[\keywordwidth][l]{\tt blocksize}
+\makebox[\keywordwidth][l]{\tt block}
+\makebox[\keywordwidth][l]{\tt boolean}
+\makebox[\keywordwidth][l]{\tt broadcast}
+\makebox[\keywordwidth][l]{\tt complex}
+\makebox[\keywordwidth][l]{\tt div}
+\makebox[\keywordwidth][l]{\tt else}
+\makebox[\keywordwidth][l]{\tt false}
+\makebox[\keywordwidth][l]{\tt forall}
+\makebox[\keywordwidth][l]{\tt forkall}
+\makebox[\keywordwidth][l]{\tt for}
+\makebox[\keywordwidth][l]{\tt function}
+\makebox[\keywordwidth][l]{\tt getsize}
+\makebox[\keywordwidth][l]{\tt if}
+\makebox[\keywordwidth][l]{\tt inout}
+\makebox[\keywordwidth][l]{\tt integer}
+\makebox[\keywordwidth][l]{\tt in}
+\makebox[\keywordwidth][l]{\tt isowner}
+\makebox[\keywordwidth][l]{\tt mod}
+\makebox[\keywordwidth][l]{\tt natural}
+\makebox[\keywordwidth][l]{\tt not}
+\makebox[\keywordwidth][l]{\tt of}
+\makebox[\keywordwidth][l]{\tt or}
+\makebox[\keywordwidth][l]{\tt out}
+\makebox[\keywordwidth][l]{\tt owner}
+\makebox[\keywordwidth][l]{\tt procedure}
+\makebox[\keywordwidth][l]{\tt real}
+\makebox[\keywordwidth][l]{\tt receive}
+\makebox[\keywordwidth][l]{\tt returns}
+\makebox[\keywordwidth][l]{\tt sender}
+\makebox[\keywordwidth][l]{\tt send}
+\makebox[\keywordwidth][l]{\tt shape}
+\makebox[\keywordwidth][l]{\tt string}
+\makebox[\keywordwidth][l]{\tt synchronize}
+\makebox[\keywordwidth][l]{\tt true}
+\makebox[\keywordwidth][l]{\tt view}
+\makebox[\keywordwidth][l]{\tt want}
+\makebox[\keywordwidth][l]{\tt while}
+\end{quote}
+In the recognition of keywords, case is ignored, so
+\verb"Procedure", \verb"PROCEDURE" and \verb"PrOcEdUrE" are also
+recognized as keywords.
+\subsection{Constants}
+There are several kinds of constants: integer, real, string and boolean.
+Each has a data type; section \ref{s.types} discusses these.
+\begin{remark}
+For the moment little distinction is made between natural,
+integer, and real constants. If a real constant is recognizable
+as such (contains a decimal point or a "e" or "E"), this is noted,
+otherwise it is assumed to be an integer constant. Partially for
+this reason, the compiler
+takes a relaxed attitude to mixing of differently typed expressions.
+\end{remark}
+\subsubsection{Integer constants}
+An integer constant consists of a sequence of digits.
+Signs (\verb'+' or \verb'-') in front
+of these constants are not part of the constant, but are unary operators.
+\par
+Examples: \verb"12", \verb"42".
+\subsubsection{Real constants}
+A real constant consists of a sequence of digits, that is optionally followed
+by a decimal point \verb"." and an other sequence of digits. This may
+be followed by a exponent separator \verb"e" or \verb"E" followed by an
+optionally signed sequence of digits.
+Signs (\verb'+' or \verb'-') in front
+of these constants are not part of the constant, but are unary operators.
+\par
+Examples: \verb"1", \verb"1.2", \verb"1e22", \verb"1.0e-33".
+\subsubsection{String constants}
+A string constant is a sequence of characters surrounded by double quotes.
+Examples: \verb'""', \verb'"Hello world"'.
+\subsubsection{Boolean constants}
+There are two boolean constants, represented by the keywords {\tt true}
+and {\tt false}. Note that, just as for other keywords, the case
+is ignored.
+\par
+Examples: {\tt False}, {\tt TRUE}.
+\subsection{Operators}
+The following operators are recognized:
+\begin{quote}
+\verb"&"
+\verb"*"
+\verb"+"
+\verb"-"
+\verb".."
+\verb"/"
+\verb":"
+\verb"::"
+\verb":="
+\verb"<"
+\verb"<-"
+\verb"<<"
+\verb"<="
+\verb"<>"
+\verb"="
+\verb">"
+\verb">="
+\verb">>"
+\verb"\"
+\verb"|"
+\end{quote}
+\subsection{Separators}
+\begin{verbatim}
+commas: "," | commas ","
+\end{verbatim}
+\subsection{Distributions}
+\label{s.distributions}
+\begin{verbatim}
+distribution:
+    "block"
+|
+    "block" expression
+|
+    "cyclic"
+|
+    "*"
+|
+   "+"
+|
+   "-"
+;
+
+distributions:
+    <empty>
+|
+    "[" distribution-list opt_commas "]"
+;
+\end{verbatim}
+Unlike other data-parallel languages, {\langnm} does
+not allow explicit declaration of processor arrays. Instead, the
+structure of the processor array is given as a command-line option
+to the backend as a list of array sizes. From this specification two
+implicit processor arrays are derived: a $m$-dimensional one, where
+$m$ is the rank of the processor array, and a one-dimensional array
+with the same number of processors.
+For example, the backend can be invoked with
+
+\begin{verbatim}
+    vnus -t5,4,12
+\end{verbatim}
+This specifies a 3-dimensional processor array of $5 \times 4 \times 12$ elements,
+and a 1-dimensional processor array of $5 \cdot 4 \cdot 12 = 240$ processors.
+\par
+The sizes of the processor array are available within the program
+through the predefined shape 'sizesProcessorArray'. Thus, with the
+invocation shown above sizesProcessorArray[0] = 5,
+sizesProcessorArray[1] = 4, and sizesProcessorArray[2] = 12.
+\par
+The variable 'numberOfProcessors' contains the product
+of all elements of sizesProcessorArray[], and can be seen as the
+size of the one-dimensional processor array.
+\par
+Possible distribution specifications for a dimension are:
+\begin{enumerate}
+\item \verb'block' $n$. The elements in this shape dimension are distributed
+  in groups of $n$ elements over the processor dimension.
+Thus, for a block size $m$ and $n_p$ processors, the owner function is:
+\[ \fnname{owner}( i ) = \floor{\frac{i}{m}} \mymod n_p \]
+
+\item \verb'block'. Equivalent to 'blockcyclic' $\lceil n_e/n_p \rceil$,
+   where $n_e$ is the
+   number of elements in this shape dimension, and $n_p$ is the number
+   of processors in this processor dimension. This is not only a handy
+   shortcut, but it also allows more efficient code generation.
+
+\item \verb'cyclic'. Equivalent to 'blockcyclic 1'. This is not only a handy
+  shortcut, but it also allows more efficient code generation.
+
+\item \verb'*'. All elements in this shape dimension are replicated on
+  all processors in this dimension.
+
+\item \verb'+'. Skip this shape dimension. This dimension is said to
+      be {\em collapsed}.
+
+\item \verb'-'. This distribution will never be used. This specification
+      is used in formal parameters.
+\end{enumerate}
+
+Each distribution specification, except the 'collapsed' specification,
+uses one processor dimension. The entire list of distributions must use
+either the entire more-dimensional processor array, or only the
+one-dimensional processor array. In other words, in a program with a
+processor array of rank $n$, every distribution must have either 1
+or $n$ non-collapsed dimensions.
+\subsection{Pragmas}
+\begin{verbatim}
+pragma:
+    identifier
+|
+    identifier "=" expression
+
+pragmalist:
+    /* empty */
+|
+    pragma
+|
+    pragmalist "," pragma
+
+pragmas:
+     "<<" pragmalist ">>"
+
+opt_pragmas:
+    /* empty */
+|
+    pragmas
+
+\end{verbatim}
+Several {\langnm} language constructs can be annotated with \defn{pragmas}.
+These pragmas are intended to convey hints to the compilation system, and
+do not (or at least should not) influence the behavior of the program.
+\par
+A pragma can either be a flag, whose mere presence is sufficient, or it
+can have an arbitrary expression as value. For the list of supported pragmas,
+please consult seperate documentation.
+\par
+At present, the following language constructs can have a pragma list:
+expression, location, statement and declaration. If the need arises,
+other languages constucts may be annotated too.
+Examples:
+\begin{verbatim}
+<<const>>
+<<maxsize=400>>
+<<miniterations=0,maxiterations=2*n>>
+\end{verbatim}
+
+\section{Meaning of identifiers}
+Identifiers, or names, refer to a variety of things: functions and procedures,
+views, shapes and scalars.
+\subsection{Basic types}
+\label{s.types}
+\begin{verbatim}
+basetype:
+    "string" | "boolean" | "natural"
+|
+    "integer" | "real" | "complex"
+
+type: basetype
+\end{verbatim}
+The types {\tt natural}, {\tt integer}, {\tt real}, and {\tt complex}
+represent a subset of the sets $\cal N$, $\cal Z$, $\cal R$,
+and $\cal C$, respectively. In the following table the minimal range
+of each type is specified. A specific implementation may broaden this
+range.
+\begin{center}
+\begin{tabular}{ll}
+type & range \\
+\hline
+{\tt natural} & $0 \ldots 32000$ \\
+{\tt integer} & $-32000 \ldots 32000$ \\
+{\tt real} & $\verb"-1e30" \ldots \verb"-1e-30" \cup \verb"1e-30" \ldots \verb"1e30"$ \\
+\end{tabular}
+\end{center}
+{\tt Complex} numbers are represented as a pair of {\tt real} numbers
+denoting real and imaginary part.
+\par
+The {\tt boolean} type represents the set $\{ \verb"true", \verb"false" \}$.
+\par
+Examples: \verb"boolean", \verb"INTEGER", \verb"Complex".
+\subsection{Shapes}
+\label{s.shapetype}
+\begin{verbatim}
+size: expression | "*"
+
+size-list:
+    <empty>
+|
+    size
+|
+    size-list commas size
+
+sizes: "[" size-list opt_commas "]"
+
+type: "shape" sizes distributions "of" basetype
+\end{verbatim}
+Shapes are similar to multi-dimensional arrays in other languages.
+They are specified by the type of the elements and the extent in each
+dimension. Every dimension is assumed to start at 0,
+so only the upper bound needs to be specified.
+\par
+In a formal-parameter specification, a \verb"*" matches an arbitrary size
+of the dimension, without binding it to a variable.
+\par
+Shapes of scalar types can be distributed, see section \ref{s.distributions}
+for a description of distribution specifications.
+If a distribution is given, a shape must have a distribution specification
+for each of its dimensions.
+Thus, the size of the distribution list must be the same as the the rank
+of the shape. If no distribution is specified, a shape is replicated.
+\par
+Examples:
+\begin{verbatim}
+shape [20] of integer
+Shape [10,20] of integer
+\end{verbatim}
+The following are only allowed in formal-parameter specifications:
+\begin{verbatim}
+shape [*,*] of complex
+shape [*,2] of real
+\end{verbatim}
+
+\subsection{Views}
+\begin{verbatim}
+rank: sizes | INTEGER
+
+type: "view" rank "of" basetype
+\end{verbatim}
+Views are functions that map index expressions onto shape elements.
+Each view has a fixed number of dimensions and a fixed element type.
+The mapping function and the extent in each dimension are determined
+at run time.
+\par
+The number of dimensions (the \defn{rank}) of a view is specified as either
+a number, or as a sequence of forms. The view declaration may
+put restrictions on the size of a view dimension. If so, this
+restriction will be enforced in subsequent view statements.
+\par
+Examples of valid view types are:
+\begin{verbatim}
+view 3 of integer
+VIEW [*,*,*] of complex
+VIEW [*,*] of complex
+view [3,*] of integer
+\end{verbatim}
+The first two types are equivalent.
+\par
+The following are only allowed in a formal-parameter specification:
+\begin{verbatim}
+view [*,*] of integer
+view [*,*] of natural
+\end{verbatim}
+
+\begin{remark}
+The restrictions on view dimensions are at the moment not enforced.
+\end{remark}
+
+\section{Conversions}
+Some operators may, depending on their operands, cause conversion of
+the value from one type to another.
+\begin{remark}
+Yes, more details on this are needed, but we must first determine what
+we want.
+\end{remark}
+
+\section{Expressions}
+\subsection{Primary Expressions}
+\begin{verbatim}
+expression:
+    <real>
+|
+    <integer>
+|
+    <string>
+|
+    "(" expression ")"
+\end{verbatim}
+Primary expressions are constants or expressions in parentheses.
+\par
+Examples: \verb"11", \verb'"Test"', \verb"(a+b)".
+\subsection{Shape and view references}
+\begin{verbatim}
+selector: expression
+
+selectorlist:
+    <empty>
+|
+    selector
+|
+    selectorlist commas selector
+
+selectors: "[" selectorlist "]" | <empty>
+
+selection: identifier selectors
+
+expression: selection
+\end{verbatim}
+Elements of shapes and views are referenced by selection expression.
+Only single elements may be selected; therefore the size of the selector
+list must be equal to the rank of the shape or view.
+\par
+References to scalars are considered selections with an empty selector list.
+\par
+Examples:
+\verb"a[12]", \verb"b[1,2,3,4]", \verb"c".
+\subsection{Function calls}
+\begin{verbatim}
+expressionlist:
+    <empty>
+|
+    expression
+|
+    expressionlist commas expression
+
+expressions: "(" expressionlist ")"
+
+functioncall: identifier expressions
+
+expression: functioncall
+\end{verbatim}
+A function call consists of a function name followed by 
+parentheses containing a possibly empty, comma-separated list of expressions.
+These expressions are called the \defn{actual parameters} of the function.
+The size of the actual parameter list must be equal to the size of the
+formal parameter list.
+For details of the parameter passing mechanism, see Section \ref{s.fndecl}.
+\subsection{Unary operators}
+\begin{verbatim}
+unary_operator: "not" | "+" | "-" | "\"
+
+expression: unary_operator expression
+\end{verbatim}
+The following unary operators are supported: \verb"+" (unary plus),
+\verb"-" (negation), {\tt not} (boolean inverse) and \verb"\"
+(monadic set difference).
+Unary operators bind more strongly than binary operators.
+Thus, \verb'-a + b' is equivalent with \verb'(-a) + b'.
+\subsection{Pragma expressions}
+\begin{verbatim}
+expression: pragmas expression
+\end{verbatim}
+This adds a pragma to the following expression. It binds as strongly
+as unary operators, and more strongly than binary operators.
+Thus, \verb'<<real>> a + b' is equivalent with \verb'(<<real>> a) + b'.
+\subsection{Binary operators}
+\begin{verbatim}
+expression: expression binary_operator expression
+\end{verbatim}
+The following binary operators are supported:
+\begin{center}
+\begin{tabular}{|l|l|}
+\hline
+operator & description \\
+\hline
+\verb"[]" & selection \\
+\hline
+\verb"*" & multiplication \\
+\verb"/" & division \\
+{\tt div} & integer division \\
+{\tt mod} & integer modulus operation \\
+\hline
+\verb"+" & addition \\
+\verb"-" & subtraction \\
+\verb"|" & set union \\
+\verb"&" & set intersection \\
+\hline
+\verb".." & range \\
+\hline
+\verb"<" & less \\
+\verb"<=" & less or equal \\
+\verb">=" & greater or equal \\
+\verb">" & greater \\
+\verb"=" & equal \\
+\verb"<>" & not equal \\
+\hline
+{\tt and} & logical and \\
+{\tt or} & logical or \\
+\hline
+\end{tabular}
+\end{center}
+Each separator in this table starts a new, lower, level of operator precedence.
+All operators are left-binding.
+Thus \verb"a-b-c" is equivalent with \verb"a-(b-c)", and 
+\verb"a+b*c" is equivalent with \verb"a+(b*c)".
+\subsection{Distribution expressions}
+\begin{verbatim}
+expression:
+    "blocksize" '(' location ')'
+|
+    "isowner" '(' location ',' expression ')'
+|
+    "sender" '(' location ')'
+|
+    "sender" '(' location ')'
+\end{verbatim}
+To access the distribution parameters of a shape, two special reference
+expressions have been introduced. See Section \ref{s.shapetype} for an
+explanation of a block size.
+The {\tt identifier} must refer to a shape, and the {\tt selection} must
+select a single element of a shape.
+Views are not distributed, and therefore these expressions are meaningless
+for views.
+\par
+Examples (assuming \verb"A" is a one-dimensional shape):
+\verb"blocksize A", \verb"owner A[2]".
+\subsection{Quantified selection expressions}
+\begin{verbatim}
+quantifiedselection: cardinalities "." selection
+
+expression: quantifiedselection
+\end{verbatim}
+A quantified selection expression is an anonymous view.
+It binds more strongly than selection.
+\subsection{Complex number expressions}
+\begin{verbatim}
+expression: "complex" "(" expression "," expression ")"
+\end{verbatim}
+This constructs a complex number from a real and imaginary part,
+respectively.
+Examples: \verb"complex(1,0)", \verb"complex(42,22)".
+
+\section{Shape and view inquiry expressions}
+\begin{verbatim}
+expression:
+    "getsize" "(" location "," expression ")"
+\end{verbatim}
+This returns the size of a shape or view in a given dimension.
+Example: \verb"getsize( A, 0 )".
+
+\section{Declarations}
+Except for cardinality variables, all identifiers in a
+{\langnm} program must be declared.
+Declarations can have \defn{global scope} (valid throughout the
+program), or \defn{local scope} (valid within a function or
+a procedure).
+\subsection{Variable declarations}
+\begin{verbatim}
+variable:
+     opt_pragmas identifier ":" type ";"
+
+declaration:
+    variable
+\end{verbatim}
+\par
+Example:
+\begin{verbatim}
+a: shape [10,10] of natural;
+\end{verbatim}
+\subsection{Function and procedure declarations}
+\label{s.fndecl}
+\begin{verbatim}
+passing-mechanism: <empty> | "ref"
+
+argument: passing-mechanism identifier ":" opt_pragmas type
+
+argument-list:
+    <empty>
+|
+    argument
+|
+    argument-list commas argument
+
+arguments: "(" argument-list opt_commas ")"
+
+function:
+    "function"
+        identifier arguments
+        "returns" identifier ":" type
+        statementblock
+
+procedure:
+    opt_pragmas "procedure" identifier arguments statementblock
+
+declaration:
+    procedure
+|
+    function
+\end{verbatim}
+Functions and procedures may only be declared globally. 
+The argument list defines a number of formal parameters.
+If the flow type is \verb"in", a local copy of the actual parameter
+will be made, and any changes to the parameter will not be visible outside
+the function or procedure.
+If the flow type is \verb"out", the parameter has an undefined value
+upon entry, and all changes to the variable will be visible outside
+the function or procedure.
+If the flow type is \verb"inout", upon entry of the function the parameter
+will have the value of the actual parameter. Any changes to the parameter
+will be visible outside the function or procedure.
+\par
+Upon entry of a function, the value of the return variable is undefined.
+During execution of the function the return variable may be assigned to
+any number of times.
+The value that is returned from a function is the value of the return
+variable upon exit of the function.
+\par
+An example:
+\begin{verbatim}
+function Fac( n: natural ) returns m : natural
+{
+    m := 1;
+    while (n > 1){
+        m := m*n;
+        n := n-1;
+    }
+}
+\end{verbatim}
+\subsection{External declarations}
+\begin{verbatim}
+declaration:
+    opt_pragmas external_function
+|
+    opt_pragmas external_procedure
+|
+    opt_pragmas external_variable
+
+external_function:
+    "external" "function" identifier arguments
+        "returns" identifier ":" type ";"
+|
+    "external" "function" identifier arguments "returns" type ";"
+
+external_procedure:
+    "external" "procedure" identifier arguments ";"
+
+external_variable:
+    "external" identifier ":" type ";"
+\end{verbatim}
+Since {\langnm} assumes a standard library for its support functions,
+it allows external declarations. 
+
+Examples:
+\begin{verbatim}
+external vnus_writes( in f: natural, in s: string );
+external sin( in x: real ) returns real;
+external cos( in x: real ) returns cosx : real;
+\end{verbatim}
+
+\section{Statements}
+\subsection{Labels}
+\begin{verbatim}
+handle: identifier
+
+statement: handle "::" action | action
+
+action:
+    empty
+|
+    control
+|
+    communication
+|
+    assignment
+|
+    view
+|
+    procedurecall
+
+empty: ";"
+\end{verbatim}
+Each statement may be preceded by a label, consisting of a name
+followed by two colons.
+Example:
+\begin{verbatim}
+statement_one::  a := a+1;
+\end{verbatim}
+\subsection{Compound statements}
+\begin{verbatim}
+statementlist:
+    statement
+|
+    statementlist statement
+
+statementblock:
+    "{" [declarationlist] [statementlist] "}"
+\end{verbatim}
+A \nonterm{statementblock} can be used to introduce a local scope with
+local variables.
+\subsection{Flow control statements}
+\begin{verbatim}
+cardinality:
+    identifier ":" expression
+|
+    identifier expression
+|
+    identifier 
+|
+    "(" cardinality ")"
+
+cardinalitylist:
+    <empty>
+|
+    cardinality
+|
+    cardinalitylist commas cardinality
+
+cardinalities: "[" cardinalitylist opt_commas "]"
+
+while: "while" expression statementblock
+
+iteration: "for" cardinalities statementblock
+
+forall: "forall" cardinalities statementblock
+
+forkall: "forkall" cardinalities statementblock
+
+if:
+    "if" expression statementblock "else" statementblock
+|
+    "if" expression statementblock
+
+block:
+    statementblock
+
+control: while | iteration | forkall | forall | if | block
+\end{verbatim}
+The \verb'while' and \verb'if' statements have the usual semantics.
+Each cardinality \verb'<v>:<r>' specifies an iteration variable
+\verb'<v>' and an iteration range $0 \ldots \verb'<r>'-1$.
+The \verb'for' statement iterates over its iteration variables in a fixed
+order: each iterator iterates over its range in increasing order, and
+each iterator nests the iterators to the right of it.
+The \verb'forall' statement iterates over all possible combinations of
+iterator values in arbitrary order.
+The \verb'forkall' statement spawns a different thread for
+each combination of values of the iterators.
+These threads communicate with each other through the communication
+statements.
+For the moment, the compiler allows the \verb'forkall' statement only
+in programs of a special format: programs that contain a single
+forkall statement with one cardinality variable as the top-level statement
+list are translated to a threaded execution program.
+\begin{remark}
+It is not clear whether the programmer should be responsible for
+avoiding non-determinism, or the compiler.
+We should discuss shared-memory implementations, and distributed-memory
+implementations.
+\end{remark}
+\subsection{Communication statements}
+\begin{verbatim}
+communication: send | receive | barrier | broadcast
+
+send: "send" "(" expression "," expression "," expression ")" ";"
+
+receive: "receive" "(" expression "," expression "," expression ")" ";"
+
+broadcast: "broadcast" "(" expression "," expression ")" ";"
+
+barrier: "barrier" ";"
+\end{verbatim}
+Given the local processor number, the destination processor number and
+an expression in that order, a \verb'send'
+statement sends the result of the expression evaluation
+to the given processor.
+\par
+Given the local processor number, the source processor number and a
+variable expression in that order, a \verb'receive'
+statement receives the contents of that
+variable from the given processor.
+\par
+Given the local processor number and a variable,
+ a \verb'broadcast' statement sends the result
+of the expression evaluation to all processors in the system, including
+the local processor. Every processor must receive the elment with the
+\verb'receive' statement.
+\par
+The barrier statement provides synchronization between execution
+threads as created by \verb'forkall'.
+Each thread that enters a barrier waits until all other threads have
+arrived at the barrier. At that moment all threads resume execution.
+\par
+For example, the following code implements the code
+\begin{verbatim}
+barrier;
+forall [i:20] {
+    A[19-i] := B[i];
+}
+barrier;
+\end{verbatim}
+but using explicit element-wise communication:
+\begin{verbatim}
+barrier;
+forall [i:20] {
+    desti := 19-i;
+    if( sender( B[i] ) = p ){
+	send( owner( A[desti] ), B[i] );
+    }
+    if( isowner( A[desti], p ) ){
+	receive( owner B[i],  A[desti] );
+    }
+}
+barrier;
+\end{verbatim}
+\subsection{Assignment statements}
+\begin{verbatim}
+assignment: location ":=" expression
+\end{verbatim}
+Examples:
+\begin{verbatim}
+a := 1;
+a[] := 1;
+v[12,23,5] := v[12,23,5]+v[12,23,6];
+\end{verbatim}
+\subsection{View statements}
+\begin{verbatim}
+view: "view" location cardinalities "<-" selection ";"
+\end{verbatim}
+A view statement constructs a new view.
+\par
+The keyword \verb'view' is necessary to distinguish this statement from
+assignment to view and shape elements; in particular from 0-dimensional
+selection. For example, the statements
+\begin{verbatim}
+a[] <- x[];    // not allowed, ambiguous
+a[] := x[];
+\end{verbatim}
+require a look-ahead of two tokens (to the \verb'<-' or \verb':=') to
+disambiguate. This is not possible with the parser generator that we use.
+\par
+Examples:
+\begin{verbatim}
+view v[i:10,j:10,k:20] <- A[10-i,j,k];
+view v[i] <- A[i,i,1];
+\end{verbatim}
+\subsection{Procedure call statements}
+\begin{verbatim}
+procedurecall: identifier expressions
+\end{verbatim}
+Examples:
+\begin{verbatim}
+WriteS(f,"Hello World");
+p();
+\end{verbatim}
+
+\section{Declaration lists}
+\begin{verbatim}
+declarationlist:
+    declaration
+|
+    declarationlist statement_sep declaration
+
+declaration: function | procedure | variable
+\end{verbatim}
+Declaration lists contain local or global declarations.
+\par
+Example:
+\begin{verbatim}
+i: integer;
+v: view [*] of natural;
+a: shape [20] of natural;
+\end{verbatim}
+
+\section{Programs}
+\begin{verbatim}
+opt_globalpragmas:
+    <empty>
+|
+    "globalpragmas" pragmas statement_terminator
+
+program: opt_globalpragmas [declarations] statements
+\end{verbatim}
+Example (\verb"vnusout" is a pre-defined variable that denotes
+standard output, similarly, \verb"vnusin" is a pre-defined variable that
+denotes standard input):
+\begin{verbatim}
+// fac.sv -- The Factorial Function.
+
+globalpragmas <<realshape>>;
+
+external procedure vnusstio_writes( f: natural, s: string );
+external procedure vnusstio_writen( f: natural, n: natural );
+external procedure vnusstio_readn( f: natural, ref n: natural );
+external vnusout: natural;
+external vnusin: natural;
+
+x : natural;
+
+// Iterative factorial function.
+function Fac( n: natural ) returns m: natural 
+{
+    m := 1;
+    while( n > 1 ){
+        m := m*n;
+        n := n-1;
+    }
+}
+
+/* Recursive factorial function. */
+function FacRec( n: natural ) returns m: natural 
+{
+    if( n = 0 ){
+        m := 1;
+    }
+    else {
+        m := n * FacRec(n-1);
+    }
+}
+
+vnusstio_readn( vnusin, x );
+while( x <> 1000 ){
+    vnusstio_writes(vnusout, "\nIterative:\t");
+    vnusstio_writen(vnusout, x);
+    vnusstio_writes(vnusout, "! = ");
+    vnusstio_writen(vnusout, Fac(x));
+    vnusstio_writes(vnusout, "\nRecursive:\t");
+    vnusstio_writen(vnusout, x);
+    vnusstio_writes(vnusout, "! = ");
+    vnusstio_writen(vnusout, FacRec(x));
+    vnusstio_writes(vnusout, "\n\n");
+    vnusstio_writes(vnusout, "integer (1000 to stop): ");
+    vnusstio_readn(vnusin, x);
+}
+vnusstio_writes( vnusout, "\nHave a nice day!\n" );
+\end{verbatim}
+\end{document}

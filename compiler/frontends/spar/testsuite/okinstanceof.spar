@@ -1,0 +1,53 @@
+interface inf {
+}
+
+class tsuper {
+}
+
+public class okinstanceof extends tsuper implements inf {
+    public static void main(){
+	__println( 1, "Hello world" );
+	okinstanceof x = new okinstanceof();
+	tsuper sup = new tsuper();
+	tsub sub = new tsub();
+
+	if( x instanceof tsuper ){
+	    __println( 1, "t is instance of tsuper" );
+	}
+	if( x instanceof okinstanceof ){
+	    __println( 1, "t is instance of t" );
+	}
+	if( x instanceof tsub ){
+	    __println( 1, "t is instance of tsub" );
+	}
+	if( x instanceof inf ){
+	    __println( 1, "t is instance of inf" );
+	}
+	if( sup instanceof tsuper ){
+	    __println( 1, "tsuper is instance of tsuper" );
+	}
+	if( sup instanceof okinstanceof ){
+	    __println( 1, "tsuper is instance of t" );
+	}
+	if( sup instanceof tsub ){
+	    __println( 1, "tsuper is instance of tsub" );
+	}
+	if( sup instanceof inf ){
+	    __println( 1, "tsuper is instance of inf" );
+	}
+	if( sub instanceof tsuper ){
+	    __println( 1, "tsub is instance of tsuper" );
+	}
+	if( sub instanceof okinstanceof ){
+	    __println( 1, "tsub is instance of t" );
+	}
+	if( sub instanceof tsub ){
+	    __println( 1, "tsub is instance of tsub" );
+	}
+	if( sub instanceof inf ){
+	    __println( 1, "tsub is instance of inf" );
+	}
+    }
+}
+
+class tsub extends okinstanceof {}

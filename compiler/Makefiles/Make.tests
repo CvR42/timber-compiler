@@ -1,0 +1,170 @@
+# Makefile for tests
+
+testhelp:
+	@$(ECHO) " Possible make targets:"
+	@$(ECHO) "all-s        Compile sequential versions of examples"
+	@$(ECHO) "all-t        Compile threaded versions of examples"
+	@$(ECHO) "all-dm       Compile pvm versions of examples(via mapper)"
+	@$(ECHO) "all-mm       Compile mpi versions of examples(via mapper)"
+	@$(ECHO) "all-p        Compile panda versions of examples"
+	@$(ECHO) "all          Compile all versions of examples"
+	@$(ECHO) "tests-s      Test sequential versions of examples"
+	@$(ECHO) "tests-t      Test running of threaded versions of examples"
+	@$(ECHO) "tests-dm     Test running of pvm versions of examples(via mapper)"
+	@$(ECHO) "tests-mm     Test running of mpi versions of examples(via mapper)"
+	@$(ECHO) "tests-p      Test running of panda versions of examples"
+	@$(ECHO) "tests        Test all versions of all examples"
+	@$(ECHO) "clean        Delete all executables"
+	@$(ECHO) "empty        Delete all executables and generated C++/Vnus files"
+
+
+all-s: 	$(TESTS:%=%-s)
+
+all-t:  $(TESTS:%=%-t)
+
+all-d:  $(TESTS:%=%-d)
+all-dm: $(TESTS:%=%-dm)
+
+all-m:  $(TESTS:%=%-m)
+all-mm: $(TESTS:%=%-mm)
+
+all-p:  $(TESTS:%=%-p)
+
+ifeq ($(HAVE_PANDA), yes)
+ALL_PC	= all-p
+else
+ALL_PC	=
+endif
+
+all:	all-s all-dm all-t all-mm $(ALL_PC)
+
+
+tests-s:  tests-s-message $(TESTS:%=%-s-test)
+
+tests-t:  tests-t-message $(TESTS:%=%-t-test)
+
+tests-dm: tests-dm-message $(TESTS:%=%-dm-test)
+
+tests-mm: tests-mm-message $(TESTS:%=%-mm-test)
+
+tests-p:  tests-p-message $(TESTS:%=%-p-test)
+
+# for now threaded uses distributed generated code
+tests:	 tests-s tests-m tests-d tests-t
+
+
+tests-s-message:
+	@$(ECHO) "-- Testing whether the output of the compiled sequential"
+	@$(ECHO) "-- Vnus programs is the expected output..."
+
+tests-t-message:
+	@$(ECHO) "-- Testing whether the output of the compiled threaded Vnus"
+	@$(ECHO) "-- programs is the same as the output of the sequential programs..."
+
+tests-dm-message:
+	@$(ECHO) "-- Testing whether the output of the compiled pvm Vnus"
+	@$(ECHO) "-- programs (via mapper) is the same as the output of"
+	@$(ECHO) "-- the sequential programs..."
+
+tests-mm-message:
+	@$(ECHO) "-- Testing whether the output of the compiled mpi Vnus"
+	@$(ECHO) "-- programs (via mapper) is the same as the output of"
+	@$(ECHO) "--  the sequential programs..."
+
+tests-p-message:
+	@$(ECHO) "-- Testing whether the output of the compiled panda Vnus"
+	@$(ECHO) "-- programs is the same as the output of the sequential programs..."
+
+
+%-s.tst.out:	%-s
+	@$(ECHO) -n "Testing $<... "
+	@$< > $*-s.tst.out
+
+%-t.tst.out:	%-t
+	@$(ECHO) -n "Testing $<... "
+	@$< > $*-t.tst.out
+
+%-d.tst.out:	%-d 
+	@$(ECHO) -n "Testing $<... "
+	@cp -fp $< $(PVMDIR)
+	@$< > $*-d.tst.out
+
+%-dm.tst.out:	%-dm
+	@$(ECHO) -n "Testing $<... "
+	@cp -fp $< $(PVMDIR)
+	@$< > $*-dm.tst.out
+
+$(PVMDIR)/%-d:	%-d
+
+%-m.tst.out:	%-m 
+	@$(ECHO) -n "Testing $<... "
+	@$(MPICLEAN)
+	@$(MPIRUN) $(MPIRUNFLAGS) $< $(MPIRUNPOSTFLAGS) > $*-m.tst.out
+
+%-mm.tst.out:	%-mm
+	@$(ECHO) -n "Testing $<... "
+	@$(MPICLEAN)
+	@$(MPIRUN) $(MPIRUNFLAGS) $< $(MPIRUNPOSTFLAGS) > $*-mm.tst.out
+
+%-p.tst.out:	%-m 
+	@$(ECHO) -n "Testing $<... "
+	@$(PRUN) $(PRUNFLAGS) $< $(PRUNPOSTFLAGS) > $*-p.tst.out
+
+
+%-t-test: %-t.tst.out
+	@diff $*-t.tst.out $*.out
+	@rm $*-t.tst.out      
+	@$(ECHO) ok	      
+			      
+%-d-test: %-d.tst.out	      
+	@diff $*-d.tst.out $*.out
+	@rm $*-d.tst.out      
+	@$(ECHO) ok	      
+			      
+%-dm-test: %-dm.tst.out	      
+	@diff $*-dm.tst.out $*.out
+	@rm $*-dm.tst.out      
+	@$(ECHO) ok	      
+			      
+%-m-test: %-m.tst.out	      
+	@diff $*-m.tst.out $*.out
+	@rm $*-m.tst.out      
+	@$(ECHO) ok	      
+			      
+%-mm-test: %-mm.tst.out	      
+	@diff $*-mm.tst.out $*.out
+	@rm $*-mm.tst.out      
+	@$(ECHO) ok	      
+			      
+%-p-test: %-p.tst.out	      
+	@diff $*-p.tst.out $*.out
+	@rm $*-p.tst.out      
+	@$(ECHO) ok	      
+			      
+%-s-test: %-s.tst.out	      
+	@diff $*-s.tst.out $*.out
+	@rm $*-s.tst.out
+	@$(ECHO) ok
+
+%-t.v-test: %-t.g.v
+	@$(ECHO) -n "Testing $<... "
+	@diff -I '//.*' $*-t.g.v $*-t.v.good
+	@$(ECHO) ok
+
+%-d.v-test: %-d.g.v
+	@$(ECHO) -n "Testing $<... "
+	@diff -I '//.*' $*-d.g.v $*-d.v.good
+	@$(ECHO) ok
+
+clean:	
+	rm -f $(TESTS:%=%-s) $(TESTS:%=%-t) $(TESTS:%=%-d) $(TESTS:%=%-m) \
+	      $(TESTS:%=%-p) *.o *.tst.out $(TESTS:%=%-dm) $(TESTS:%=%-mm)
+
+empty:	clean
+	rm -f $(TESTS:%=%-s.g.cc) $(TESTS:%=%-t.g.cc) $(TESTS:%=%-d.g.cc) \
+	      $(TESTS:%=%-s.g.v)  $(TESTS:%=%-t.g.v)  $(TESTS:%=%-d.g.v) \
+	      $(TESTS:%=%-dm.g.cc)  $(TESTS:%=%-mm.g.cc) \
+	      $(TESTS:%=$(PVMDIR)/%-d)
+
+.PRECIOUS:	%-s.g.cc %-t.g.cc %-d.g.cc %-s.g.v %-t.g.v %-d.g.v %-dm.g.cc $(PVMDIR)/%-d
+

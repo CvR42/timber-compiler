@@ -1,0 +1,15 @@
+// After JLS2 6.5.6.2    Qualified Expression Names
+
+class Point {
+    int x, y;
+    static int nPoints;
+}
+
+public class errjlsmember {
+    public static void main(String[] args) {
+        int i = 0;
+        i.x++;                                // compile-time error
+        Point p = new Point();
+        p.nPoints();                          // compile-time error
+    }
+}

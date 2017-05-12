@@ -1,0 +1,17 @@
+package spar.testsuite;
+
+class t1 {
+    abstract void bla();
+}
+
+class t implements t1 {
+    public int x;
+    public int y;
+}
+
+public class errimplclass {
+    public static void main()
+    {
+	t x = new t();
+    }
+}

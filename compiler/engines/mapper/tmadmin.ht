@@ -1,0 +1,13 @@
+.. file: tmadmin.ht
+/* Template file:      tmadmin.ht
+   datastructure file: ${dsfilename}
+   tm version:         $(tmvers) 
+ */
+#ifndef __TMADMIN_H_INCLUDED__
+#define __TMADMIN_H_INCLUDED__
+
+.insert tmadmin.t
+.insert tmc.ht
+.include extradefs.ht
+
+#endif

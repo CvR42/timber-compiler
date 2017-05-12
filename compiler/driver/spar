@@ -1,0 +1,811 @@
+#! /bin/sh
+#
+# Driver script for the spar compiler, to make it look like an
+# ordinary compiler such as gcc.
+#
+# See the function 'showusage' for the usage of this command.
+VERSION=": development"
+# Paths
+TMPDIR=${TMP:-/tmp}
+#
+# Places of executables
+FRONT=/Users/reeuwijk/timber/compiler/frontends/spar/sparfront
+VNUS=/Users/reeuwijk/timber/compiler/backends/vnus/vnus
+CXX=g++
+
+SPARRUNTIMELIB=/Users/reeuwijk/timber/compiler/frontends/spar-rtl
+SPARRUNTIMEINCLUDE=/Users/reeuwijk/timber/compiler/frontends/spar-rtl
+VNUSRUNTIMELIB=/Users/reeuwijk/timber/compiler/backends/runtime
+VNUSRUNTIMEINCLUDE=/Users/reeuwijk/timber/compiler/backends/runtime
+INITIAL=/Users/reeuwijk/timber/compiler/engines/mapper/initial
+SPMD=/Users/reeuwijk/timber/compiler/engines/mapper/spmd
+ALIGN=/Users/reeuwijk/timber/compiler/engines/align/align
+SPARLIBPATH=/Users/reeuwijk/timber/compiler/frontends/sparlib
+# PVM settings
+HAVE_PVM=no
+PVM_INCLUDEDIR=
+PVM_LIBDIR=
+#LAM:MPI settings
+HAVE_MPI=no
+MPIFLAVOUR=lam
+LAM_INCLUDEDIR=
+LAM_LIBDIR=
+LAM_LIBS=""
+MPICH_CXX_FLAGS=""
+MPICH_LIBDIR_FLAGS=""
+MPICH_LIBS_FLAGS=""
+#
+# This is only a partial script. It must be prefixed with a
+# configuration file to get it running.
+#
+
+# Some stuff for use on the DAS, should be more configurable later...
+PANDA=/usr/local/VU/panda/panda4.0
+PANDA_ARCH=i386_linux/lfc/no_threads/optimized
+DASLIB=/usr/local/package/daslib
+LFCLIB=/usr/local/package/lfc/lib
+LFCVERSION=optimized
+
+# Clear flags to the various phases
+CPLUSFLAGS="-g -I$SPARRUNTIMEINCLUDE -I$VNUSRUNTIMEINCLUDE"
+VNUSFLAGS="-Ispar-rtl.h"
+FRONTFLAGS=
+LDFLAGS=
+MAPPERFLAGS=
+
+# lists of files
+SPARFILES=
+VNUSFILES=
+CPLUSFILES=
+LDFILES=
+LIBS=
+JUNK=
+VERIFYMODE=0
+
+EXECUTABLE=./a.out
+N=0
+TRACE=
+FAIL=0
+KEEPFILES=0
+NEEDSPARRTL=1 # always set to one for compiling intermediate C++ files
+COMBINE_COMPILE_LINK=0
+TARGET=default
+PROCNO=default
+ALVL=2
+COMMLIB=undetermined
+EXECUTE=0
+PROFILING=0
+
+# Do cleanup. Only onvoke rm when there *is* junk, since on some
+# systems rm gets upset about an empty list, even with -f set.
+function cleanup()
+{
+    if [ X"$JUNK" != "X" ]; then
+	$TRACE rm -f $JUNK
+    fi
+}
+
+function abort()
+{
+    cleanup
+    exit 1
+}
+
+function showversion()
+{
+    echo "$0 version $VERSION"
+    if [ "$HAVE_PVM" == "yes" ]; then
+	echo "PVM communication supported"
+    else
+	echo "PVM communication not supported"
+    fi
+    if [ "$HAVE_MPI" == "yes" ]; then
+	echo "MPI communication supported using $MPIFLAVOUR"
+    else
+	echo "MPI communication not supported"
+    fi
+}
+
+function showversions()
+{
+    showversion
+    $FRONT -v
+    $VNUS -v
+    $CXX -v
+}
+
+function showusage()
+{
+    showversion
+    cat << EOF
+Usage: $0 [options] <file>
+
+Files with the extension '.spar' and '.java' are put through Spar.
+
+Files with the extension '.v' are put through Vnus.
+
+Files with the extensions '.c', '.cc', '.cpp' and '.cxx' are put through C++.
+
+Files with the extensions '.o' and '.a' are linked with the other files.
+
+Options are:
+-help             Show this help text.
+-verbosemem       Let the generated program print GC statistics
+--help            Show this help text.
+--version         Print the version number of this driving scipt.
+--versions        Print the version numbers of all components of the script.
+--keepfiles       Keep intermediate files.
+--compile-link    Combine compile & link step.
+--timings         Show the execution time of the compiler phases.
+--timer           Enable runtime timer.
+--nocards         Do not allow cardinality lists.
+--verify	  This is a verify compile.
+--noboundscheck   Do not generate array bounds checking code.
+--nogc            Do not generate garbage collection code.
+--nocomplex       Do not recognize the 'complex' keyword.
+--nodelete        Do not recognize the '__delete' statement.
+--noeach          Do not recognize 'each' and 'foreach' constructs.
+--noinline        Do not recognize the 'inline' keyword.
+--noinlining      Do not inline any methods or constructors.
+--nopragma        Do not recognize pragmas.
+--noprint         Do not recognize the '__print' and '__println' keywords.
+--nonotnullassert Do not generate null pointer checking code.
+--execute         After compilation, execute the program.
+--strict-analysis Strictly adhere to standard Java reachability analysis.
+--java		  Disable all Spar extensions.
+--java-array 	  Disable Spar array extensions.
+-W<flag>	  Passed to the frontend.
+-pg               Generate profiling code.
+-h	          Show this help text.
+-o <file>	  Write output (executable) to <file>
+-O<n>		  Let the C++ backend use optimization level <n>.
+-sourcepath <p>   Add <p> to the list of directories to search for source files.
+-classpath <p>    Add <p> to the list of directories to search for source files.
+
+-m<flag>, -f<flag>, -save-temps, -pg, -I<path>
+                  Passed to target C++ compiler.
+-L<path>, -l<lib>
+                  Passed to target C++ linker.
+
+Targets:
+
+--target=seq      Compile for sequential target (default).
+--target=mpi      Compile for parallel execution with MPI communication.
+--target=pvm      Compile for parallel execution with PVM communication.
+
+-a<n>             Specify number of processors.
+-d<flags>         Pass debugging flags to the frontend 
+EOF
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --compile-link)
+            COMBINE_COMPILE_LINK=1
+            shift
+            ;;
+
+        --execute)
+            EXECUTE=1
+            shift
+            ;;
+
+	--keepfiles)
+	    KEEPFILES=1
+	    shift
+	    ;;
+
+        -das|--target=das)
+            if [ "$TARGET" != "default" ]; then
+              echo "Multiple targets specified"
+              exit 1
+            fi
+            TARGET=das
+            shift
+            ;;
+
+	# Undocumented
+        -lam|--target=lam)
+            if [ "$TARGET" != "default" ]; then
+              echo "Multiple targets specified"
+              exit 1
+            fi
+            TARGET=mpi-lam
+            shift
+            ;;
+
+	# -pvm is undocumented
+        -pvm|--target=pvm)
+            if [ "$TARGET" != "default" ]; then
+              echo "Multiple targets specified"
+              FAIL=1
+            fi
+	    if [ "$HAVE_PVM" != "yes" ]; then
+              cat << EOF
+The compiler is not configured to support PVM communication. To enable
+it, recompile the program with the configure option --with-pvm. See
+README.parallel in the top compiler source directory for details.
+EOF
+              FAIL=1
+	    fi
+            TARGET=pvm
+            shift
+            ;;
+
+	# -mpi is undocumented
+        -mpi|--target=mpi)
+            if [ "$TARGET" != "default" ]; then
+              echo "Multiple targets specified"
+              FAIL=1
+            fi
+	    if [ "$HAVE_MPI" != "yes" ]; then
+              cat << EOF
+The compiler is not configured to support MPI communication. To enable
+it, recompile the program with the configure option --with-mpi=mpich or
+--with-mpi=lam. See README.parallel in the top compiler source directory
+for details.
+EOF
+              FAIL=1
+	    fi
+            TARGET=mpi-$MPIFLAVOUR
+            shift
+            ;;
+
+	# -seq is undocumented
+        -seq|--target=seq)
+            if [ "$TARGET" != "default" ]; then
+              echo "Multiple targets specified"
+              FAIL=1
+            fi
+            TARGET=seq
+            shift
+            ;;
+
+	# Undocumented
+        -trimedia|--target=trimedia)
+            if [ "$TARGET" != "default" ]; then
+              echo "Multiple targets specified"
+              FAIL=1
+            fi
+            TARGET=trimedia
+            COMBINE_COMPILE_LINK=1
+            shift
+            ;;
+
+	# Undocumented
+        -emb-trimedia)
+            if [ "$TARGET" != "default" ]; then
+              echo "Multiple targets specified"
+              FAIL=1
+            fi
+            TARGET=emb-trimedia
+	    MAPPERFLAGS=
+            COMBINE_COMPILE_LINK=1
+            shift
+            ;;
+
+	# Undocumented
+        -emb-pentium)
+            if [ "$TARGET" != "default" ]; then
+              echo "Multiple targets specified"
+              FAIL=1
+            fi
+            TARGET=emb-pentium
+	    MAPPERFLAGS=
+            shift
+            ;;
+
+	# Undocumented
+        -emb-trimedia-lus)
+            if [ "$TARGET" != "default" ]; then
+              echo "Multiple targets specified"
+              FAIL=1
+            fi
+            TARGET=emb-trimedia-lus
+	    MAPPERFLAGS=-da
+            COMBINE_COMPILE_LINK=1
+            shift
+            ;;
+
+	# Undocumented
+        -emb-pentium-lus)
+            if [ "$TARGET" != "default" ]; then
+              echo "Multiple targets specified"
+              FAIL=1
+            fi
+            TARGET=emb-pentium
+	    MAPPERFLAGS=-da
+            shift
+            ;;
+
+	-pg)
+	    CPLUSFLAGS="$CPLUSFLAGS $1"
+	    LDFLAGS="$LDFLAGS $1"
+	    PROFILING=1
+	    shift
+	    ;;
+
+	-falias|-fno-alias|-ffnalias|-fno-fnalias|-pg|-f*|-vec*|-prof*|-unro*|-ip*|-wp*|-ax*|-pc*|-tpp*|-rcd)
+	    CPLUSFLAGS="$CPLUSFLAGS $1"
+	    LDFLAGS="$LDFLAGS $1"
+	    shift
+	    ;;
+
+        -a*)
+            if [ "$PROCNO" != "default" ]; then
+              echo "Multiple processor numbers specified (-a<n>)"
+              FAIL=1
+            fi
+            PROCNO=$1
+            shift
+            ;;
+
+	--noinline|--strict-analysis|--noinlining|--nopragma|--noprint|--nocomplex|--nocards|--nodelete|--java-array|--java|--noeach|-W*|--noboundscheck|--nogc|--nonotnullassert|-Z*)
+	    FRONTFLAGS="$FRONTFLAGS $1"
+	    shift
+	    ;;
+
+	-verbosemem)
+	    VNUSFLAGS="$VNUSFLAGS -dG"
+	    shift
+	    ;;
+
+	--verify)
+	    VERIFYMODE=1
+	    FRONTFLAGS="$FRONTFLAGS $1"
+	    shift
+	    ;;
+
+	--timings)
+	    TRACE="time -v"
+	    shift
+	    ;;
+
+	--parallel-vnus)
+	    VNUSFLAGS="$VNUSFLAGS -p"
+	    shift
+	    ;;
+
+	--timer)
+	    VNUSFLAGS="$VNUSFLAGS -dt"
+	    shift
+	    ;;
+
+	# Undocumented
+	--trace)
+	    TRACE=echo
+	    shift
+	    ;;
+
+	--version)
+	    showversion
+	    exit 0
+	    ;;
+
+	--versions)
+	    showversions
+	    exit 0
+	    ;;
+
+	-sourcepath|-classpath|-P)
+	    FRONTFLAGS="$FRONTFLAGS -P $2"
+	    shift
+	    shift
+	    ;;
+
+	-o)
+	    EXECUTABLE=$2
+	    shift
+	    shift
+	    ;;
+
+	# Undocumented
+	-g)
+	    CPLUSFLAGS="$CPLUSFLAGS -g"
+	    LDFLAGS="$LDFLAGS -g"
+	    shift
+	    ;;
+
+	-O*|-f*|-m*|-save-temps)
+	    CPLUSFLAGS="$CPLUSFLAGS $1"
+	    shift
+	    ;;
+
+	-h|-help|--help)
+	    showusage
+	    exit 0
+	    ;;
+
+	-d*)
+	    FRONTFLAGS="$FRONTFLAGS $1"
+	    shift
+	    ;;
+
+	-l*)
+	    LIBS="$LIBS $1"
+	    shift
+	    ;;
+
+	-*)
+	    echo "unknown option '$1'"
+	    showusage
+	    shift
+	    FAIL=1
+	    ;;
+
+	*.v)
+	    VNUSFILES="$VNUSFILES $1"
+	    shift
+	    ;;
+
+	*.spar|*.java|*.jav)
+	    SPARFILES="$SPARFILES $1"
+	    NEEDSPARRTL=1
+	    shift
+	    ;;
+
+	*.c|*.C|*.cc|*.cpp|*.cxx)
+	    CPLUSFILES="$CPLUSFILES $1"
+	    shift
+	    ;;
+
+	*.o)
+	    LDFILES="$LDFILES $1"
+	    shift
+	    ;;
+
+	*.a)
+	    LIBFILES="$LIBFILES $1"
+	    shift
+	    ;;
+
+	# Required for the Jacks validation suite in combination
+	# with the --execute flag
+	*)
+	    if [ -e $1.java ] ; then
+		SPARFILES="$SPARFILES $1.java"
+		NEEDSPARRTL=1
+	    elif [ -e $1.spar ] ; then
+		SPARFILES="$SPARFILES $1.spar"
+		NEEDSPARRTL=1
+	    elif [ -e $1.jav ] ; then
+		SPARFILES="$SPARFILES $1.jav"
+		NEEDSPARRTL=1
+	    else
+		echo "$0: Don't know what to do with file '$1'"
+		FAIL=1
+	    fi
+	    shift
+	    ;;
+    esac
+done
+
+if [ "$TARGET" = "default" ] ; then
+  TARGET=seq
+fi
+
+if [ "$PROCNO" = "default" ] ; then
+    if [ "$TARGET" != "seq" ] ; then
+	cat << EOF
+For parallelizing compilation you must specify the number of processors
+to use. You can do this with the -a<n> option.
+EOF
+	FAIL=1
+    fi
+fi
+
+if [ $FAIL = 1 ]; then
+    exit 1
+fi
+
+case "$TARGET" in
+  seq)
+    COMMLIB=sequential
+    DISTRIBUTED="no"
+    ;;
+
+  trimedia)
+    TMDRV_PATH="$HOME/trimedia/tmdrvsrc_1.0"
+    DISTRIBUTED="no"
+    COMMLIB=sequential
+    CXX="tmcc"
+    VNUSFLAGS="$VNUSFLAGS -l"
+    CPLUSFLAGS="$CPLUSFLAGS -el -host MacOS -tmcfe -Xtmpl=local --"
+    LDFLAGS="$LDFLAGS -tmconfig=$TMDRV_PATH/dsp/lib/tmconfig.linux-i386 -L$VNUSRUNTIMELIB -L$TMDRV_PATH/dsp/lib"
+    LIBFILES="$LIBFILES -ltmdrv -ldev -lvnusio-ts -lvnusrtl-ts"
+    if [ $NEEDSPARRTL = 1 ]; then
+      LDFLAGS="$LDFLAGS -L$SPARRUNTIMELIB"
+      LIBFILES="$LIBFILES -lspar-rtl-ts"
+    fi
+    ;;
+
+  emb-trimedia|emb-trimedia-lus)
+    TMDRV_PATH="$HOME/trimedia/tmdrvsrc_1.0"
+    DISTRIBUTED="yes"
+    COMMLIB=ptm
+    CXX="tmcc"
+    VNUSFLAGS="$VNUSFLAGS -l"
+    CPLUSFLAGS="$CPLUSFLAGS -el -host MacOS -tmcfe -Xtmpl=local --"
+    FRONTFLAGS="$FRONTFLAGS"
+    LDFLAGS="$LDFLAGS -tmconfig=$TMDRV_PATH/dsp/lib/tmconfig.linux-i386 -L$VNUSRUNTIMELIB -L$TMDRV_PATH/dsp/lib"
+    LIBFILES="$LIBFILES -lvnusio-tp -lvnusrtl-ts -lvnusglue-te $VNUSRUNTIMELIB/embedded/libensemble-trimedia.a -ltmdrv -ldev"
+    if [ $NEEDSPARRTL = 1 ]; then
+      LDFLAGS="$LDFLAGS -L$SPARRUNTIMELIB"
+      LIBFILES="$LIBFILES -lspar-rtl-te"
+    fi
+    ;;
+
+  emb-pentium)
+    TMDRV_PATH="$HOME/trimedia/tmdrvsrc_1.0"
+    TCS_PATH="/usr/local/src/tcs2.0beta"
+    DISTRIBUTED="yes"
+    FRONTFLAGS="$FRONTFLAGS"
+    LDFLAGS="$LDFLAGS -L$TMDRV_PATH/linux/lib -L$TCS_PATH/lib/Linux -L$VNUSRUNTIMELIB"
+    LIBFILES="-lvnusio-p -lvnusrtl-s -lvnusglue-e $VNUSRUNTIMELIB/embedded/libensemble-host-i386.a -ltmdrv -lload $LIBFILES"
+    if [ $NEEDSPARRTL = 1 ]; then
+      LIBFILES="$SPARRUNTIMELIB/libspar-rtl-s.a $LIBFILES"
+    fi
+    ;;
+
+  das)
+    DISTRIBUTED="yes"
+    COMMLIB=panda
+    ;;
+
+  mpi-mpich)
+    DISTRIBUTED="yes"
+    COMMLIB=mpi-mpich
+    ;;
+
+  mpi-lam)
+    DISTRIBUTED="yes"
+    COMMLIB=mpi-lam
+    CPLUSFLAGS="-I$LAM_INCLUDEDIR -I$LAM_INCLUDEDIR/mpi2c++ -DLAM_BUILDING=0 $CPLUSFLAGS"
+    LDFLAGS="$LDFLAGS -L$LAM_LIBDIR"
+    ;;
+
+  pvm)
+    DISTRIBUTED="yes"
+    COMMLIB=pvm
+    PVM_INCLUDE="-I$PVM_INCLUDEDIR"
+    if [ "$PVM_INCLUDEDIR" == "/usr/include" ]; then
+      PVM_INCLUDE=""
+    fi
+    CPLUSFLAGS="$PVM_INCLUDE $CPLUSFLAGS"
+    ;;
+
+  *)
+    echo "Internal error: unknown TARGET value '$TARGET'"
+    exit 2
+    ;;
+
+esac
+
+# Now set libraries and flags for the relevant communication library
+case "$COMMLIB" in
+  sequential)
+    # Sequential means we don't need a communication library
+    LDFLAGS="$LDFLAGS -L$VNUSRUNTIMELIB"
+    LIBFILES="$LIBFILES -lvnusio-s -lvnusrtl-s"
+    if [ $NEEDSPARRTL = 1 ]; then
+      LIBFILES="$SPARRUNTIMELIB/libspar-rtl-s.a $LIBFILES"
+    fi
+    ;;
+
+  undetermined)
+    echo "Internal error: undetermined COMMLIB value"
+    exit 2
+    ;;
+
+  ptm)
+    ;;
+
+  mpi-lam)
+    LDFLAGS="$LDFLAGS -L$VNUSRUNTIMELIB"
+    LIBFILES="$LIBFILES -lvnusio-p -lvnusglue-m -lvnusrtl-s $LAM_LIBS"
+    if [ $NEEDSPARRTL = 1 ]; then
+      LIBFILES="$SPARRUNTIMELIB/libspar-rtl-s.a $LIBFILES"
+    fi
+    ;;
+
+  mpi-mpich)
+    LDFLAGS="$LDFLAGS $MPICH_LIBDIR_FLAGS -L$VNUSRUNTIMELIB"
+    LIBFILES="$LIBFILES -lvnusio-p -lvnusglue-m -lvnusrtl-s $MPICH_LIBS_FLAGS"
+    if [ $NEEDSPARRTL = 1 ]; then
+      LIBFILES="$SPARRUNTIMELIB/libspar-rtl-s.a $LIBFILES"
+    fi
+    ;;
+
+  pvm)
+    LDFLAGS="$LDFLAGS -L$VNUSRUNTIMELIB -L$PVM_LIBDIR"
+    LIBFILES="$LIBFILES -lvnusio-p -lvnusrtl-s -lvnusglue-d -lgpvm3 -lpvm3"
+    if [ $NEEDSPARRTL = 1 ]; then
+      LIBFILES="$SPARRUNTIMELIB/libspar-rtl-s.a $LIBFILES"
+    fi
+    ;;
+
+  panda)
+    LDFLAGS="$LDFLAGS -L/usr/local/package/myrinet/lib/intel_linux -L$PANDA/lib/$PANDA_ARCH -L$LFCLIB/$LFCVERSION -L$DASLIB/lib/i386_Linux -L$VNUSRUNTIMELIB"
+    LIBFILES="$LIBFILES -lvnusio-p -lvnusrtl-s -lvnusglue-p -lpanda -llfc -lDpi -lLanaiDevice -lbfd -liberty -ldas"
+    if [ $NEEDSPARRTL = 1 ]; then
+      LIBFILES="$SPARRUNTIMELIB/libspar-rtl-s.a $LIBFILES"
+    fi
+    ;;
+
+  *)
+    echo "Internal error: unknown COMMLIB value '$COMMLIB'"
+    exit 2
+    ;;
+
+esac
+
+#
+# Spar frontend phase
+#
+for f in $SPARFILES; do
+    if [ $KEEPFILES = 1 ]; then
+	case "$f" in
+	    *.spar)
+		OUT=`basename $f .spar`.v
+		;;
+
+	    *.java)
+		OUT=`basename $f .java`.v
+		;;
+
+	     *)
+		echo "$o: Don't know how to get the basename of file '$f'"
+		exit 2
+		;;
+	esac
+    else
+	OUT=$TMPDIR/spar$$.$N.v
+	N=`expr $N + 1`
+	JUNK="$JUNK $OUT"
+    fi
+    VNUSFILES="$OUT $VNUSFILES"
+    $TRACE $FRONT $FRONTFLAGS -o $OUT $f
+    if [ $? != 0 ]; then
+	abort
+    fi
+done
+
+# If we're in verify mode, we only want to run the frontend
+if [ $VERIFYMODE = 1 ]; then
+    cleanup
+    exit 0
+fi
+
+#
+# Vnus phase
+#
+if [ "$DISTRIBUTED" = "yes" ]; then
+  # sequential vnus -> sequential tm -> distributed tm -> c++
+  for f in $VNUSFILES; do
+      #sequential vnus -> tm
+      if [ $KEEPFILES = 1 ]; then
+	  OUT_TM_SEQ=`basename $f .v`-s.tm
+      else
+  	  OUT_TM_SEQ=$TMPDIR/spar$$.$N-s.tm
+	  N=`expr $N + 1`
+	  JUNK="$JUNK $OUT_TM_SEQ"
+      fi
+      $TRACE $VNUS -t $PROCNO $f -o $OUT_TM_SEQ
+
+      # run 'initial' engine
+      if [ $KEEPFILES = 1 ]; then
+	  OUT_INIT_DIST=`basename $f .v`-init.tm
+      else
+  	  OUT_INIT_DIST=$TMPDIR/spar$$.$N-init.tm
+	  N=`expr $N + 1`
+	  JUNK="$JUNK $OUT_INIT_DIST"
+      fi
+#      echo PERFORMING $INITIAL $MAPPERFLAGS
+      $TRACE $INITIAL $MAPPERFLAGS < $OUT_TM_SEQ > $OUT_INIT_DIST
+      if [ $? != 0 ]; then
+	  abort
+      fi
+
+      #sequential tm -> distributed tm
+      if [ $KEEPFILES = 1 ]; then
+	  OUT_ALIGN_DIST=`basename $f .v`-align.tm
+      else
+  	  OUT_ALIGN_DIST=$TMPDIR/spar$$.$N-align.tm
+	  N=`expr $N + 1`
+	  JUNK="$JUNK $OUT_ALIGN_DIST"
+      fi
+#      echo PERFORMING $ALIGN $MAPPERFLAGS
+      $TRACE $ALIGN -l$ALVL $MAPPERFLAGS < $OUT_INIT_DIST > $OUT_ALIGN_DIST
+
+      #sequential tm -> distributed tm
+      if [ $KEEPFILES = 1 ]; then
+	  OUT_TM_DIST=`basename $f .v`-spmd.tm
+      else
+  	  OUT_TM_DIST=$TMPDIR/spar$$.$N-spmd.tm
+	  N=`expr $N + 1`
+	  JUNK="$JUNK $OUT_TM_DIST"
+      fi
+#      echo PERFORMING $SPMD $MAPPERFLAGS
+      $TRACE $SPMD $MAPPERFLAGS < $OUT_ALIGN_DIST > $OUT_TM_DIST
+      if [ $? != 0 ]; then
+	  abort
+      fi
+
+      #distributed tm -> c++
+      if [ $KEEPFILES = 1 ]; then
+	  OUT=`basename $f .v`.cc
+      else
+  	  OUT=$TMPDIR/spar$$.$N.cc
+	  N=`expr $N + 1`
+	  JUNK="$JUNK $OUT"
+      fi
+      CPLUSFILES="$OUT $CPLUSFILES"
+      $TRACE $VNUS $VNUSFLAGS -r -p $PROCNO $OUT_TM_DIST -o $OUT
+      if [ $? != 0 ]; then
+	abort
+      fi
+      if [ $? != 0 ]; then
+	abort
+      fi
+  done
+else
+  # sequential vnus -> c++
+  for f in $VNUSFILES; do
+      if [ $KEEPFILES = 1 ]; then
+	  OUT=`basename $f .v`.cc
+      else
+  	OUT=$TMPDIR/spar$$.$N.cc
+	N=`expr $N + 1`
+	JUNK="$JUNK $OUT"
+      fi
+      CPLUSFILES="$OUT $CPLUSFILES"
+      $TRACE $VNUS $VNUSFLAGS $f -o $OUT
+      if [ $? != 0 ]; then
+	abort
+      fi
+  done
+fi
+
+
+if [ $COMBINE_COMPILE_LINK = 1 ]; then
+    $TRACE $CXX $CPLUSFLAGS $LDFLAGS $CPLUSFILES $LDFILES $LIBFILES $LIBS -o $EXECUTABLE
+  {
+    if [ $? != 0 ]; then
+	abort
+    fi
+  }
+else
+  {
+    # C++ phase
+    for f in $CPLUSFILES; do
+        if [ $KEEPFILES = 1 ]; then
+	    OUT=`basename $f .cc`.o
+        else
+	    OUT=$TMPDIR/spar$$.$N.o
+            N=`expr $N + 1`
+            JUNK="$JUNK $OUT"
+        fi
+        LDFILES="$OUT $LDFILES"
+        $TRACE $CXX -c $CPLUSFLAGS $f -o $OUT
+        if [ $? != 0 ]; then
+	    abort
+        fi
+    done
+    # link phase
+    $TRACE $CXX $LDFLAGS $LDFILES $LIBFILES -o $EXECUTABLE
+    if [ $? != 0 ]; then
+	abort
+    fi
+  }
+fi
+
+if [ $TARGET = pvm ]; then
+    cp -f $EXECUTABLE $HOME/pvm3/bin/LINUX/
+fi
+
+if [ $EXECUTE = 1 ]; then
+    $TRACE $EXECUTABLE
+    JUNK="$JUNK $EXECUTABLE"
+fi
+
+cleanup

@@ -1,0 +1,6 @@
+errbreak.spar:7: 'break' without label must be in a loop or switch statement
+errbreak.spar:8: A 'continue' must be in a loop
+errbreak.spar:10: Label already defined in an outer block: 'l'
+errbreak.spar:15: Label not found: 'z'
+errbreak.spar:17: Label not found: 'z'
+errbreak.spar:21: The label of a 'continue' statement must refer to a loop

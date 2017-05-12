@@ -1,0 +1,2 @@
+errflow.spar:16: Variable `a' may not have been initialized
+errflow.spar:17: Variable `b' has not been initialized

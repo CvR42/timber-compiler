@@ -1,0 +1,19 @@
+// After JLS2 16 Definite assignment
+
+public final class okjlsunflow1 {
+    static void unflow( boolean flag ){
+	final int k;
+	if (flag) {
+	    k = 3;
+	    __println(1,k);
+	}
+	else {
+	    k = 4;
+	    __println(1,k);
+	}
+    }
+    public static void main(){
+	unflow( true );
+	unflow( false );
+    }
+}

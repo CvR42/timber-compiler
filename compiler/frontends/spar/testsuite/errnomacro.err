@@ -1,0 +1,4 @@
+errnomacro.spar:7: syntax error
+    public inline static void main()
+                  ^^^^^^
+cannot recover from earlier parse errors, goodbye

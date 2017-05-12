@@ -1,0 +1,61 @@
+// Test of the constant folder.
+// All of the expressions below should be folded to something simpler.
+
+package spar.testsuite;
+
+public class genfold {
+    public static boolean side_effect(){
+	__println( 1, "Hi! I'm a side-effect" );
+	return false;
+    }
+    public static void main()
+    {
+	boolean b;
+	int i;
+	long l;
+	short s;
+	byte bt;
+	__string str;
+	complex x;
+
+	b = !false;
+	b = !true;
+	i = -12;
+	i = +12;
+	i = ~1;
+	i = ~0;
+	str = "a"+"b";
+	b = 1 == 1;
+	b = 1 != 1;
+	b = "a" == "a";
+	b = "a" != "a";
+	b = 1l == 1l;
+	b = 1l != 1l;
+	b = 1 == 1l;
+	i = (int) (short) 3;
+	x = 1i;
+	inline for( k :- 0:3, j :- 0:3 ){
+	    if( k==0 && j==0 ){
+		__println( 1, "yep" );
+	    }
+	    __println( 1, "Hi, k=", k, " j=", j );
+	}
+	__println( 1,true && side_effect() );
+	__println( 1, false && side_effect() );
+	__println( 1, side_effect() && true );
+	__println( 1, side_effect() && false );
+	__println( 1,true || side_effect() );
+	__println( 1, false || side_effect() );
+	__println( 1, side_effect() || true );
+	__println( 1, side_effect() || false );
+	__println( 1,true & side_effect() );
+	__println( 1, false & side_effect() );
+	__println( 1, side_effect() & true );
+	__println( 1, side_effect() & false );
+	__println( 1,true | side_effect() );
+	__println( 1, false | side_effect() );
+	__println( 1, side_effect() | true );
+	__println( 1, side_effect() | false );
+	i = 42 % 5;
+    }
+}

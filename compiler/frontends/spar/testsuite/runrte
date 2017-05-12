@@ -1,0 +1,116 @@
+#!/bin/sh
+#
+# Run a test that is supposed to succeed.
+
+TIMBERSRCROOT=../../..
+SPARFLAGS=-g
+
+# Places of executables
+SPAR=$TIMBERSRCROOT/driver/spar
+VERBOSE=0
+FILE=
+SPARPATH=$TIMBERSRCROOT/frontends:$SPARPATH
+export SPARPATH
+
+for f; do
+    case "$f" in
+	-v)
+	    VERBOSE=1;;
+
+	-*)
+	    echo "unknown option '$f'"; exit 2 ;;
+
+	*)
+	    FILE=$f ;;
+    esac
+done
+
+if [ x$FILE = x ]; then
+    echo "No file specified"
+    exit 2
+fi
+BASENAME=`basename $FILE .spar`
+BASENAME=`basename $BASENAME .java`
+EXEFILE=$BASENAME
+OUTFILE=$BASENAME.out
+ERRFILE=$BASENAME.err
+TESTOUTFILE=$BASENAME.testout
+TESTERRFILE=$BASENAME.testerr
+STATUSFILE=$BASENAME.status
+FLAGSFILE=$BASENAME.flags
+if [ ! -e $ERRFILE ]; then
+    echo "Creating default (=empty) output reference file '$ERRFILE'"
+    touch $ERRFILE
+fi
+if [ ! -e $OUTFILE ]; then
+    echo "Creating default (=empty) output reference file '$OUTFILE'"
+    touch $OUTFILE
+fi
+if [ ! -e $STATUSFILE ]; then
+    echo "Creating  default (=='1') status file '$STATUSFILE'"
+    echo 1 > $STATUSFILE
+fi
+if [ ! -s $STATUSFILE ]; then
+    echo "status file '$STATUSFILE' is empty"
+    exit 2
+fi
+OKSTATUS=`cat $STATUSFILE`
+if [ -e $FLAGSFILE ]; then
+    SPARFLAGS="$SPARFLAGS `cat $FLAGSFILE`"
+fi
+if [ $VERBOSE = 1 ]; then
+    echo spar $SPARFLAGS $FILE
+fi
+FAIL=0
+$SPAR $SPARFLAGS $FILE -o $EXEFILE
+STATUS=$?
+if [ $STATUS != 0 ]; then
+    echo "Compilation failed with status code $STATUS"
+    FAIL=1
+fi
+if [ $VERBOSE = 1 ]; then
+    echo $EXEFILE
+fi
+./$EXEFILE 2> $TESTERRFILE 1> $TESTOUTFILE
+STATUS=$?
+if [ $STATUS -ne $OKSTATUS ]; then
+    echo "Execution failed with status code $STATUS instead of $OKSTATUS."
+    if [ $FAIL = 0 ]; then
+	echo "If you think the status code should be $STATUS, update with:"
+	echo "    echo $STATUS >! $STATUSFILE"
+    fi
+    FAIL=1
+fi
+CMD="diff $TESTERRFILE $ERRFILE"
+if [ $VERBOSE = 1 ]; then
+    echo $CMD
+fi
+$CMD
+STATUS=$?
+if [ $STATUS != 0 ]; then
+    echo "stderr of execution differs from reference."
+    if [ $FAIL = 0 ]; then
+	echo "If you think the reference is wrong, update with:"
+	echo "    cp $TESTERRFILE $ERRFILE"
+    fi
+    FAIL=1
+fi
+CMD="diff $TESTOUTFILE $OUTFILE"
+if [ $VERBOSE = 1 ]; then
+    echo $CMD
+fi
+$CMD
+STATUS=$?
+if [ $STATUS != 0 ]; then
+    echo "Output of execution differs from reference."
+    if [ $FAIL = 0 ]; then
+	echo "If you think the reference is wrong, update with:"
+	echo "    cp $TESTOUTFILE $OUTFILE"
+    fi
+    FAIL=1
+fi
+if [ $FAIL = 1 ]; then
+    exit 1
+fi
+rm -f $EXEFILE $TESTERRFILE $TESTOUTFILE
+exit 0

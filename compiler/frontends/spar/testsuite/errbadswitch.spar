@@ -1,0 +1,15 @@
+
+public class errbadswitch {
+    public static void main( String args[] ){
+        byte b;
+
+	b = 257;
+
+	switch( b ){
+	     case 299:
+	}
+
+	switch( 1l ) {
+	}
+    }
+}

@@ -1,0 +1,24 @@
+// After JLS 8.5    Static Initializers
+//
+// The program should print '0' because the variable initializer for 'i'
+// uses the the class method 'peek' to access the value of the variable
+// 'j' before 'j' has been initialized by its variable initializer,
+// at which point it still has its default value.
+//
+// Spar currently prints '1'. I can't say I care much.
+
+
+class Z {
+    static int peek() { return j; }
+
+    static int i = peek();
+    static int j = 1;
+}
+
+
+public class okjlspeek {
+    public static void main(String[] args) {
+        __println(1,Z.i);
+    }
+
+}

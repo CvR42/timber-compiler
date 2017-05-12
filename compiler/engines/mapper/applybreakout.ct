@@ -1,0 +1,364 @@
+/*
+   Applybreakout engine
+
+   Breakout owner conflict if it is not placed on the assignment sign
+   of an assignment statement.
+   Derived from rule it1.
+   If expression to be broken out is a shape reference use the shape itself
+   with different distributions in a assign-to-self statement.
+   Otherwise introduce a tempo.
+
+   When creating a breakout statement, copy the pragmas of the original
+   statement. This is important in order to keep information, for example
+   for stencil operations.
+   */
+
+.. File: applybreakout.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors block statement SmtAssign
+.append actors ExprWrapper LocWrapper
+.append actors expression
+.append actors statement_list
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "vnusctl.h"
+#include "applybreakout.h"
+
+.call generate_action_forwards "$(actors)"
+.call generate_walker_forwards "$(visit_types)"
+
+/* -- support --*/
+
+static bool canReachExprWrapper(
+    expression e)
+{
+    switch (e->tag)
+    {
+	case TAGExprWrapper:
+	    return (to_ExprWrapper(e)->on != OwnerExpr_listNIL &&
+		    to_ExprWrapper(e)->on->sz != 0);
+	    break;
+	case TAGExprNotNullAssert:
+	    return canReachExprWrapper(to_ExprNotNullAssert(e)->x);
+	    break;
+	case TAGExprWhere:
+	    return canReachExprWrapper(to_ExprWhere(e)->x);
+	    break;
+	default:
+	    return false;
+	    break;
+    }    
+}
+
+static bool canReachLocWrapper(
+    location e)
+{
+    switch (e->tag)
+    {
+	case TAGLocWrapper:
+	    return (to_LocWrapper(e)->on != OwnerExpr_listNIL &&
+		    to_LocWrapper(e)->on->sz != 0);
+	    break;
+	case TAGLocNotNullAssert:
+	    return canReachLocWrapper(to_LocNotNullAssert(e)->l);
+	    break;
+	case TAGLocWhere:
+	    return canReachLocWrapper(to_LocWhere(e)->l);
+	    break;
+	default:
+	    return false;
+	    break;
+    }    
+}
+
+static expression pierceThroughExprWrapper(
+    expression e)
+{
+    switch (e->tag)
+    {
+	case TAGExprWrapper:
+	{
+	    ExprWrapper ew = to_ExprWrapper(e);
+	    if (ew->on != OwnerExpr_listNIL &&
+		    ew->on->sz != 0)
+		return ew->x;
+	    else
+		return pierceThroughExprWrapper(ew->x);
+	    break;
+	}
+	case TAGExprNotNullAssert:
+	    return pierceThroughExprWrapper(to_ExprNotNullAssert(e)->x);
+	    break;
+	case TAGExprWhere:
+	    return pierceThroughExprWrapper(to_ExprWhere(e)->x);
+	    break;
+	default:
+	    return e;
+	    break;
+    }    
+}
+
+static expression create_breakout_self_statement(
+  expression e, global_context gc )
+{
+.call conditional_init_scope
+.call conditional_init_prelst
+    location lhs = locationNIL;
+    expression ret = expressionNIL;
+
+    assert(e != expressionNIL);
+    assert(gc->current_owner != OwnerExpr_listNIL);
+    expression ep = pierceThroughExprWrapper(e);
+    assert (ep->tag == TAGExprSelection);
+    
+    lhs = expression_to_location(ep);
+    ret = rdup_expression(ep);
+    
+    SmtAssign nsa = new_SmtAssign(
+	0,
+	gen_origin(),
+	new_Pragma_list(),
+	rdup_OwnerExpr_list(gc->current_owner),
+	lhs,
+	e);
+    FlagPragma np = new_FlagPragma(add_origsymbol("isAssignToSelf"));
+    nsa->pragmas = append_Pragma_list(nsa->pragmas, np);
+    if (gc->current_pragmas != Pragma_listNIL)
+	nsa->pragmas = concat_Pragma_list(
+	    nsa->pragmas,
+	    rdup_Pragma_list(gc->current_pragmas));
+
+    
+    
+    gc->prelst = append_statement_list(gc->prelst, nsa);
+    if (warning_level >= WARN_RULE)
+	fprintf(stderr,"BREAKOUT: did self rewrite\n");
+    return ret;
+}
+
+static expression create_breakout_tempo_statement(
+  expression e, global_context gc )
+{
+.call conditional_init_scope
+.call conditional_init_prelst
+    location lhs = locationNIL;
+    expression ret = expressionNIL;
+
+    assert(e != expressionNIL);
+    assert(gc->current_owner != OwnerExpr_listNIL);
+    type t = derive_type_expression(
+	gc->prog->declarations,
+	0, /*origin*/
+	e);
+    assert(t != typeNIL);
+    DeclLocalVariable nld = new_DeclLocalVariable(
+	gen_origsymbol("__tmp_breakout_"),
+	0,
+	new_Pragma_list(),
+	rdup_tmsymbol(gc->scope),
+	t,
+	new_OptExprNone());
+    gc->prog->declarations = append_declaration_list(
+	gc->prog->declarations, nld);
+    FlagPragma np = new_FlagPragma(add_origsymbol("isTempo"));
+    nld->pragmas = append_Pragma_list(nld->pragmas, np);
+    lhs = new_LocName(
+	rdup_origsymbol(nld->name));
+    ret = new_ExprName(
+	rdup_origsymbol(nld->name));
+    
+    SmtAssign nsa = new_SmtAssign(
+	0,
+	gen_origin(),
+	rdup_Pragma_list(gc->current_pragmas),
+	rdup_OwnerExpr_list(gc->current_owner),
+	lhs,
+	e);
+    
+    gc->prelst = append_statement_list(gc->prelst, nsa);
+    if (warning_level >= WARN_RULE)
+	fprintf(stderr,"BREAKOUT: did tempo rewrite\n");
+    return ret;
+}
+
+static expression create_breakout_statement(
+  expression e, global_context gc )
+{
+    if (pierceThroughExprWrapper(e)->tag == TAGExprSelection)
+	return create_breakout_self_statement(e, gc);
+    else
+	return create_breakout_tempo_statement(e, gc);
+}
+
+/* ----------- Actors ----------- */
+
+.call generate_admin_prelst_action statement_list
+
+/*
+  Only go deeper if necessary
+  This is an optimisation, otherwise all expressions up to all depths
+  would be visited.
+
+  If this node is encountered we have found an owner conflict. Break it
+  out into a separate assigment stmt and introduce a new tempo.
+  Put this new stmt just before the current stmt.
+
+  Grrr, the next is ok, but we should always do the deeper stuff first.
+  There might be something else out there worth breaking out.
+  Not in this case of course, because there is only one owner conflict,
+  but we might need this code in other cases as well.
+  Sigh.
+  */
+static expression rewrite_expression_action(
+  expression e, global_context gc )
+{
+.call generate_walker_call "    " e expression expression
+    if (gc->do_transform && canReachExprWrapper(e))
+    {
+	expression ret = create_breakout_statement(e,gc);
+	return ret;
+    }
+    return e;
+}
+
+/*
+  Find the owner conflict. It can be anywhere in the rhs.
+  It can also be inside the lhs, but not at the toplevel.
+  This is why there is no breakout rule for LocWrapper above.
+  If the rhs has an owner at the toplevel, then that is the place where
+  the conflict is, so don't break out: stmt is already in right normal form.
+  If a lhs has an owner it is assumed to be the same as the statement.
+  */
+static SmtAssign rewrite_SmtAssign_action(
+  SmtAssign e, global_context gc )
+{
+.call generate_descent_call "    " e->lhs location location
+.call push_do_transform
+    gc->do_transform = !canReachExprWrapper(e->rhs);
+.call generate_descent_call "    " e->rhs expression expression
+.call pop_do_transform
+    return e;
+}
+
+
+/*
+  Save the previous scope and replace with current scope.
+  If current scope has no name and a variable is created, then the scope
+  gets a name and this name has to be set.
+  */
+static block rewrite_block_action(
+  block e, global_context gc )
+{
+.call push_scope
+    if (e->on != OwnerExpr_listNIL && e->on->sz != 0)
+    {
+.call push_current_owner
+        gc->current_owner = e->on;
+.call generate_walker_call "    " e block block
+.call pop_current_owner
+    }
+    else
+    {
+.call generate_walker_call "    " e block block
+    }
+// If something was done a scope was created, so scope has to be set.
+.call conditional_set_scope e->scope
+.call pop_scope
+    return e;
+}
+
+static ExprWrapper rewrite_ExprWrapper_action(
+    ExprWrapper e, global_context gc)
+{
+.call push_do_transform
+    gc->do_transform = true;
+    if (e->on != OwnerExpr_listNIL && e->on->sz != 0)
+    {
+.call push_current_owner
+        gc->current_owner = e->on;
+.call generate_walker_call "    " e ExprWrapper ExprWrapper
+.call pop_current_owner
+    }
+    else
+    {
+.call generate_walker_call "    " e ExprWrapper ExprWrapper
+    }
+.call pop_do_transform
+    return e;
+}
+
+static statement rewrite_statement_action(
+    statement e, global_context gc)
+{
+.call push_current_pragmas
+    gc->current_pragmas = e->pragmas;
+    if (e->on != OwnerExpr_listNIL && e->on->sz != 0)
+    {
+.call push_current_owner
+        gc->current_owner = e->on;
+.call generate_walker_call "    " e statement statement
+.call pop_current_owner
+    }
+    else
+    {
+.call generate_walker_call "    " e statement statement
+    }
+.call pop_current_pragmas
+    return e;
+}
+
+static LocWrapper rewrite_LocWrapper_action(
+    LocWrapper e, global_context gc)
+{
+    if (e->on != OwnerExpr_listNIL && e->on->sz != 0)
+    {
+.call push_current_owner
+        gc->current_owner = e->on;
+.call generate_walker_call "    " e LocWrapper LocWrapper
+.call pop_current_owner
+    }
+    else
+    {
+.call generate_walker_call "    " e LocWrapper LocWrapper
+    }
+    return e;
+}
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_breakout(
+    vnusprog e, global_context gc )
+{
+	// Just to get rid of unused warnings
+    (void) rewrite_SmtAssign_walker;
+    (void) rewrite_statement_list_walker;
+.call init_scope
+.call init_prelst
+.call init_current_owner
+.call init_current_pragmas
+    gc->do_transform = true;
+    gc->current_owner = new_OwnerExpr_list();
+    gc->current_owner = append_OwnerExpr_list(
+	gc->current_owner,
+	new_NewOwnReplicated());
+.call generate_descent_call "    " e vnusprog vnusprog
+    rfre_OwnerExpr_list(gc->current_owner);
+    return e;
+}

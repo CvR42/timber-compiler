@@ -1,0 +1,27 @@
+// File: okconstchain.spar
+//
+// Test whether more complicated expressions are deemed compiletime constants.
+// Since a switch case requires a compile-time constant, that's an easy
+// way to test this.
+
+class t1 {
+    final public static int Y = X+okconstchain.Z;
+    final public static int X = 1;
+    static {
+	__println( 1, "Hello fans" );
+    }
+}
+
+public class okconstchain {
+    final public static int Z = 1;
+    public static void main( String args[] ){
+	int v;
+
+	__println( 1, t1.Y );
+	switch( args.length ){
+	   case t1.Y:	v = 2;	break;
+	   default:	v = 1;
+	}
+	__println( 1, v );
+    }
+}

@@ -1,0 +1,45 @@
+// File: okFile.spar
+//
+// Check methods in java.io.File.spar
+
+import java.io.File;
+import java.io.FileInputStream;
+
+public class okFile {
+    public static void main( String args[] ) throws java.io.FileNotFoundException, java.io.IOException
+    {
+	File f = new File( "okFile.spar" );
+
+	if( !f.exists() ){
+	    System.out.println( "File " + f + " does not exist" );
+	    return;
+	}
+	if( !f.canRead() ){
+	    System.out.println( "Cannot read from file " + f );
+	    return;
+	}
+	if( false ){
+	if( f.isAbsolute() ){
+	    System.out.println( "File " + f + " represents an absolute path??" );
+	    return;
+	}
+	if( f.isDirectory() ){
+	    System.out.println( "File " + f + " represents a directory??" );
+	    return;
+	}
+	if( !f.isFile() ){
+	    System.out.println( "File " + f + " is not an ordinary file??" );
+	    return;
+	}
+	}
+	FileInputStream s = new FileInputStream( f );
+	byte buffer[] = new byte[5];
+	if( s.read( buffer ) != buffer.length ){
+	    System.out.println( "Cannot read " + buffer.length + " bytes from file " + f );
+	    return;
+	}
+	for( int i=0; i<buffer.length; i++ ){
+	    System.out.println( "byte " + i + " is " + buffer[i] );
+	}
+    }
+}

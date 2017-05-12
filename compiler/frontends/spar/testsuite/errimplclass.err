@@ -1,0 +1,2 @@
+errimplclass.spar:7: Cannot implement a class: 'spar.testsuite.t1'
+errimplclass.spar:15: Unknown type 'spar.testsuite.t'

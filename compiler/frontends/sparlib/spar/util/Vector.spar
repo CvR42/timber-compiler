@@ -1,0 +1,136 @@
+// File: Vector.spar
+//
+// Typed vector implementation.
+//
+//
+// This class is supposed to have the same interface as java.util.Vector,
+// but with typed elements.
+// Methods are currently implemented on-demand.
+
+package spar.util;
+
+public final class Vector(| type t |){
+    protected int room = 0;
+    protected int elementCount = 0;
+    protected int capacityIncrement = 0;
+    protected t elementData[] = null;
+
+    public inline Vector(){}
+
+    public Vector( int initCap ){
+	this();
+	ensureCapacity( initCap );
+    }
+
+    public Vector( int initCap, int incr ){
+	this();
+	ensureCapacity( initCap );
+	capacityIncrement = incr;
+    }
+
+    <$ noGC $> public inline int size() { return elementCount; }
+
+    <$ noGC $> public inline int capacity() { return room; }
+
+    <$ noGC $> public inline [int] getSize() { return [elementCount]; }
+
+    public final synchronized void ensureCapacity( int newroom ){
+	if( newroom<room ){
+	    return;
+	}
+
+	int policyroom = room;
+
+	if( capacityIncrement == 0 ){
+	    policyroom = room;
+	}
+	else {
+	    policyroom = capacityIncrement;
+	}
+	if( newroom<policyroom ){
+	    newroom = policyroom;
+	}
+	t[] newData = new t[newroom];
+
+	if( elementData != null ){
+	    for( i :- :elementCount ){
+		newData[i] = elementData[i];
+	    }
+	    __delete elementData;
+	}
+	elementData = newData;
+	room = newroom;
+    }
+
+    public final synchronized void setSize( int sz ){
+	if( sz<elementCount ){
+	    if( type t instanceof Object ){
+		for( i :- sz:elementCount ){
+		    elementData[i] = null;
+		}
+	    }
+	}
+	else if( sz>elementCount ){
+	    ensureCapacity( sz );
+	    if( type t instanceof Object ){
+		for( i :- elementCount:sz ){
+		    elementData[i] = null;
+		}
+	    }
+	}
+	elementCount = sz;
+    }
+
+    <$ noGC $> public final inline boolean isEmpty() { return elementCount == 0; }
+
+    public inline final synchronized void addElement( t obj ){
+	ensureCapacity( elementCount+1 );
+	elementData[elementCount++] = obj;
+    }
+
+    public inline final void setElementAt( t elm, int i ){
+	if( i<0 || i>=elementCount ){
+	    throw new ArrayIndexOutOfBoundsException();
+	}
+	elementData[i] = elm;
+    }
+
+    public inline final void setElement( [int] i, t elm ){
+	if( i[0]<0 || i[0]>=elementCount ){
+	    throw new ArrayIndexOutOfBoundsException();
+	}
+	elementData@i = elm;
+    }
+
+    public final t elementAt( int i ){
+	if( i<0 || i>=elementCount ){
+	    throw new ArrayIndexOutOfBoundsException();
+	}
+	return elementData[i];
+    }
+
+    public final t getElement( [int] i ){
+	if( i[0]<0 || i[0]>=elementCount ){
+	    throw new ArrayIndexOutOfBoundsException();
+	}
+	return elementData@i;
+    }
+
+    public final synchronized void insertElementsAt( t elms[], int offset ){
+	final int n = elms.length;
+
+	ensureCapacity( elementCount+n );
+
+	// Move all elements behind the insert up
+	for [i:-:elementCount-offset] {
+	    elementData[offset+n+i] = elementData[offset+i];
+	}
+
+	// Copy in the elements.
+	for [i:- :elms.length] {
+	    elementData[offset+i] = elms[i];
+	}
+
+	elementCount += n;
+    }
+}

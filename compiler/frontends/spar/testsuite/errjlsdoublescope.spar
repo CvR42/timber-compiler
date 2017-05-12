@@ -1,0 +1,10 @@
+// After JLS2 14.4.2    Scope of Local Variable Declarations
+
+
+public class errjlsdoublescope {
+    public static void main() {
+        int i;
+        for (int i = 0; i < 10; i++)
+            __println(1,i);
+    }
+}

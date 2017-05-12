@@ -1,0 +1,23 @@
+// Test all pragma positions
+//
+// Note that pragmas are defined all over the place in parser.y, this 
+// only tests each *perceptual* place.
+
+globalpragmas <$ globalpragma $>;
+
+<$ classpragma $> public class genpragmas {
+    <$ memberpragma $> int n = 3;
+    <$ memberpragma $> public void f( <$formalpragma $> int x ){
+	return <$ expressionpragma $> x+n;
+    }
+    <$ memberpragma $> public static void main() {
+	<$ declarationpragma $> int <$typepragma$> sum = 0;
+
+	<$ statementpragma $> __println( 1, "Hello world" );
+	for( i :- 0:23 ) <$ bodypragma $> {
+	    sum += <$ expressionpragma $> 1;
+	}
+    }
+}
+
+

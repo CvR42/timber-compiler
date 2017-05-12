@@ -1,0 +1,124 @@
+/*
+  ParseOwners engine
+
+  Parse owner pragmas and translate them into owners.
+  This is updates version of code originally written by WD.
+  
+  */
+
+.. File: parseowners.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors block statement LocWrapper ExprWrapper TypePragmas
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "service.h"
+#include "parseowners.h"
+#include "parsepragmas.h"
+
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+/*
+  Rewrite action for 'TypePragmas':
+  */
+static type rewrite_TypePragmas_action(
+    TypePragmas elm, global_context gc)
+{
+    OwnerExpr_list map_l = OwnerExpr_listNIL;
+    elm->pragmas = extract_abstract_on_pragmas(elm->pragmas, &map_l);
+
+    if (map_l != OwnerExpr_listNIL)
+    {
+	switch (map_l->sz)
+	{
+	    case 0:
+		break;
+	    case 1:
+		if (elm->t->tag == TAGTypePointer &&
+		    to_TypePointer(elm->t)->elmtype->tag == TAGTypeShape)
+		{
+		    TypePointer t = to_TypePointer(elm->t);
+		    TypeShape ts = to_TypeShape(t->elmtype);
+		    if (map_l->arr[0]->tag == TAGNewOwnMap &&
+			to_NewOwnMap(map_l->arr[0])->parms->sz != ts->sizes->sz)
+			internal_error("P2A: dimensions of lambda expression and array declaration don't match");
+		    t->elmtype = new_TypeMap(map_l->arr[0], ts);
+		}
+		else
+		{
+		    elm->t = new_TypeMap(map_l->arr[0], elm->t);
+		}
+		break;
+	    default:
+		internal_error("P2A: found more than one AbstractProcessorReference in TypePragma");
+	}
+	fre_OwnerExpr_list(map_l);
+    }
+
+.call generate_walker_call "    " elm TypePragmas TypePragmas
+
+    if (elm->pragmas != Pragma_listNIL && elm->pragmas->sz == 0)
+    {
+	rfre_Pragma_list(elm->pragmas);
+	elm->pragmas = Pragma_listNIL;
+    }
+
+    return elm;
+}
+
+/*
+  Rewrite action for:
+  */
+.foreach t block statement LocWrapper ExprWrapper
+static $t rewrite_$t_action(
+    $t elm, global_context gc)
+{
+    OwnerExpr_list on_l = OwnerExpr_listNIL;
+    elm->pragmas = extract_simple_on_pragmas(elm->pragmas, &on_l);
+
+.call generate_walker_call "    " elm $t $t
+
+    if (on_l != OwnerExpr_listNIL)
+    {
+	if (elm->on == OwnerExpr_listNIL)
+	    elm->on = new_OwnerExpr_list();
+	elm->on = concat_OwnerExpr_list(elm->on, on_l);
+    }
+
+    if (elm->pragmas != Pragma_listNIL && elm->pragmas->sz == 0)
+    {
+	rfre_Pragma_list(elm->pragmas);
+	elm->pragmas = Pragma_listNIL;
+    }
+    
+    return elm;
+}
+
+.endforeach
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog parse_owners(
+    vnusprog elm, global_context gc)
+{
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}

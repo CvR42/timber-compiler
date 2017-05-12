@@ -1,0 +1,1676 @@
+.. File: constfold.ct
+..
+.. Constant folding
+..
+.. Return 'walk' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the datastructure we're walking on, and a type 't', of that variable,
+.. generate a return statement/
+.macro generate_walker_return indent var t
+$(indent)return $(var);
+.endmacro
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+.if ${member ${stemname $t} ${typelist}}
+$(indent)if( $(var) == 0 ){
+$(indent)    return $(var);
+$(indent)}
+.endif
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+static $t constfold_$t_walker( $t $(var) )
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we're walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+static $t constfold_$t_walker( $t $(var) );
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) constfold_$(type)_action( $(var) );
+.else
+$(indent)$(var) = ($(type)) constfold_$(type)_action( to_$(type)( $(var) ) );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) constfold_$(type)_walker( $(var) );
+.else
+$(indent)$(var) = ($(type)) constfold_$(type)_walker( to_$(type)( $(var) ) );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var', and a type 'type', generate
+.. the body of an empty walker function.
+.macro generate_empty_walker_body indent var type
+.endmacro
+..
+..
+.. For which types are there actions defines?
+.set actors
+.append actors BinopExpression
+.append actors ShortopExpression
+.append actors UnopExpression
+.append actors CastExpression
+.append actors BracketExpression
+.append actors IfExpression
+.append actors VectorSubscriptExpression
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "SparProgram expression" "$(actors)"}
+..
+/* File: constfold.c
+ *
+ * Do constant folding.
+ */
+
+#include <stdio.h>
+#include <tmc.h>
+#include <string.h>
+#include <math.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "error.h"
+#include "constfold.h"
+#include "analyze.h"
+#include "service.h"
+#include "dump.h"
+
+.call generate_walker_forwards "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+static bool is_numerical_literal( expression x )
+{
+    switch( x->tag ){
+	case TAGByteExpression:
+	case TAGShortExpression:
+	case TAGIntExpression:
+	case TAGLongExpression:
+	case TAGFloatExpression:
+	case TAGDoubleExpression:
+	case TAGCharExpression:
+	    return true;
+
+	default:
+	    break;
+    }
+    return false;
+}
+
+/* -------- actors ---------- */
+
+/* Constant folding for a cast expression
+ */
+static expression constfold_CastExpression_action( CastExpression x )
+{
+    if( x->x == expressionNIL ){
+	return x;
+    }
+.call generate_walker_call "    " x CastExpression CastExpression
+    if( x->t == typeNIL ){
+	return x;
+    }
+    if( x->t->tag == TAGPrimitiveType ){
+	BASETYPE bt = to_PrimitiveType(x->t)->base;
+	expression cx = x->x;
+	switch( bt ){
+	    case BT_INT:
+		switch( cx->tag ){
+		    case TAGDoubleExpression:
+		    {
+			vnus_double n = to_DoubleExpression(cx)->v;
+			if( vnus_double_is_NaN( n ) ){
+			    n = 0.0;
+			}
+			rfre_expression( x );
+			return new_IntExpression( (vnus_int) n );
+		    }
+
+		    case TAGFloatExpression:
+		    {
+			vnus_float n = to_FloatExpression(cx)->v;
+			if( vnus_double_is_NaN( (double) n ) ){
+			    n = 0.0;
+			}
+			rfre_expression( x );
+			return new_IntExpression( (vnus_int) n );
+		    }
+
+		    case TAGLongExpression:
+		    {
+			vnus_long n = to_LongExpression(cx)->v;
+			rfre_expression( x );
+			return new_IntExpression( (vnus_int) n );
+		    }
+
+		    case TAGIntExpression:
+			// Casting an int to an int is always safe :-)
+			rfre_type( x->t );
+			fre_expression( x );
+			return cx;
+
+		    case TAGByteExpression:
+		    {
+			vnus_int n = to_ByteExpression(cx)->v;
+			rfre_expression( x );
+			return new_IntExpression( n );
+		    }
+
+		    case TAGShortExpression:
+		    {
+			vnus_int n = to_ShortExpression(cx)->v;
+			rfre_expression( x );
+			return new_IntExpression( n );
+		    }
+
+		    case TAGCharExpression:
+		    {
+			vnus_long v = to_CharExpression(cx)->c;
+			rfre_expression( x );
+			return new_IntExpression( (vnus_int) v );
+		    }
+
+		    default:
+			break;
+		}
+		break;
+
+	    case BT_BYTE:
+		switch( cx->tag ){
+		    case TAGDoubleExpression:
+		    {
+			vnus_double n = to_DoubleExpression(cx)->v;
+			if( vnus_double_is_NaN( n ) ){
+			    n = 0.0;
+			}
+			rfre_expression( x );
+			return new_ByteExpression( (vnus_byte) n );
+		    }
+
+		    case TAGFloatExpression:
+		    {
+			vnus_float n = to_FloatExpression(cx)->v;
+			if( vnus_double_is_NaN( (double) n ) ){
+			    n = 0.0;
+			}
+			rfre_expression( x );
+			return new_ByteExpression( (vnus_byte) n );
+		    }
+
+		    case TAGLongExpression:
+		    {
+			vnus_long n = to_LongExpression(cx)->v;
+			rfre_expression( x );
+			return new_ByteExpression( (vnus_byte) n );
+		    }
+
+		    case TAGIntExpression:
+		    {
+			vnus_int n = to_IntExpression(cx)->v;
+			rfre_expression( x );
+			return new_ByteExpression( (vnus_byte) n );
+		    }
+
+		    case TAGShortExpression:
+		    {
+			vnus_short n = to_ShortExpression(cx)->v;
+			rfre_expression( x );
+			return new_ByteExpression( (vnus_byte) n );
+		    }
+
+		    case TAGCharExpression:
+		    {
+			vnus_int v = to_CharExpression(cx)->c;
+			rfre_expression( x );
+			return new_ByteExpression( (vnus_byte) v );
+		    }
+
+		    case TAGByteExpression:
+			rfre_type( x->t );
+			fre_expression( x );
+			return cx;
+
+		    default:
+			break;
+		}
+		break;
+
+	    case BT_SHORT:
+		switch( cx->tag ){
+		    case TAGDoubleExpression:
+		    {
+			vnus_double n = to_DoubleExpression(cx)->v;
+			if( vnus_double_is_NaN( n ) ){
+			    n = 0.0;
+			}
+			rfre_expression( x );
+			return new_ShortExpression( (vnus_short) n );
+		    }
+
+		    case TAGFloatExpression:
+		    {
+			vnus_float n = to_FloatExpression(cx)->v;
+			if( vnus_double_is_NaN( (double) n ) ){
+			    n = 0.0;
+			}
+			rfre_expression( x );
+			return new_ShortExpression( (vnus_short) n );
+		    }
+
+		    case TAGLongExpression:
+		    {
+			vnus_long n = to_LongExpression(cx)->v;
+			rfre_expression( x );
+			return new_ShortExpression( (vnus_short) n );
+		    }
+
+		    case TAGIntExpression:
+		    {
+			vnus_int n = to_IntExpression(cx)->v;
+			rfre_expression( x );
+			return new_ShortExpression( (vnus_short) n );
+		    }
+
+		    case TAGShortExpression:
+			rfre_type( x->t );
+			fre_expression( x );
+			return cx;
+
+		    case TAGByteExpression:
+		    {
+			vnus_int n = to_ByteExpression(cx)->v;
+			rfre_expression( x );
+			return new_ShortExpression( (vnus_short) n );
+		    }
+
+		    case TAGCharExpression:
+		    {
+			vnus_long v = to_CharExpression(cx)->c;
+			rfre_expression( x );
+			return new_ShortExpression( (vnus_short) v );
+		    }
+
+		    default:
+			break;
+		}
+		break;
+
+	    case BT_CHAR:
+		switch( cx->tag ){
+		    case TAGDoubleExpression:
+		    {
+			vnus_double n = to_DoubleExpression(cx)->v;
+			if( vnus_double_is_NaN( n ) ){
+			    n = 0.0;
+			}
+			rfre_expression( x );
+			return new_ByteExpression( (vnus_byte) n );
+		    }
+
+		    case TAGFloatExpression:
+		    {
+			vnus_float n = to_FloatExpression(cx)->v;
+			if( vnus_double_is_NaN( (double) n ) ){
+			    n = 0.0;
+			}
+			rfre_expression( x );
+			return new_ByteExpression( (vnus_byte) n );
+		    }
+
+		    case TAGCharExpression:
+			rfre_type( x->t );
+			fre_expression( x );
+			return cx;
+
+		    case TAGByteExpression:
+		    {
+			vnus_int n = to_ByteExpression(cx)->v;
+			rfre_expression( x );
+			return new_CharExpression( (vnus_char) n );
+		    }
+
+		    case TAGLongExpression:
+		    {
+			vnus_long n = to_LongExpression(cx)->v;
+			rfre_expression( x );
+			return new_CharExpression( (vnus_char) n );
+		    }
+
+		    case TAGShortExpression:
+		    {
+			vnus_short n = to_ShortExpression(cx)->v;
+			rfre_expression( x );
+			return new_CharExpression( (vnus_char) n );
+		    }
+
+		    case TAGIntExpression:
+		    {
+			vnus_int n = to_IntExpression(cx)->v;
+			rfre_expression( x );
+			return new_CharExpression( (vnus_char) n );
+		    }
+
+		    default:
+			break;
+		}
+		break;
+
+	    case BT_LONG:
+		switch( cx->tag ){
+		    case TAGDoubleExpression:
+		    {
+			vnus_double n = to_DoubleExpression(cx)->v;
+			if( vnus_double_is_NaN( n ) ){
+			    n = 0.0;
+			}
+			rfre_expression( x );
+			return new_LongExpression( (vnus_long) n );
+		    }
+
+		    case TAGFloatExpression:
+		    {
+			vnus_float n = to_FloatExpression(cx)->v;
+			if( vnus_double_is_NaN( (double) n ) ){
+			    n = 0.0;
+			}
+			rfre_expression( x );
+			return new_LongExpression( (vnus_long) n );
+		    }
+
+		    case TAGLongExpression:
+			rfre_type( x->t );
+			fre_expression( x );
+			return cx;
+
+		    case TAGIntExpression:
+		    {
+			vnus_long n = to_IntExpression(cx)->v;
+			rfre_expression( x );
+			return new_LongExpression( n );
+		    }
+
+		    case TAGByteExpression:
+		    {
+			vnus_long n = to_ByteExpression(cx)->v;
+			rfre_expression( x );
+			return new_LongExpression( n );
+		    }
+
+		    case TAGShortExpression:
+		    {
+			vnus_long n = to_ShortExpression(cx)->v;
+			rfre_expression( x );
+			return new_LongExpression( n );
+		    }
+
+		    case TAGCharExpression:
+		    {
+			vnus_long v = to_CharExpression(cx)->c;
+			rfre_expression( x );
+			return new_LongExpression( v );
+		    }
+
+		    default:
+			break;
+		}
+		break;
+
+	    case BT_FLOAT:
+		switch( cx->tag ){
+		    case TAGFloatExpression:
+			rfre_type( x->t );
+			fre_expression( x );
+			return cx;
+
+		    case TAGByteExpression:
+		    {
+			vnus_byte n = to_ByteExpression(cx)->v;
+			rfre_expression( x );
+			return new_FloatExpression( (vnus_float) n );
+		    }
+
+		    case TAGCharExpression:
+		    {
+			vnus_char n = to_CharExpression(cx)->c;
+			rfre_expression( x );
+			return new_FloatExpression( (vnus_float) n );
+		    }
+
+		    case TAGShortExpression:
+		    {
+			vnus_short n = to_ShortExpression(cx)->v;
+			rfre_expression( x );
+			return new_FloatExpression( (vnus_float) n );
+		    }
+
+		    case TAGIntExpression:
+		    {
+			vnus_int n = to_IntExpression(cx)->v;
+			rfre_expression( x );
+			return new_FloatExpression( (vnus_float) n );
+		    }
+
+		    default:
+			break;
+		}
+		break;
+
+	    case BT_DOUBLE:
+		switch( cx->tag ){
+		    case TAGDoubleExpression:
+			rfre_type( x->t );
+			fre_expression( x );
+			return cx;
+
+		    case TAGFloatExpression:
+		    {
+			vnus_float n = to_FloatExpression(cx)->v;
+			rfre_expression( x );
+			return new_DoubleExpression( (vnus_double) n );
+		    }
+
+		    case TAGByteExpression:
+		    {
+			vnus_byte n = to_ByteExpression(cx)->v;
+			rfre_expression( x );
+			return new_DoubleExpression( (vnus_double) n );
+		    }
+
+		    case TAGCharExpression:
+		    {
+			vnus_char n = to_CharExpression(cx)->c;
+			rfre_expression( x );
+			return new_DoubleExpression( (vnus_double) n );
+		    }
+
+		    case TAGShortExpression:
+		    {
+			vnus_short n = to_ShortExpression(cx)->v;
+			rfre_expression( x );
+			return new_DoubleExpression( (vnus_double) n );
+		    }
+
+		    case TAGIntExpression:
+		    {
+			vnus_int n = to_IntExpression(cx)->v;
+			rfre_expression( x );
+			return new_DoubleExpression( (vnus_double) n );
+		    }
+
+		    default:
+			break;
+		}
+		break;
+
+	    case BT_COMPLEX:
+		switch( cx->tag ){
+		    case TAGComplexExpression:
+			rfre_type( x->t );
+			fre_expression( x );
+			return cx;
+
+		    case TAGDoubleExpression:
+		    {
+			expression ans = new_ComplexExpression(
+			    x->x,
+			    new_DoubleExpression( 0.0 )
+			);
+			x->x = expressionNIL;
+			rfre_expression( x );
+			return ans;
+		    }
+
+		    case TAGFloatExpression:
+		    {
+			vnus_float n = to_FloatExpression(cx)->v;
+			rfre_expression( x );
+			return new_ComplexExpression(
+			    new_DoubleExpression( (vnus_double) n ),
+			    new_DoubleExpression( 0.0 )
+			);
+		    }
+
+		    case TAGByteExpression:
+		    {
+			vnus_byte n = to_ByteExpression(cx)->v;
+			rfre_expression( x );
+			return new_ComplexExpression(
+			    new_DoubleExpression( (vnus_double) n ),
+			    new_DoubleExpression( 0.0 )
+			);
+		    }
+
+		    case TAGCharExpression:
+		    {
+			vnus_char n = to_CharExpression(cx)->c;
+			rfre_expression( x );
+			return new_ComplexExpression(
+			    new_DoubleExpression( (vnus_double) n ),
+			    new_DoubleExpression( 0.0 )
+			);
+		    }
+
+		    case TAGShortExpression:
+		    {
+			vnus_short n = to_ShortExpression(cx)->v;
+			rfre_expression( x );
+			return new_ComplexExpression(
+			    new_DoubleExpression( (vnus_double) n ),
+			    new_DoubleExpression( 0.0 )
+			);
+		    }
+
+		    case TAGIntExpression:
+		    {
+			vnus_int n = to_IntExpression(cx)->v;
+			rfre_expression( x );
+			return new_ComplexExpression(
+			    new_DoubleExpression( (vnus_double) n ),
+			    new_DoubleExpression( 0.0 )
+			);
+		    }
+
+		    default:
+			break;
+		}
+		break;
+
+	    case BT_BOOLEAN:
+		switch( cx->tag ){
+		    case TAGBooleanExpression:
+			rfre_type( x->t );
+			fre_expression( x );
+			return cx;
+
+		    default:
+			break;
+		}
+		break;
+
+	    case BT_STRING:
+		switch( cx->tag ){
+		    case TAGStringExpression:
+			rfre_type( x->t );
+			fre_expression( x );
+			return cx;
+
+		    case TAGDoubleExpression:
+		    {
+			vnus_double n = to_DoubleExpression( cx )->v;
+			tmstring res = vnus_double_to_string( n );
+
+			rfre_expression( x );
+			return new_StringExpression( res );
+		    }
+
+		    case TAGFloatExpression:
+		    {
+			vnus_double n = to_FloatExpression( cx )->v;
+			tmstring res = vnus_double_to_string( n );
+
+			rfre_expression( x );
+			return new_StringExpression( res );
+		    }
+
+		    case TAGBooleanExpression:
+		    {
+			bool b = to_BooleanExpression(cx)->b;
+
+			tmstring res = new_tmstring( b?"true":"false" );
+			rfre_expression( x );
+			return new_StringExpression( res );
+		    }
+
+		    case TAGIntExpression:
+		    {
+			vnus_int n = to_IntExpression( cx )->v;
+			tmstring res = printf_tmstring( "%ld", (long) n );
+
+			rfre_expression( x );
+			return new_StringExpression( res );
+		    }
+
+		    case TAGShortExpression:
+		    {
+			vnus_int right = to_ShortExpression( cx )->v;
+			tmstring res = printf_tmstring( "%d", (int) right );
+
+			rfre_expression( x );
+			return new_StringExpression( res );
+		    }
+
+		    case TAGByteExpression:
+		    {
+			vnus_int right = to_ByteExpression( cx )->v;
+			tmstring res = printf_tmstring( "%d", (int) right );
+
+			rfre_expression( x );
+			return new_StringExpression( res );
+		    }
+
+		    case TAGCharExpression:
+		    {
+			vnus_char c = to_CharExpression( cx )->c;
+			tmstring res = vnus_char_to_string( c );
+
+			rfre_expression( x );
+			return new_StringExpression( res );
+		    }
+
+		    default:
+			break;
+		}
+		break;
+	}
+    }
+    else if( x->t->tag == TAGTupleType ){
+	expression victim = x->x;
+
+	if( victim->tag == TAGVectorExpression ){
+	    // A tuple must be cast to another type of tuple.
+	    // If the number of fields is the same in both, we may
+	    // as well put individual casts in each of the fields of
+	    // the field expression.
+	    //
+	    // Note that this transformation is always fruitful.
+	    // A tuple cast is expensive since it involves building an
+	    // entire new tuple, and if the cast is an identity operation
+	    // the individual casts are also identity operations
+	    // that can be optimized away.
+	    expression_list vl = to_VectorExpression(victim)->fields;
+	    type_list cl = to_TupleType(x->t)->fields;
+	    if( vl->sz == cl->sz ){
+		// Source and destination tuple have the same length,
+		// so there is no reason not to do the cast.
+		for( unsigned int ix=0; ix<vl->sz; ix++ ){
+		    expression vx = vl->arr[ix];
+		    vx = new_CastExpression( cl->arr[ix], vx );
+.call generate_descent_call "		    " vx CastExpression expression
+		    cl->arr[ix] = typeNIL;
+		    vl->arr[ix] = vx;
+		}
+		x->x = expressionNIL;
+		rfre_expression( x );
+		return victim;
+	    }
+	}
+    }
+    else if( x->t->tag == TAGVectorType ){
+	expression victim = x->x;
+
+	if( victim->tag == TAGVectorExpression ){
+	    // A tuple must be cast to another type of tuple.
+	    // If the number of fields is the same in both, we may
+	    // as well put individual casts in each of the fields of
+	    // the field expression.
+	    //
+	    // Note that this transformation is always fruitful.
+	    // A tuple cast is expensive since it involves building an
+	    // entire new tuple, and if the cast is an identity operation
+	    // the individual casts are also identity operations
+	    // that can be optimized away.
+	    expression_list vl = to_VectorExpression(victim)->fields;
+	    VectorType vt = to_VectorType(x->t);
+	    unsigned int sz;
+
+	    if( !extract_vector_power( originNIL, vt->power, &sz ) ){
+		return x;
+	    }
+	    if( vl->sz == sz ){
+		// Source and destination tuple have the same length,
+		// so there is no reason not to do the cast.
+		for( unsigned int ix=0; ix<vl->sz; ix++ ){
+		    expression vx = vl->arr[ix];
+		    vx = new_CastExpression( rdup_type( vt->elmtype ), vx );
+.call generate_descent_call "		    " vx CastExpression expression
+		    vl->arr[ix] = vx;
+		}
+		x->x = expressionNIL;
+		rfre_expression( x );
+		return victim;
+	    }
+	}
+    }
+    else if( x->t->tag == TAGObjectType ){
+        if( is_String_type( x->t ) && x->x->tag == TAGInternalizeExpression ){
+	    // This is an identity cast, so remove it.
+	    expression res = x->x;
+
+	    x->x = expressionNIL;
+	    rfre_expression( x );
+	    return res;
+	}
+    }
+    return x;
+}
+
+/* Constant folding for an if expression. (?:) */
+static expression constfold_IfExpression_action( IfExpression x )
+{
+.call generate_walker_call "    " x IfExpression IfExpression
+    expression cond = x->cond;
+
+    switch( cond->tag ){
+	case TAGBooleanExpression:
+	{
+	    BooleanExpression bx = to_BooleanExpression( cond );
+
+	    if( bx->b ){
+		// The expression is always true. If the false branch
+		// doesn't have side-effects, we can fold this expression.
+		if( !maybe_has_sideeffect( x->elseval, NO_SE_NEW ) ){
+		     expression res = x->thenval;
+		     x->thenval = expressionNIL;
+		     rfre_expression( x );
+		     return res;
+		}
+	    }
+	    else {
+		// The expression is always false. If the true branch
+		// doesn't have side-effects, we can fold this expression.
+		if( !maybe_has_sideeffect( x->thenval, NO_SE_NEW ) ){
+		     expression res = x->elseval;
+		     x->elseval = expressionNIL;
+		     rfre_expression( x );
+		     return res;
+		}
+	    }
+	    break;
+	}
+
+	default:
+	    break;
+    }
+    return x;
+}
+
+/* Constant folding for an if expression. (?:) */
+static expression constfold_BracketExpression_action( BracketExpression x )
+{
+.call generate_walker_call "    " x BracketExpression BracketExpression
+    if( x == BracketExpressionNIL ){
+        return x;
+    }
+    expression res = x->x;
+    fre_expression( x );
+    return res;
+}
+
+/* Constant folding for a unary operator.  */
+static expression constfold_UnopExpression_action( UnopExpression x )
+{
+.call generate_walker_call "    " x UnopExpression UnopExpression
+    expression operand = x->operand;
+    bool folded = false;
+
+    switch( x->optor ){
+	case UNOP_INVERT:
+	    switch( operand->tag ){
+		case TAGByteExpression:
+		{
+		    ByteExpression ox = to_ByteExpression( operand );
+		    ox->v = ~ox->v;
+		    folded = true;
+		    break;
+		}
+
+		case TAGShortExpression:
+		{
+		    ShortExpression ox = to_ShortExpression( operand );
+		    ox->v = ~ox->v;
+		    folded = true;
+		    break;
+		}
+
+		case TAGIntExpression:
+		{
+		    IntExpression ox = to_IntExpression( operand );
+		    ox->v = ~ox->v;
+		    folded = true;
+		    break;
+		}
+
+		case TAGLongExpression:
+		{
+		    LongExpression ox = to_LongExpression( operand );
+		    ox->v = ~ox->v;
+		    folded = true;
+		    break;
+		}
+
+		default:
+		    break;
+	    }
+	    break;
+
+	case UNOP_PLUS:
+	    // We could blindly remove the plus operator in all circumstances,
+	    // but then we wouldn't generate errors for silly stuff like
+	    // +"bla"
+	    if( is_numerical_literal( operand ) ){
+		folded = true;
+	    }
+	    break;
+
+	case UNOP_NEGATE:
+	    switch( operand->tag ){
+		case TAGDoubleExpression:
+		{
+		    DoubleExpression ox = to_DoubleExpression( operand );
+		    ox->v = -ox->v;
+		    folded = true;
+		    break;
+		}
+
+		case TAGFloatExpression:
+		{
+		    FloatExpression ox = to_FloatExpression( operand );
+		    ox->v = -ox->v;
+		    folded = true;
+		    break;
+		}
+
+		case TAGByteExpression:
+		{
+		    ByteExpression ox = to_ByteExpression( operand );
+		    ox->v = -ox->v;
+		    folded = true;
+		    break;
+		}
+
+		case TAGShortExpression:
+		{
+		    ShortExpression ox = to_ShortExpression( operand );
+		    ox->v = -ox->v;
+		    folded = true;
+		    break;
+		}
+
+		case TAGIntExpression:
+		{
+		    IntExpression ox = to_IntExpression( operand );
+		    ox->v = -ox->v;
+		    folded = true;
+		    break;
+		}
+
+		case TAGLongExpression:
+		{
+		    LongExpression ox = to_LongExpression( operand );
+		    ox->v = -ox->v;
+		    folded = true;
+		    break;
+		}
+
+		default:
+		    break;
+	    }
+	    break;
+
+	case UNOP_NOT:
+	    if( operand->tag == TAGBooleanExpression ){
+		to_BooleanExpression(operand)->b = !to_BooleanExpression(operand)->b;
+		folded = true;
+	    }
+	    break;
+    }
+    expression res = x;
+    if( folded ){
+	res = operand;
+	fre_expression( x );
+    }
+    return res;
+}
+
+/* Constant folding for a binary operator. */
+static expression constfold_BinopExpression_action( BinopExpression x )
+{
+    if( x->left == NULL || x->right == NULL ){
+	return x;
+    }
+.call generate_walker_call "    " x BinopExpression BinopExpression
+    switch( x->optor ){
+.set opsym_BINOP_AND &
+.set opsym_BINOP_OR |
+.set opsym_BINOP_XOR ^
+.set opsym_BINOP_PLUS +
+.set opsym_BINOP_TIMES *
+.set opsym_BINOP_DIVIDE /
+.set opsym_BINOP_MINUS -
+.set opsym_BINOP_MOD %
+.foreach op BINOP_TIMES BINOP_DIVIDE BINOP_MOD BINOP_MINUS BINOP_PLUS BINOP_AND BINOP_OR BINOP_XOR
+	case $(op):
+.if ${member $(op) BINOP_PLUS BINOP_MINUS}
+	    if( x->left->tag == TAGComplexExpression ){
+	    }
+.endif
+.if ${member $(op) BINOP_PLUS}
+	    if( x->left->tag == TAGStringExpression ){
+	        switch( x->right->tag ){
+		    case TAGBooleanExpression:
+		    {
+			bool b = to_BooleanExpression(x->right)->b;
+
+			tmstring res = new_tmstring( b?"true":"false" );
+			rfre_expression( x->right );
+			x->right = new_StringExpression( res );
+			break;
+		    }
+
+		    case TAGDoubleExpression:
+		    {
+			vnus_double right = to_DoubleExpression( x->right )->v;
+			tmstring res = vnus_double_to_string( right );
+
+			rfre_expression( x->right );
+			x->right = new_StringExpression( res );
+			break;
+		    }
+
+		    case TAGFloatExpression:
+		    {
+			vnus_float right = to_FloatExpression( x->right )->v;
+			tmstring res = vnus_float_to_string( right );
+
+			rfre_expression( x->right );
+			x->right = new_StringExpression( res );
+			break;
+		    }
+
+		    case TAGLongExpression:
+		    {
+			vnus_long right = to_LongExpression( x->right )->v;
+			tmstring res = printf_tmstring( "%lld", (long long) right );
+
+			rfre_expression( x->right );
+			x->right = new_StringExpression( res );
+			break;
+		    }
+
+		    case TAGIntExpression:
+		    {
+			vnus_int right = to_IntExpression( x->right )->v;
+			tmstring res = printf_tmstring( "%ld", (long) right );
+
+			rfre_expression( x->right );
+			x->right = new_StringExpression( res );
+			break;
+		    }
+
+		    case TAGShortExpression:
+		    {
+			vnus_int right = to_ShortExpression( x->right )->v;
+			tmstring res = printf_tmstring( "%d", (int) right );
+
+			rfre_expression( x->right );
+			x->right = new_StringExpression( res );
+			break;
+		    }
+
+		    case TAGByteExpression:
+		    {
+			vnus_int right = to_ByteExpression( x->right )->v;
+			tmstring res = printf_tmstring( "%d", (int) right );
+
+			rfre_expression( x->right );
+			x->right = new_StringExpression( res );
+			break;
+		    }
+
+		    case TAGCharExpression:
+		    {
+			vnus_char right = to_CharExpression( x->right )->c;
+			tmstring res = vnus_char_to_string( right );
+
+			rfre_expression( x->right );
+			x->right = new_StringExpression( res );
+			break;
+		    }
+
+		    case TAGInternalizeExpression:
+		    {
+		        InternalizeExpression inx = to_InternalizeExpression(x->right);
+			if( inx->x->tag == TAGStringExpression ){
+			    StringExpression sright = to_StringExpression( inx->x );
+			    // We may as well concatenate here.
+			    tmstring res = printf_tmstring(
+				"%s%s",
+			        to_StringExpression( x->left )->s,
+				sright->s
+			    );
+			    rfre_tmstring( sright->s );
+			    sright->s = res;
+			    expression resx = x->right;
+			    x->right = expressionNIL;
+			    rfre_expression( x );
+			    return resx;
+			}
+			break;
+		    }
+
+		    default:
+		        break;
+		}
+	    }
+	    if( x->right->tag == TAGStringExpression ){
+	        switch( x->left->tag ){
+		    case TAGBooleanExpression:
+		    {
+			bool b = to_BooleanExpression(x->left)->b;
+
+			tmstring res = new_tmstring( b?"true":"false" );
+			rfre_expression( x->left );
+			x->left = new_StringExpression( res );
+			break;
+		    }
+
+		    case TAGDoubleExpression:
+		    {
+			vnus_double left = to_DoubleExpression( x->left )->v;
+			tmstring res = vnus_double_to_string( left );
+
+			rfre_expression( x->left );
+			x->left = new_StringExpression( res );
+			break;
+		    }
+
+		    case TAGFloatExpression:
+		    {
+			vnus_float left = to_FloatExpression( x->left )->v;
+			tmstring res = vnus_float_to_string( left );
+
+			rfre_expression( x->left );
+			x->left = new_StringExpression( res );
+			break;
+		    }
+
+		    case TAGLongExpression:
+		    {
+			vnus_long left = to_LongExpression( x->left )->v;
+			tmstring res = printf_tmstring( "%lld", (long long) left );
+
+			rfre_expression( x->left );
+			x->left = new_StringExpression( res );
+			break;
+		    }
+
+		    case TAGIntExpression:
+		    {
+			vnus_int left = to_IntExpression( x->left )->v;
+			tmstring res = printf_tmstring( "%ld", (long) left );
+
+			rfre_expression( x->left );
+			x->left = new_StringExpression( res );
+			break;
+		    }
+
+		    case TAGShortExpression:
+		    {
+			vnus_int left = to_ShortExpression( x->left )->v;
+			tmstring res = printf_tmstring( "%d", (int) left );
+
+			rfre_expression( x->left );
+			x->left = new_StringExpression( res );
+			break;
+		    }
+
+		    case TAGByteExpression:
+		    {
+			vnus_int left = to_ByteExpression( x->left )->v;
+			tmstring res = printf_tmstring( "%d", (int) left );
+
+			rfre_expression( x->left );
+			x->left = new_StringExpression( res );
+			break;
+		    }
+
+		    case TAGCharExpression:
+		    {
+			vnus_char left = to_CharExpression( x->left )->c;
+			tmstring res = vnus_char_to_string( left );
+
+			rfre_expression( x->left );
+			x->left = new_StringExpression( res );
+			break;
+		    }
+
+		    case TAGInternalizeExpression:
+		    {
+		        InternalizeExpression inx = to_InternalizeExpression(x->left);
+			if( inx->x->tag == TAGStringExpression ){
+			    StringExpression sleft = to_StringExpression( inx->x );
+			    // We may as well concatenate here.
+			    tmstring res = printf_tmstring(
+				"%s%s",
+				sleft->s,
+			        to_StringExpression( x->right )->s
+			    );
+			    rfre_tmstring( sleft->s );
+			    sleft->s = res;
+			    expression resx = x->left;
+			    x->left = expressionNIL;
+			    rfre_expression( x );
+			    return resx;
+			}
+			break;
+		    }
+		    default:
+		        break;
+		}
+	    }
+.endif
+	    if( x->left->tag == x->right->tag ){
+		// TODO: be more subtle than this.
+		// - more general operations
+		// - better handling of over/underflow
+		switch( x->left->tag ){
+.if ${member $(op) BINOP_PLUS BINOP_MINUS}
+		    case TAGComplexExpression:
+		    {
+			// rewrite complex(a,b)$(opsym_$(op))complex(c,d)
+			// to complex(a$(opsym_$(op))c,b$(opsym_$(op))d);
+			ComplexExpression cx_right = to_ComplexExpression(x->right);
+			ComplexExpression cx_left = to_ComplexExpression(x->left);
+			ComplexExpression res = new_ComplexExpression(
+			    new_BinopExpression(
+				cx_left->re,
+				$(op),
+				cx_right->re
+			    ),
+			    new_BinopExpression(
+				cx_left->im,
+				$(op),
+				cx_right->im
+			    )
+			);
+			cx_right->re = cx_right->im = expressionNIL;
+			cx_left->re = cx_left->im = expressionNIL;
+			rfre_expression( x );
+			return res;
+		    }
+
+.endif
+.if ${eq $(op) BINOP_PLUS}
+		    case TAGInternalizeExpression:
+		    {
+			expression sright = to_InternalizeExpression(x->right)->x;
+			expression sleft = to_InternalizeExpression(x->left)->x;
+
+			if(
+			    sright->tag == TAGStringExpression &&
+			    sleft->tag == TAGStringExpression
+			){
+			    // Two string constants are internalized and
+			    // then concatenated. We may as well calculate
+			    // the concatenation, and internalize that.
+			    tmstring res = printf_tmstring(
+				"%s%s",
+				to_StringExpression(sleft)->s,
+				to_StringExpression(sright)->s
+			    );
+			    rfre_tmstring( to_StringExpression(sleft)->s );
+			    to_StringExpression(sleft)->s = res;
+			    expression resx = x->left;
+			    x->left = expressionNIL;
+			    rfre_expression( x );
+			    return resx;
+			}
+			break;
+		    }
+
+		    case TAGStringExpression:
+		    {
+			tmstring res = printf_tmstring(
+			    "%s%s",
+			    to_StringExpression( x->left )->s,
+			    to_StringExpression( x->right )->s
+			);
+			rfre_expression( x );
+			return new_StringExpression( res );
+		    }
+
+.endif
+.if ${eq $(op) BINOP_AND}
+		    case TAGBooleanExpression:
+		    {
+			bool b = to_BooleanExpression(x->left)->b;
+			expression res;
+
+			if( b ){
+			    // Result is determined by the righthandside expression
+			    res = x->right;
+			    x->right = expressionNIL;
+			}
+			else {
+			    // Result is always 'false', but that's already represented
+			    // by x->left, so use that expression.
+			    res = x->left;
+			    x->left = expressionNIL;
+			}
+			rfre_expression( x );
+			return res;
+		    }
+
+.endif
+.if ${eq $(op) BINOP_OR}
+		    case TAGBooleanExpression:
+		    {
+			bool b = to_BooleanExpression(x->left)->b;
+			expression res;
+
+			if( b ){
+			    // Result is always 'true', but that's already represented
+			    // by x->left, so use that expression.
+			    res = x->left;
+			    x->left = expressionNIL;
+			}
+			else {
+			    // Result is determined by the righthandside expression
+			    res = x->right;
+			    x->right = expressionNIL;
+			}
+			rfre_expression( x );
+			return res;
+		    }
+
+.endif
+.if ${eq $(op) BINOP_XOR}
+		    case TAGBooleanExpression:
+		    {
+			bool bleft = to_BooleanExpression(x->left)->b;
+			bool bright = to_BooleanExpression(x->right)->b;
+
+			rfre_expression( x );
+			return new_BooleanExpression( bleft != bright );
+		    }
+
+.endif
+		    case TAGIntExpression:
+		    {
+			vnus_int left = to_IntExpression( x->left )->v;
+			vnus_int right = to_IntExpression( x->right )->v;
+
+.switch $(op)
+.case BINOP_MOD
+			if( left>=0 && right>0 ){
+			    left = left $(opsym_$(op)) right;
+			    rfre_expression( x );
+			    return new_IntExpression( left );
+			}
+			break;
+.case BINOP_DIVIDE
+			if( right != 0 ){
+			    if( right == -1 && left == VNUS_INT_MIN ){
+				// Handle this separately to avoid
+				// overflow trap.
+			        // result is VNUS_INT_MIN, but that's
+				// already in 'left'
+			    }
+			    else {
+				left = left / right;
+			    }
+			    rfre_expression( x );
+			    return new_IntExpression( left );
+			}
+			break;
+.case BINOP_TIMES BINOP_PLUS BINOP_MINUS BINOP_XOR BINOP_AND BINOP_OR
+			vnus_int res = left $(opsym_$(op)) right;
+			rfre_expression( x );
+			return new_IntExpression( res );
+.endswitch
+		    }
+
+		    case TAGLongExpression:
+		    {
+			vnus_long left = to_LongExpression( x->left )->v;
+			vnus_long right = to_LongExpression( x->right )->v;
+
+.switch $(op)
+.case BINOP_MOD
+			if( left>=0 && right>0 ){
+			    left = left $(opsym_$(op)) right;
+			    rfre_expression( x );
+			    return new_LongExpression( left );
+			}
+			break;
+.case BINOP_DIVIDE
+			if( right != 0 ){
+			    if( right == -1 && left == VNUS_LONG_MIN ){
+				// Handle this separately to avoid
+				// overflow trap.
+			        // result is VNUS_LONG_MIN, but that's
+				// already in 'left'
+			    }
+			    else {
+				left = left / right;
+			    }
+			    rfre_expression( x );
+			    return new_LongExpression( left );
+			}
+			break;
+.case BINOP_TIMES BINOP_PLUS BINOP_MINUS BINOP_XOR BINOP_AND BINOP_OR
+			vnus_long res = left $(opsym_$(op)) (vnus_long) right;
+			rfre_expression( x );
+			return new_LongExpression( (vnus_long) res );
+.endswitch
+		    }
+
+.switch $(op)
+.case BINOP_MOD
+		    case TAGFloatExpression:
+		    {
+			vnus_float left = to_FloatExpression( x->left )->v;
+			vnus_float right = to_FloatExpression( x->right )->v;
+
+			vnus_float res = (vnus_float) fmod( (vnus_double) left, (vnus_double) right );
+			rfre_expression( x );
+			return new_FloatExpression( res );
+		    }
+
+.case BINOP_XOR BINOP_OR BINOP_AND
+.. Not defined on floating point numbers
+.case BINOP_TIMES BINOP_PLUS BINOP_MINUS BINOP_DIVIDE
+		    case TAGFloatExpression:
+		    {
+			vnus_float left = to_FloatExpression( x->left )->v;
+			vnus_float right = to_FloatExpression( x->right )->v;
+
+			vnus_float res = left $(opsym_$(op)) right;
+			rfre_expression( x );
+			return new_FloatExpression( res );
+		    }
+
+.endswitch
+.switch $(op)
+.case BINOP_MOD
+		    case TAGDoubleExpression:
+		    {
+			vnus_double left = to_DoubleExpression( x->left )->v;
+			vnus_double right = to_DoubleExpression( x->right )->v;
+
+			vnus_double res = fmod( left, right );
+			rfre_expression( x );
+			return new_DoubleExpression( res );
+		    }
+
+.case BINOP_XOR BINOP_OR BINOP_AND
+.. Not defined on floating point numbers
+.case BINOP_TIMES BINOP_PLUS BINOP_MINUS BINOP_DIVIDE
+		    case TAGDoubleExpression:
+		    {
+			vnus_double left = to_DoubleExpression( x->left )->v;
+			vnus_double right = to_DoubleExpression( x->right )->v;
+
+			vnus_double res = left $(opsym_$(op)) right;
+			rfre_expression( x );
+			return new_DoubleExpression( res );
+		    }
+
+.endswitch
+		    default:
+			break;
+		}
+	    }
+	    break;
+
+.endforeach
+.set opsym_BINOP_EQUAL ==
+.set opsym_BINOP_NOTEQUAL !=
+.set opsym_BINOP_LESS <
+.set opsym_BINOP_LESSEQUAL <=
+.set opsym_BINOP_GREATER >
+.set opsym_BINOP_GREATEREQUAL >=
+.foreach op BINOP_EQUAL BINOP_NOTEQUAL BINOP_LESS BINOP_LESSEQUAL BINOP_GREATER BINOP_GREATEREQUAL
+	case $(op):
+	    if( x->left->tag == x->right->tag ){
+		// TODO: be more subtle than this.
+		// - more general operations
+		// - better handling of over/underflow
+		switch( x->left->tag ){
+		    case TAGDoubleExpression:
+		    {
+			vnus_double left = to_DoubleExpression( x->left )->v;
+			vnus_double right = to_DoubleExpression( x->right )->v;
+			vnus_boolean res = (left $(opsym_$(op)) right);
+			rfre_expression( x );
+			return new_BooleanExpression( res );
+		    }
+
+		    case TAGFloatExpression:
+		    {
+			vnus_float left = to_FloatExpression( x->left )->v;
+			vnus_float right = to_FloatExpression( x->right )->v;
+			vnus_boolean res = (left $(opsym_$(op)) right);
+			rfre_expression( x );
+			return new_BooleanExpression( res );
+		    }
+
+		    case TAGByteExpression:
+		    {
+			vnus_byte left = to_ByteExpression( x->left )->v;
+			vnus_byte right = to_ByteExpression( x->right )->v;
+			vnus_boolean res = (left $(opsym_$(op)) right);
+			rfre_expression( x );
+			return new_BooleanExpression( res );
+		    }
+
+		    case TAGShortExpression:
+		    {
+			vnus_short left = to_ShortExpression( x->left )->v;
+			vnus_short right = to_ShortExpression( x->right )->v;
+			vnus_boolean res = (left $(opsym_$(op)) right);
+			rfre_expression( x );
+			return new_BooleanExpression( res );
+		    }
+
+		    case TAGCharExpression:
+		    {
+			vnus_char left = to_CharExpression( x->left )->c;
+			vnus_char right = to_CharExpression( x->right )->c;
+			vnus_boolean res = (left $(opsym_$(op)) right);
+			rfre_expression( x );
+			return new_BooleanExpression( res );
+		    }
+
+		    case TAGIntExpression:
+		    {
+			vnus_int left = to_IntExpression( x->left )->v;
+			vnus_int right = to_IntExpression( x->right )->v;
+			vnus_boolean res = (left $(opsym_$(op)) right);
+			rfre_expression( x );
+			return new_BooleanExpression( res );
+		    }
+
+		    case TAGLongExpression:
+		    {
+			vnus_long left = to_LongExpression( x->left )->v;
+			vnus_long right = to_LongExpression( x->right )->v;
+			vnus_boolean res = (left $(opsym_$(op)) right);
+			rfre_expression( x );
+			return new_BooleanExpression( res );
+		    }
+
+		    case TAGBooleanExpression:
+		    {
+			vnus_boolean left = to_BooleanExpression( x->left )->b;
+			vnus_boolean right = to_BooleanExpression( x->right )->b;
+			vnus_boolean res = (left $(opsym_$(op)) right);
+			rfre_expression( x );
+			return new_BooleanExpression( res );
+		    }
+
+		    case TAGStringExpression:
+		    {
+			vnus_string left = to_StringExpression( x->left )->s;
+			vnus_string right = to_StringExpression( x->right )->s;
+			vnus_boolean res = strcmp( left, right ) $(opsym_$(op)) 0;
+			rfre_expression( x );
+			return new_BooleanExpression( res );
+		    }
+
+		    default:
+			break;
+		}
+	    }
+	    break;
+
+.endforeach
+	case BINOP_SHIFTRIGHT:
+	case BINOP_USHIFTRIGHT:
+	case BINOP_SHIFTLEFT:
+	    break;
+    }
+    return x;
+}
+
+/* Constant folding for a shortcircuit operator. */
+static expression constfold_ShortopExpression_action( ShortopExpression x )
+{
+    if( x->left == NULL || x->right == NULL ){
+	return x;
+    }
+.call generate_walker_call "    " x ShortopExpression ShortopExpression
+    switch( x->optor ){
+	case SHORTOP_AND:
+	    if(
+		x->left->tag == TAGBooleanExpression &&
+		x->right->tag == TAGBooleanExpression
+	    ){
+		bool b = to_BooleanExpression(x->left)->b;
+		expression res;
+
+		if( b ){
+		    // Result is determined by the righthandside expression
+		    res = x->right;
+		    x->right = expressionNIL;
+		}
+		else {
+		    // Result is always 'false', but that's already represented
+		    // by x->left, so use that expression.
+		    res = x->left;
+		    x->left = expressionNIL;
+		}
+		rfre_expression( x );
+		return res;
+	    }
+	    break;
+
+	case SHORTOP_OR:
+	    if(
+		x->left->tag == TAGBooleanExpression &&
+		x->right->tag == TAGBooleanExpression
+	    ){
+		bool b = to_BooleanExpression(x->left)->b;
+		expression res;
+
+		if( b ){
+		    // Result is always 'true', but that's already represented
+		    // by x->left, so use that expression.
+		    res = x->left;
+		    x->left = expressionNIL;
+		}
+		else {
+		    // Result is determined by the righthandside expression
+		    res = x->right;
+		    x->right = expressionNIL;
+		}
+		rfre_expression( x );
+		return res;
+	    }
+	    break;
+
+    }
+    return x;
+}
+
+/* Constant folding for a vector subscript.
+ * If we subscript an explicit vector, and all unused expressions
+ * don't have side-effects, fold the subscript expression
+ */
+static expression constfold_VectorSubscriptExpression_action( VectorSubscriptExpression x )
+{
+.call generate_walker_call "    " x VectorSubscriptExpression VectorSubscriptExpression
+    expression vec = x->vector;
+    if( vec != expressionNIL ){
+	if( vec->tag == TAGVectorExpression ){
+	    expression_list fields = to_VectorExpression( vec )->fields;
+	    unsigned int myix = x->subscript;
+	    bool do_transform = true;
+
+	    if( myix<fields->sz ){
+		// See if any of the not-subscripted expressions has a
+		// side-effect. If so, we can't do the folding.
+		for( unsigned int ix=0; ix<fields->sz; ix++ ){
+		    if( ix != myix ){
+			if( maybe_has_sideeffect( fields->arr[ix], NO_SE_NEW ) ){
+			    do_transform = false;
+			    break;
+			}
+		    }
+		}
+		if( do_transform ){
+		    // This transformation is safe to do, so do it.
+		    expression res = fields->arr[myix];
+		    fields->arr[myix] = expressionNIL;
+		    rfre_expression( x );
+		    return res;
+		}
+	    }
+	}
+    }
+    return x;
+}
+
+/* -------- End of action functions ---------- */
+
+.call generate_walker "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+expression constant_fold_expression( expression x )
+{
+.call generate_descent_call "    " x expression expression
+    return x;
+}
+
+SparProgram constant_fold_SparProgram( SparProgram x )
+{
+.call generate_descent_call "    " x SparProgram SparProgram
+    return x;
+}

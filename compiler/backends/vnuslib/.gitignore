@@ -1,0 +1,10 @@
+Makefile
+constfold.cc
+config.cache
+config.log
+config.status
+configure
+collectscopes.cc
+dist.lst
+config.h
+tmadmin.h

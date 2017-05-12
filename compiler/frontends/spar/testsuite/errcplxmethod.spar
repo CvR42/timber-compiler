@@ -1,0 +1,20 @@
+public class errcplxmethod {
+    public static void main(String args[])
+    {
+	complex a,b,c;
+	
+	a = 3.0+2.0i;
+	b = 17.0+6.0i;
+
+	System.out.println("a: "+a.real()+" ",a.imag());
+	System.out.println("b: "+b.real()+" ",b.imag());
+	c = a+b;
+	System.out.println("+: "+c.real()+" ",c.imag());
+	c = a+b;
+	System.out.println("-: "+c.real()+" ",c.imag());
+	c = a*b;
+	System.out.println("*: "+c.real()+" ",c.imag());
+	c = a/b;
+	System.out.println("/: "+c.real()+" ",c.imag());
+    }
+}

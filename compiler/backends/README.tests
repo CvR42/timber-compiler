@@ -1,0 +1,25 @@
+Running tests.
+
+
+Tests using threads can be run without any setups neccessary.
+
+
+Tests using lam(a mpi version) need the following:
+To start lam do:
+	lamboot
+This uses 1 processor, as defined in /usr/local/lam/boot/bhost.def.
+If you want to use more processors do:
+	lamboot <hostfile>
+where <hostfile> is one of the .def files in /usr/local/lam/boot.
+To kill of lam in other to reach a known state use:
+	wipe <hostfile>
+Important: the lam package should be in your .register file, and the
+mpi package should not be in there to avoid conflicts.
+
+
+Tests using pvm need a running pvm daemon. To do this call
+	pvm
+this gives you a prompt where you can type in help for more info.
+Just add as many processors as you like and exit using <ctrl>-D.
+You can then run your programs. When finished you can enter the pvm
+program again and kill pvm using the kill command.

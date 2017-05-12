@@ -1,0 +1,8 @@
+public class oktuple {
+    public static void main(){
+	[int^2] a = [1,2];
+	[int,int] b = [3,4];
+	__println( 1, a[0], ' ', a[1], ' ', b[0], ' ', b[1] );
+	__println( 1, a.length, ' ', b.length );
+    }
+}

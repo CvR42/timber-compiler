@@ -1,0 +1,30 @@
+// After JLS2 15.12.4.9    Example: Method Invocation using super
+
+
+class T1 {
+    __string s() { return "1"; }
+}
+
+class T2 extends T1 {
+    __string s() { return "2"; }
+}
+
+class T3 extends T2 {
+    __string s() { return "3"; }
+
+    void test() {
+        __println(1,"s()=\t\t",s());
+        __println(1,"super.s()=\t",super.s());
+        __print(1,"((T2)this).s()=\t");
+            __println(1,((T2)this).s());
+        __print(1,"((T1)this).s()=\t");
+            __println(1,((T1)this).s());
+    }
+}
+
+public class okjlssuper1 {
+    public static void main(String[] args) {
+        T3 t3 = new T3();
+        t3.test();
+    }
+}

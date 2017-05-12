@@ -1,0 +1,2 @@
+errbaddecl.spar:10: Unknown field in type 'spar.testsuite.errbaddecl': 'd'
+errbaddecl.spar:10: unknown variable: 'd'

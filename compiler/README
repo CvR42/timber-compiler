@@ -1,0 +1,176 @@
+p
+This is release 2.0 of the Timber compiler, a static whole-program
+compiler for Spar/Java. Spar/Java is a superset of Java. It adds a set of
+language extensions, called Spar, for computationally intensive scientific
+programming. The extensions consist of support for multi-dimensional
+arrays, tuples, class templates, and parallel programming.
+
+The Timber compiler is Copyright (C) 2000-2002 Delft University of
+Technology.  The Timber compiler is released under the Gnu Public Licence
+(GPL).  The runtime libraries of the Timber compiler are released under
+the Library Gnu Public Licence (LGPL). This licence is also known as
+the "Lesser Gnu Public Licence".  A copy of the GPL and LGPL licence
+are included in the distribution, in the file GPL.txt and LGPL.txt
+respectively.
+
+For an overview of changes compared to the previous releases, see
+the file ChangeLog.
+
+
+Preparations
+------------
+
+Before you can configure and make the software, some external software
+must have been installed.
+
+1. You must have unpacked the Kaffe 1.0.6 sources. Making is not
+necessary, since Spar only uses the .java files in that distribution. You
+must also have set the the environment variable KAFFEROOT to the directory
+where these sources have been unpacked.
+
+For example, if you have unpacked it in your home directory, you must do:
+
+  setenv KAFFEROOT $HOME/kaffe-1.0.6
+
+If you are using a Bourne-like shell such as `sh' or `bash', the command
+'setenv' is not available, and you must use the command `export' instead.
+For example:
+
+  export KAFFEROOT="$HOME/kaffe-1.0.6"
+
+The configure script will do a sanity check by checking for this
+environment variable, and checking for a file in that directory that
+should be there.
+
+2. You must have compiled and installed Tm version 2.0.8 or later. The
+path to the tm executable must be in your search path (in other words,
+you must be able to invoke the program with just 'tm').
+
+The configure script checks that the executable is in a directory called
+'bin', and that the header file 'tmc.h' is in the 'include' directory
+next to that 'bin'.
+
+The Timber compiler relies heavily on features that are in GNU make, but
+that may not be supported in standard make implementations. Type
+
+  make --version
+
+to see if the make on your system is GNU make. If not, GNU make may be
+available as the command `gmake'. Again, you can try this by typing
+
+  gmake --version
+
+
+Preparations for parallelization
+--------------------------------
+
+If you want to use the Timber compiler for parallelization, you should
+also read README.parallel. 
+
+
+Installation
+------------
+
+Before you can compile the Timber compiler, you must configure the
+Makefiles and the configuration header files in the source tree. You do
+this by simply typing
+
+  ./configure
+
+This will determine the properties of your platform, and fill 
+variables with the appropriate settings.
+
+By default the installation prefix is /usr/local, so that executables
+are put in /usr/local/bin, include files are put in /usr/local/include,
+and so on. If you want to use another prefix, you can pass it as an
+option to configure. For example:
+
+  ./configure --prefix=$HOME/lab
+
+This directory must exist; if it does not, configuration is aborted.
+
+You can also specify a compiler to use as backend with the
+--with-backend=<compiler> option. For example:
+
+  ./configure --with-backend=g++-3.0
+
+specifies that the compiler g++-3.0 must be used as backend. This means
+that the default compiler is used to build the timber compiler itself, and
+that the g++-3.0 compiler will be used by the timber compiler as backend.
+Note that a plain `--with-backend' option without a value is equivalent
+with `--with-backend=yes', which is not what you want.
+
+Next, compile the program with:
+
+  make all
+
+If you want, you can now run a series of tests on the software with
+
+  make check
+
+Keep in mind, however, that this is a lengthy process (20 minutes on
+a PII 400).
+
+Finally, you can install the software with
+
+  make install
+
+
+Invoking the compiler
+---------------------
+
+Make sure that the path to the compiler (`<prefix>/bin') is in your path.
+After that, you can invoke the compiler like this:
+
+  spar hello.spar -o hello
+
+You can try it with the traditional 'hello world' program:
+
+    public class hello {
+	public static void main( String args[] ){
+	    System.out.println( "Hello world" );
+	}
+    }
+
+You can find this program, together with a few other example programs,
+in the directory `samples'. The samples directory also contains a
+program to test parallelization.
+
+
+Known issues
+------------
+
+The current compiler has the following known problems:
+
+- Incorrect specifications in Processors and ProcessorType specification
+pragmas are currently not reported with nice error messages, but
+cause a program assertion to fail, resulting in a controlled crash of
+the compiler.
+
+- Some limitations on parallel code generation.
+
+- The current program code causes compiler warnings at a few
+places. They are:
+  * With gcc 3.0, warnings about operator= for complex numbers.
+    These are caused by the complex number class of gcc 3.0,
+    and are therefore beyond our control.
+  * In recent versions of bison, the template has some problems that cause
+    lots of warnings like:
+        bison.simple: 'YYLSP_NEEDED' is not defined.
+    Since this is in the bison parser template, there is little we
+    can do about it.
+  * A complaint about a cast from 'const void*' to 'void*' in
+    backends/runtime/glue/mpi.cc: A const is lacking in some
+    MPI implementations.
+  * Casts from 'const char*' to 'void*' in
+    frontends/spar-rtl/serialisation.cc: known issue.
+
+
+
+Further information
+-------------------
+
+The Timber home page is <http://www.pds.its.tudelft.nl/timber>.
+
+From that website you can also download the Spar Language Specification,
+which describes the Spar/Java programming language in detail.

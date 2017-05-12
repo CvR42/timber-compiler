@@ -1,0 +1,24 @@
+// After JLS2 15.10.3    Example: Array Creation and Out-of-Memory Detection
+
+
+public class okjlsaoutofmem {
+    public static void main(String[] args) {
+        int len = 0, oldlen = 0;
+
+	// We're testing out-of-memory, but using the real out-of-memory
+	// event would take too much time. So put an artificial hard
+	// limit on the memory size.
+	spar.compiler.GC.setMemoryLimit( 1000000 );
+	Object[] a = new Object[0];
+        try {
+            for (;;) {
+                ++len;
+                Object[] temp = new Object[oldlen = len];
+                temp[0] = a;
+                a = temp;
+            }
+        } catch (Error e) {
+            System.out.println(e + ", " + (oldlen==len));
+        }
+    }
+}

@@ -1,0 +1,19 @@
+\newcommand{\rewrite}{::=}
+\newcommand{\point}{.}
+\newcommand{\nonterminal}[1]{\mbox{\sf {#1}}}
+\newcommand{\tokenclass}[1]{\mbox{\sc {#1}}}
+\newcommand{\terminal}[1]{\mbox{\tt "{#1}"}}
+\newcommand{\any}[1]{{#1}{\mbox{$^\ast$}}}
+\newcommand{\iteration}[1]{{#1}{\mbox{$^+$}}}
+\newcommand{\optional}[1]{\mbox{[{#1}]}}
+\newcommand{\exception}[1]{\mbox{$\overline{\mbox{#1}}$}}
+\newcommand{\compound}[1]{\mbox{({#1})}}
+\newcommand{\alternative}{\mbox{$|$}}
+\newcommand{\class}{\mbox{\ldots}}
+\newcommand{\then}{\mbox{$\cdot$}}
+\newcommand{\separation}{\mbox{//}}
+\newenvironment{production}{\small\begin{tabular}{lll}}{\end{tabular}}
+\newcommand{\tab}{\hspace*{0.25in}}
+\newcommand{\NT}[1]{\nonterminal{#1}}
+\newcommand{\TC}[1]{\tokenclass{#1}}
+\newcommand{\T}[1]{\terminal{#1}}

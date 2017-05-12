@@ -1,0 +1,69 @@
+** Undetected compile-time errors:
+
+errsinitscope.spar	Forward ref to class field should cause error.
+errsinitscope1.spar	Forward ref to class field should cause error.
+errjlsZ1.spar		Forward ref to class field should cause error.
+errjlsZ2.spar		Forward ref to class field should cause error.
+errjlsinit.spar		Forward ref to class field should cause error.
+errjlsbadthrows1.spar	Throws clauses not yet checked
+errjlsbadthrows2.spar	Throws clauses not yet checked
+errjlsonames1.spar	Explicit import is overridden by local class.
+err1.java		Weakening priviledges through inheritance
+errjlscyclicinner.spar	Inner classes
+errjlsnooutercons.spar	Inner classes
+errjlsusebefore.spar	Anonymous inner classes
+
+
+** Unimplemented language features:
+
+okjls1M.spar		Integer division by zero exception not implemented
+okjlsamem.spar		getClass() not supported on arrays.
+okjlsarrayclone.spar	The clone() method on arrays is not yet supported
+okjlsarrsuper.spar	getClass() not supported on arrays.
+okjlsshallow.spar	Uses clone() method on array
+rteclasscast.spar	Illegal class casts do not yet cause an exception
+okjlsdoublescope.spar	Inner classes
+
+
+** Fundamentally unsupported language features:
+
+okjlscons.spar		Uses Class.newInstance()
+okthreads.spar		Uses Thread
+
+
+** Analysis errors:
+
+okjlsda1.spar		Weakness in && definite assignment analysis.
+
+
+** Incorrect code generated:
+
+okjlsnan.spar		Narrowing conversions are sometimes incorrect.
+okjlsnarrow.spar	Narrowing conversions are sometimes incorrect.
+okjlspeek.spar		Static initialization order is incorrect (do I care?)
+okjlsprec.spar		Expression does not print as inf. (do I care?)
+okjlsround.spar		Different evaluation of doubles
+okjlsevalorder.spar	Bad evaluation order
+
+
+** Incomplete runtime:
+
+okjlsexcept.spar	Exception on integer division by zero not implemented
+
+
+** Internal compiler error:
+
+okjlscastconv.spar	Vnus(!) complains about cast tween incompatible arrays.
+			This is fundamental in Vnus (urgh).
+okjlssx.spar		Complaint about incompatible arrays.
+
+
+** Unfinished tests:
+
+gencholesky.spar	Incomplete numerical benchmark program
+
+
+** Multiple errors:
+
+okjlstestexception.spar	/0 exception not implemented;
+			a bug in null pointer check analysis.

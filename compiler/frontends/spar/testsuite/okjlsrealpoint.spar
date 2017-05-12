@@ -1,0 +1,50 @@
+// After JLS2 8.4.8.4    Example: Overriding versus Hiding
+
+class Point {
+    int x = 0, y = 0;
+
+    void move( int dx, int dy ) { x += dx; y += dy; }
+
+    int getX() { return x; }
+
+    int getY() { return y; }
+
+    int color;
+}
+
+class RealPoint extends Point {
+    float x = 0.0f, y = 0.0f;
+
+    void move( int dx, int dy ) { move( (float) dx, (float) dy ); }
+
+    void move( float dx, float dy ) { x += dx; y += dy; }
+
+    int getX() { return (int) Math.floor( x ); }
+
+    int getY() { return (int) Math.floor( y ); }
+}
+
+public class okjlsrealpoint {
+
+    public static void main(String[] args) {
+        RealPoint rp = new RealPoint();
+        Point p = rp;
+        rp.move(1.71828f, 4.14159f);
+        p.move(1, -1);
+        show(p.x, p.y);
+        show(rp.x, rp.y);
+        show(p.getX(), p.getY());
+        show(rp.getX(), rp.getY());
+    }
+
+
+    static void show(int x, int y) {
+        System.out.println("(" + x + ", " + y + ")");
+    }
+
+
+    static void show(float x, float y) {
+        System.out.println("(" + x + ", " + y + ")");
+    }
+
+}

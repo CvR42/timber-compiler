@@ -1,0 +1,10 @@
+For the moment, installation is quite messy.
+
+- The 'spar' compiler driver script assumes that the Vnus backend is
+avialable in a fixed path relative from the current directory. Please
+only run the compiler from the directory it resides in.
+
+- To find the sources that must be compiled in the paths in SPARPATH
+are searched. Please just set these with:
+
+setenv SPARPATH /home/falcon/reeuwijk/java:/home/falcon/reeuwijk/timber/frontends:/home/falcon/reeuwijk/java-1.1

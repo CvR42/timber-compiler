@@ -1,0 +1,15 @@
+// Example taken from JLS2
+//
+// This should cause complaints about undefined variables.
+
+package spar.testsuite;
+
+public class errbaddecl {
+    public static void main()
+    {
+	int a = d + 4;
+	int b = a + 5;
+	int c = b + 6;
+	int d = c + 7;
+    }
+}

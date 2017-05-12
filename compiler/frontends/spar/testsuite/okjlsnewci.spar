@@ -1,0 +1,17 @@
+// After JLS2 12.5    Creation of New Class Instances
+
+class Point {
+    int x, y;
+    Point() { x = 1; y = 1; }
+}
+
+class ColoredPoint extends Point {
+    int color = 0xFF00FF;
+}
+
+public class okjlsnewci {
+    public static void main() {
+        ColoredPoint cp = new ColoredPoint();
+        __println(1, cp.color);
+    }
+}

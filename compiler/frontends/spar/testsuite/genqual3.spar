@@ -1,0 +1,14 @@
+// Test of a qualified name of the form a.b.c
+
+package spar.testsuite;
+
+public class genqual3 {
+    public int arr[];
+    public static int foo( genqual3 x )
+    {
+	return x.arr.length;
+    }
+    public static void main(){
+	int n = foo( new genqual3() );
+    }
+}

@@ -1,0 +1,21 @@
+// Test the handling of initialized arrays.
+
+package spar.testsuite;
+
+class t {
+    public int a1[*] = { 1, 2, 3 };
+    public int a2[*,*] = { { 1, 2 }, { 3, 4} };
+    public int a3[][] = { { 1, 2 }, { 3, 4} };
+    public static int b1[*] = { 1, 2, 3 };
+    public static int b2[*,*] = { { 1, 2 }, { 3, 4} };
+    public static int b3[][] = { { 1, 2 }, { 3, 4} };
+}
+
+public class genarrinit {
+    public static void main(){
+	int v1[*] = { 1, 2, 3 };
+	int v2[*,*] = { { 1, 2 }, { 3, 4} };
+	int v3[][] = { { 1, 2 }, { 3, 4} };
+	t x = new t();
+    }
+}

@@ -1,0 +1,50 @@
+// After JLS2 5 Conversions and Promotions
+
+
+public class okjlspromote {            
+
+    public static void main(String[] args) {
+
+        // Casting conversion (Sec. 5.4) of a float literal to
+        // type int. Without the cast operator, this would
+        // be a compile-time error, because this is a
+        // narrowing conversion (Sec. 5.1.3):
+        int i = (int)12.5f;
+
+
+        // String conversion (Sec. 5.4) of i's int value:
+        __println(1, "(int)12.5f==" , i);
+
+
+        // Assignment conversion (Sec. 5.2) of i's value to type
+        // float. This is a widening conversion (Sec. 5.1.2):
+        float f = i;
+
+
+        // String conversion of f's float value:
+        __println(1,"after float widening: " , f);
+
+
+        // Numeric promotion (Sec. 5.6) of i's value to type
+        // float. This is a binary numeric promotion.
+        // After promotion, the operation is float*float:
+        __print(1,f);
+        f = f * i;
+
+
+        // Two string conversions of i and f:
+        __println(1,"*" , i , "==" , f);
+
+
+        // Method invocation conversion (Sec. 5.3) of f's value
+        // to type double, needed because the method Math.sin
+        // accepts only a double argument:
+        double d = Math.sin(f);
+
+
+        // Two string conversions of f and d:
+        __println(1,"Math.sin(" , f , ")==" , d );
+
+    }
+
+}

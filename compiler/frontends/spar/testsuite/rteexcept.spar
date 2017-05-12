@@ -1,0 +1,9 @@
+// File: rteexcept.spar
+// Test the default handling of exceptions.
+
+public class rteexcept {
+    public static void main(){
+	int a[] = new int[23];
+	a[24] = 2;
+    }
+}

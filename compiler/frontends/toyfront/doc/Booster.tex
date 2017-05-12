@@ -1,0 +1,48 @@
+\documentclass{report}
+
+\usepackage{a4}
+\usepackage{psfig}
+\usepackage{ebnf}
+\usepackage{booster}
+
+
+\bibliographystyle{mybibsty}
+
+\begin{document}
+
+\input{titlepage}
+
+\chapter*{Booster in Perspective}
+
+  \input{BoosterPerspective}
+
+\chapter*{Preface}
+
+  \input{Preface}
+
+\chapter{The Grammar}\label{BoosterGrammar}
+
+  \input{ContextFreeGrammar}
+
+\chapter{The Static Semantics}
+
+  \input{Notation}
+  \input{Types}
+  \input{Expressions}
+  \input{StaticSemantics}
+
+\newpage
+
+\section*{Disclaimer}
+
+In its more traditional imperative parts \Booster\ resembles the
+language Modula-2 and its descendants. In the definition of the
+corresponding language constructs we used where appropriate without
+further notification the corresponding definitions found in the
+language definitions of Modula-3 \cite{Nelson91} and Oberon-2
+\cite{Mossenbock93}. Possible inaccuracies and inconsistencies
+introduced in this process are our own.
+
+\bibliography{booster}
+
+\end{document}

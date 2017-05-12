@@ -1,0 +1,15 @@
+// Test error messages about class and interface definition in the wrong file
+
+package spar.testsuite;
+
+public class Cl {
+    private int n;
+    void main(){}
+}
+
+public interface Inf {
+}
+
+public class errwrongfile {
+    void main(){}
+}

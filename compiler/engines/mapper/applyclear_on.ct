@@ -1,0 +1,106 @@
+/*
+  Clear_onengine
+
+  Clears on clauses in tree which have no conflict with their parent
+
+  Rewritten version of WD's original align engine version
+
+  To be found out: SmtForeach etc don't have their 'on' field set.
+  Check this out, this is incorrect and causes bugs.
+
+  Note: we do not descend into OwnerExpr nodes in order to avoid rewriting
+  subexpressions of distributions. This would prevent comparing distributions.
+*/
+
+.. File: applyclear_on.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors block statement
+..append actors SmtForall SmtForkall SmtForeach
+.append actors LocWrapper ExprWrapper
+.set actors_copy $(actors)
+.append actors OwnerExpr SmtAssign
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "error.h"
+#include "vnusctl.h"
+#include "service.h"
+#include "issubset.h"
+#include "applyclear_on.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+.call generate_cutoff_dummy_action OwnerExpr
+
+.foreach t $(actors_copy)
+static $t rewrite_$t_action(
+    $t e, global_context gc )
+{
+    assert (gc->current_owner != OwnerExpr_listNIL);
+    OwnerExpr_list next_parent = gc->current_owner;
+    if (e->on != OwnerExpr_listNIL) {
+	if (e->on->sz > 1)
+	    internal_error("CLEAR:LOC:multiple owner still left");
+	if (e->on->sz == 0 || issubset_owner_list(gc->current_owner, e->on)) {
+	    rfre_OwnerExpr_list(e->on);
+	    e->on = OwnerExpr_listNIL;
+	} else {
+	    next_parent = e->on;
+	}
+    }
+.call push_current_owner
+    gc->current_owner = next_parent;
+.call generate_walker_call "    " e $t $t
+.call pop_current_owner
+    return e;
+}
+
+.endforeach
+
+static SmtAssign rewrite_SmtAssign_action(
+    SmtAssign e, global_context gc )
+{
+    assert (gc->current_owner != OwnerExpr_listNIL);
+.call generate_walker_call "    " e SmtAssign SmtAssign
+    if (e->on == OwnerExpr_listNIL &&
+	e->rhs->tag == TAGExprWrapper &&
+	to_ExprWrapper(e->rhs)->on != OwnerExpr_listNIL &&
+	to_ExprWrapper(e->rhs)->on->sz != 0)
+    {
+	e->on = rdup_OwnerExpr_list(gc->current_owner);
+    }
+    return e;
+}
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_clear_on(
+    vnusprog elm, global_context gc)
+{
+        // A hack to avoid 'unused' warnings
+    (void) rewrite_OwnerExpr_walker;
+    
+.call push_current_owner
+    gc->current_owner = append_OwnerExpr_list(
+	new_OwnerExpr_list(),
+	new_NewOwnReplicated());
+.call generate_descent_call "    " elm vnusprog vnusprog
+    rfre_OwnerExpr_list(gc->current_owner);
+.call pop_current_owner
+
+    return elm;
+}

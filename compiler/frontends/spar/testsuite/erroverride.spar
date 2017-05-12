@@ -1,0 +1,28 @@
+class t1 {
+    public void bla1() {}
+    public static void bla2() {}
+    public void bla3() {}
+    protected void bla4() {}
+    void bla5() {}
+    final public void bla6() {}
+}
+
+public class erroverride extends t1 {
+    public static void bla1() {}
+    public void bla2() {}
+    void bla3() {}
+    void bla4() {}
+    protected void bla5() {}
+    public void bla6() {}
+
+    public static void main(String args[])
+    {
+	erroverride x = null;
+	x.bla1();
+	x.bla2();
+	x.bla3();
+	x.bla4();
+	x.bla5();
+	x.bla6();
+    }
+}

@@ -1,0 +1,21 @@
+SUBDISTLISTS = $(patsubst %,%/dist.lst,$(SUBDIRS))
+
+%/dist.lst: % %/Makefile
+	cd $* && make dist.lst
+
+dist.lst: $(MAKEFILE) $(DISTFILES) $(SUBDISTLISTS)
+	@echo "Building $@"
+	@echo $(DISTFILES) | tr ' ' '\012' > $@
+ifdef SUBDIRS
+	@echo "Including ($(SUBDISTLISTS))"
+	@for i in $(SUBDIRS); do sed -e "s/^/$$i\//" $$i/dist.lst >> $@; done
+	@echo "Recursion done"
+endif
+
+emptydist:
+	rm -f dist.lst
+ifdef SUBDIRS
+	@for i in $(SUBDIRS); do cd $$i; make emptydist; cd ..; done
+endif
+
+.PHONY: emptydist

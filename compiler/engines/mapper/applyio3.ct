@@ -1,0 +1,437 @@
+/*
+   Applyio3 engine
+
+   Find Is/GetNewOwnerand Is/GetNewMaster expressions and inline them.
+
+   */
+
+.. File: applyio3.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors ExprIsNewOwner ExprGetNewOwner
+.append actors ExprIsNewMaster ExprGetNewMaster
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "vnusctl.h"
+#include "applyio3.h"
+#include "search.h"
+#include "replace.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+/*
+  Generate an expression that computes one distribution.
+  */
+static expression gen_inline(DistrExpr distr, global_context /*gc*/)
+{
+    expression ret = expressionNIL;
+    switch (distr->tag)
+    {
+	case TAGNewDistBlock:
+        {
+	    NewDistBlock d = to_NewDistBlock(distr);
+            ret = new_ExprBinop(
+                rdup_expression(d->index),
+                BINOP_DIVIDE,
+		rdup_expression(d->size));
+            break;
+        }
+        case TAGNewDistCyclic:
+        {
+	    NewDistCyclic d = to_NewDistCyclic(distr);
+            ret = new_ExprBinop(
+                rdup_expression(d->index),
+                BINOP_MOD,
+		rdup_expression(d->extent));
+            break;
+        }
+        case TAGNewDistBC:
+        {
+	    NewDistBC d = to_NewDistBC(distr);
+            ret = new_ExprBinop(
+                new_ExprBinop(
+                    rdup_expression(d->index),
+                    BINOP_DIVIDE,
+		    rdup_expression(d->size)),
+                BINOP_MOD,
+		rdup_expression(d->extent));
+            break;
+        }
+        case TAGNewDistLocal:
+        {
+            ret = rdup_expression(to_NewDistLocal(distr)->index);
+            break;
+        }
+        default:
+            fprintf(stderr, "IO3: should not have come here\n");
+            assert(false);
+            break;
+    }
+    return ret;
+}
+
+/*
+  Generate an expression that represents 'all processors'.
+  This is a composition  of processor number '0' with all the replication
+  bits set to on.
+  */
+static expression gen_allProcessors(global_context gc)
+{
+    ArrayProcDecl apd = get_processor_decl(gc);
+    int procs = (((int)1) << apd->sizes->sz) - 1;
+    if (enableSymbolicNumberOfProcessors)
+	{
+		return new_ExprBinop(
+			new_ExprInt(procs),
+			BINOP_TIMES,
+			build_numberOfProcessors_expression(gc));
+	}
+    else
+	{
+    		procs *= gc->numberOfProcessors;
+    		return new_ExprInt(procs);
+	}
+}
+
+/*
+  Generate an expression that represents the 'master' of an object with
+  a certain distribution.
+  All replication bits are off.
+  In all replicated dimensions index '0' is used.
+  In all other dimensions the actual index is used.
+  */
+static expression generate_master(
+    OwnerExpr on, global_context gc)
+{
+    assert(on != OwnerExprNIL);
+    expression ret = expressionNIL;
+    switch (on->tag)
+    {
+	case TAGNewOwnLocation:
+	{
+	    NewOwnLocation nol = to_NewOwnLocation(on);
+	    ArrayProcDecl apd = get_processor_decl(gc);
+	    assert(nol->proc->tag == TAGExprName);
+	    assert (nol->distr->sz == 1 || nol->distr->sz == apd->sizes->sz);
+	    for (unsigned i=0; i<nol->distr->sz; i++)
+	    {
+		expression tmpRet = expressionNIL;
+		switch (nol->distr->arr[0]->tag)
+		{
+		    case TAGNewDistDontCare:
+		    case TAGNewDistAlign:
+			internal_error("IO3: cannot inline distribution\n");
+			break;
+		    case TAGNewDistReplicated:
+			tmpRet = new_ExprInt(0);
+			break;
+		    case TAGNewDistBlock:
+		    case TAGNewDistCyclic:
+		    case TAGNewDistBC:
+		    case TAGNewDistLocal:
+			tmpRet = gen_inline(nol->distr->arr[i], gc);
+			break;
+		}
+		assert (tmpRet != expressionNIL);
+		if (ret == expressionNIL)
+		{
+		    ret = tmpRet;
+		}
+		else
+		{
+		    expression multExpr;
+		    assert(i>0);
+		    if (nol->distr->sz == 1)
+			multExpr = build_numberOfProcessors_expression(gc);
+		    else {
+			int multiplier = 1;
+			for (unsigned j=0; j<i; j++)
+			    multiplier *= apd->sizes->arr[j];
+			multExpr = new_ExprInt(multiplier);
+		    }
+		    ret = new_ExprBinop(
+			new_ExprBinop(
+			    tmpRet,
+			    BINOP_TIMES,
+			    multExpr),
+			BINOP_PLUS,
+			ret);
+		}
+	    }
+	    break;
+	}
+	case TAGNewOwnReplicated:
+	    ret = new_ExprInt(0);
+	    break;
+	case TAGNewOwnDontCare:
+	case TAGNewOwnMap:
+	    internal_error("IO3: cannot inline distribution\n");
+	    break;
+    }
+    return ret;
+}
+
+/*
+  Generate replication bits.
+  All bits are on for those dimensions that are replicated.
+  The result is scaled so that it can simply be added to a processor number.
+  */
+static expression generate_replBits(
+    OwnerExpr on, global_context gc)
+{
+    assert(on != OwnerExprNIL);
+    expression ret = expressionNIL;
+    switch (on->tag)
+    {
+	case TAGNewOwnLocation:
+	{
+	    NewOwnLocation nol = to_NewOwnLocation(on);
+	    ArrayProcDecl apd = get_processor_decl(gc);
+	    assert(nol->proc->tag == TAGExprName);
+	    assert (nol->distr->sz == 1 || nol->distr->sz == apd->sizes->sz);
+	    int replBits = 0;
+	    for (unsigned i=0; i<nol->distr->sz; i++)
+	    {
+		switch (nol->distr->arr[0]->tag)
+		{
+		    case TAGNewDistDontCare:
+		    case TAGNewDistAlign:
+			internal_error("IO3: cannot inline distribution\n");
+			break;
+		    case TAGNewDistReplicated:
+			replBits <<= 1;
+			replBits |= 1;
+			break;
+		    case TAGNewDistBlock:
+		    case TAGNewDistCyclic:
+		    case TAGNewDistBC:
+		    case TAGNewDistLocal:
+			replBits <<= 1;
+			break;
+		}
+	    }
+	    if (replBits != 0 && nol->distr->sz == 1)
+		ret = gen_allProcessors(gc);
+	    else
+		ret = new_ExprBinop(
+			new_ExprInt(replBits),
+			BINOP_TIMES,
+			build_numberOfProcessors_expression(gc));
+	    break;
+	}
+	case TAGNewOwnReplicated:
+	    ret = gen_allProcessors(gc);
+	    break;
+	case TAGNewOwnDontCare:
+	case TAGNewOwnMap:
+	    internal_error("IO3: cannot inline distribution\n");
+	    break;
+    }
+    return ret;
+}
+
+
+static expression rewrite_ExprGetNewMaster_action(
+  ExprGetNewMaster e, global_context gc )
+{
+.call generate_walker_call "    " e ExprGetNewMaster ExprGetNewMaster
+
+    assert(e->on != OwnerExprNIL);
+    expression ret = generate_master(e->on, gc);
+
+    rfre_expression(e);
+    return ret;
+}
+
+static expression rewrite_ExprGetNewOwner_action(
+  ExprGetNewOwner e, global_context gc )
+{
+.call generate_walker_call "    " e ExprGetNewOwner ExprGetNewOwner
+
+    assert(e->on != OwnerExprNIL);
+    expression ret = generate_master(e->on, gc);
+    expression replBits = generate_replBits(e->on, gc);
+    ret = new_ExprBinop(
+	replBits,
+	BINOP_PLUS,
+	ret);
+    
+    rfre_expression(e);
+    return ret;
+}
+
+static expression rewrite_ExprIsNewMaster_action(
+  ExprIsNewMaster e, global_context gc )
+{
+.call generate_walker_call "    " e ExprIsNewMaster ExprIsNewMaster
+
+    assert(e->on != OwnerExprNIL);
+    expression ret = expressionNIL;
+    switch (e->on->tag)
+    {
+	case TAGNewOwnLocation:
+	{
+	    NewOwnLocation nol = to_NewOwnLocation(e->on);
+	    assert(nol->proc->tag == TAGExprName);
+	    assert(nol->distr->sz == e->proc->sz);
+	    for (unsigned i=0; i<nol->distr->sz; i++)
+	    {
+		expression tmpRet = expressionNIL;
+		switch (nol->distr->arr[0]->tag)
+		{
+		    case TAGNewDistDontCare:
+		    case TAGNewDistAlign:
+			internal_error("IO3: cannot inline distribution\n");
+			break;
+		    case TAGNewDistReplicated:
+			tmpRet = new_ExprBinop(
+			    rdup_expression(e->proc->arr[i]),
+			    BINOP_EQUAL,
+			    new_ExprInt(0));
+			break;
+		    case TAGNewDistBlock:
+		    case TAGNewDistCyclic:
+		    case TAGNewDistBC:
+		    case TAGNewDistLocal:
+			tmpRet = new_ExprBinop(
+			    rdup_expression(e->proc->arr[i]),
+			    BINOP_EQUAL,
+			    gen_inline(nol->distr->arr[i], gc));
+			break;
+		}
+		assert (tmpRet != expressionNIL);
+		if (ret == expressionNIL)
+		{
+		    ret = tmpRet;
+		}
+		else
+		{
+		    ret = new_ExprBinop(
+			ret,
+			BINOP_SHORTAND,
+			tmpRet);
+		}
+	    }
+	    break;
+	}
+	case TAGNewOwnReplicated:
+	    for (unsigned i=0; i<e->proc->sz; i++)
+	    {
+		expression tmpRet = new_ExprBinop(
+		    rdup_expression(e->proc->arr[i]),
+		    BINOP_EQUAL,
+		    new_ExprInt(0));
+		if (ret == expressionNIL)
+		{
+		    ret = tmpRet;
+		}
+		else
+		{
+		    ret = new_ExprBinop(
+			ret,
+			BINOP_SHORTAND,
+			tmpRet);
+		}
+	    }
+	    break;
+	case TAGNewOwnDontCare:
+	case TAGNewOwnMap:
+	    internal_error("IO3: cannot inline distribution\n");
+	    break;
+    }
+    rfre_expression(e);
+    return ret;
+}
+
+static expression rewrite_ExprIsNewOwner_action(
+  ExprIsNewOwner e, global_context gc )
+{
+.call generate_walker_call "    " e ExprIsNewOwner ExprIsNewOwner
+
+    assert(e->on != OwnerExprNIL);
+    expression ret = expressionNIL;
+    switch (e->on->tag)
+    {
+	case TAGNewOwnLocation:
+	{
+	    NewOwnLocation nol = to_NewOwnLocation(e->on);
+	    assert(nol->proc->tag == TAGExprName);
+	    assert(nol->distr->sz == e->proc->sz);
+	    for (unsigned i=0; i<nol->distr->sz; i++)
+	    {
+		expression tmpRet = expressionNIL;
+		switch (nol->distr->arr[0]->tag)
+		{
+		    case TAGNewDistDontCare:
+		    case TAGNewDistAlign:
+			internal_error("IO3: cannot inline distribution\n");
+			break;
+		    case TAGNewDistReplicated:
+			tmpRet = new_ExprBoolean(true);
+			break;
+		    case TAGNewDistBlock:
+		    case TAGNewDistCyclic:
+		    case TAGNewDistBC:
+		    case TAGNewDistLocal:
+			tmpRet = new_ExprBinop(
+			    rdup_expression(e->proc->arr[i]),
+			    BINOP_EQUAL,
+			    gen_inline(nol->distr->arr[i], gc));
+			break;
+		}
+		assert (tmpRet != expressionNIL);
+		if (ret == expressionNIL)
+		{
+		    ret = tmpRet;
+		}
+		else
+		{
+		    ret = new_ExprBinop(
+			ret,
+			BINOP_SHORTAND,
+			tmpRet);
+		}
+	    }
+	    break;
+	}
+	case TAGNewOwnReplicated:
+	    ret = new_ExprBoolean(true);
+	    break;
+	case TAGNewOwnDontCare:
+	case TAGNewOwnMap:
+	    internal_error("IO3: cannot inline distribution\n");
+	    break;
+    }
+    rfre_expression(e);
+    return ret;
+}
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_io3(
+    vnusprog elm, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+    
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}

@@ -1,0 +1,14 @@
+// After JLS2 14.4.2
+
+public class okupdown {
+    public static void main(){
+	for( int i=0; i<10; i++ ){
+	     __print( 1, i, " " );
+	}
+	for( int i=10; i>0; i-- ){
+
+	     __print( 1, i, " " );
+	}
+	__println( 1 );
+    }
+}

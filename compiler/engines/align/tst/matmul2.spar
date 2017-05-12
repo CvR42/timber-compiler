@@ -1,0 +1,64 @@
+// Minimal test program.
+
+globalpragmas <$boundscheck=false$>;
+
+package spar.testsuite;
+
+public class matmul2
+{
+    static final int DSTLEN = 16000;
+    static final int SRCLEN = 250;
+    static final int ITER = 50;
+    static final boolean NAH = false;
+    static double A[*,*] <$dist="[block,collapsed]"$> = new double[DSTLEN,SRCLEN] <$dist="[block, collapsed]"$>;
+    static double B[*] <$dist="[replicated]"$> = new double[SRCLEN] <$dist="[replicated]"$>;
+    static double C[*,*] <$dist="[block,collapsed]"$> = new double[DSTLEN,ITER] <$dist="[block,collapsed]"$>;
+    static double D[*] <$dist="[local 0]"$> = new double[DSTLEN] <$dist="[local 0]"$>;
+    static double E[*,*] <$dist="[block,collapsed]"$> = new double[SRCLEN,ITER] <$dist="[block, collapsed]"$>;
+
+    public static void main()
+        {
+            __println(1, "In the air");
+            foreach( v:-:[SRCLEN,ITER] ) E@v = 0;
+	    foreach (j:-:SRCLEN)
+		foreach (i:-:DSTLEN)
+                    A[i,j] = i+j;
+//	    __println(1,"stage2");
+	    foreach (i:-:SRCLEN)
+		B[i] = i;
+//		__println(1,"stage3");
+            for (loop:-:ITER) 
+            {
+//	    __print(1,"loop:");
+//	    __println(1,loop);
+//		__println(1,"stage1");
+		foreach (i:-:DSTLEN)
+		    C[i,loop] = 0;
+                foreach( i:-:SRCLEN ){
+		    B[i] = E[i,loop];
+		}
+//		__println(1,"stage4");
+		foreach (j:-:SRCLEN){
+//		    __println(1,i);
+		    	<$ independent $> foreach (i:-:DSTLEN){
+			    C[i,loop] = (<$resident$>C[i,loop]) + A[i,j]*(<$resident$>B[j]);
+			}
+		    }
+//		__println(1,"stage5");
+            }
+	    if (NAH){
+	        foreach (i:-:DSTLEN)
+                        D[i] = C[i];
+	    }
+            __println(1, "Finished");
+	    if (NAH){
+                __println(1, "D:");
+		foreach (i:-:DSTLEN){
+                        __print(1,D[i]);
+		        __print(1," ");
+		    }
+		    __println(1,"");
+	    }
+        }
+}
+

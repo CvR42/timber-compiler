@@ -1,0 +1,17 @@
+// After JLS 15.11.4.8    Example: Evaluation Order
+//
+// The program should not print 'oops', since the 's' expression of
+// 's.startsWith' is evaluated before the assignment 's = "two"'
+// takes place.
+//
+// At the moment, Spar does print 'oops'.
+
+
+public class okjlsevalorder {
+    public static void main(String[] args) {
+        String s = "one";
+        if (s.startsWith(s = "two"))
+            __println(1,"oops");
+	__println(1,"done");
+    }
+}

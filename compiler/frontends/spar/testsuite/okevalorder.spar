@@ -1,0 +1,11 @@
+// After JLS2
+
+package spar.testsuite;
+
+public class okevalorder {
+    public static void main()
+    {
+	int i = 4;
+	__println( 1, i, " ", i=3 );
+    }
+}

@@ -1,0 +1,16 @@
+package spar.testsuite;
+
+class t1 {
+    t1() { __println( 1, "Hello from t1 constructor" ); }
+}
+
+class t extends t1 {
+    t() { super(); __println( 1, "Hello from t constructor" ); }
+}
+
+public class oksupercons {
+    public static void main()
+    {
+	t x = new t();
+    }
+}

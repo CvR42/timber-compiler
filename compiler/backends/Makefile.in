@@ -1,0 +1,60 @@
+# Top-level makefile.
+
+@SET_MAKE@
+
+COMPILERSRCROOT = ..
+
+JUNK =
+PRECIOUSJUNK = 
+
+help:
+	@echo "TIMBER BACKENDS -- Possible make targets:"
+	@echo "--------------------------------------------------------"
+	@echo "all          Compile all targets"
+	@echo "tests        Run all Vnus test programs."
+	@echo "clean        Delete all temporary files."
+	@echo "empty        Make everything spotless."
+	@echo "depend       Update all dependencies."
+	@echo "install      Install software (prefix=@prefix@)."
+	@echo "--------------------------------------------------------"
+
+all:
+	(cd runtime && $(MAKE) all)
+	(cd vnuslib && $(MAKE) all)
+	(cd vnus && $(MAKE) all)
+
+tests:
+	@(cd runtime && $(MAKE) tests && \
+	  cd ../vnuslib && $(MAKE) tests && \
+	  cd ../vnus && $(MAKE) tests && $(MAKE) runs && \
+	  cd testsuite && $(MAKE) tests)
+
+check:
+	@(cd runtime && $(MAKE) tests && \
+	  cd ../vnuslib && $(MAKE) tests && \
+	  cd ../vnus && $(MAKE) tests && $(MAKE) runs && \
+	  cd testsuite && $(MAKE) tests)
+
+depend:
+	(cd runtime && $(MAKE) depend)
+	(cd vnuslib && $(MAKE) depend)
+	(cd vnus && $(MAKE) depend)
+
+install:
+	(cd runtime && $(MAKE) install)
+	(cd vnuslib && $(MAKE) install)
+	(cd vnus && $(MAKE) install)
+
+uninstall:
+	(cd runtime && $(MAKE) uninstall)
+	(cd vnuslib && $(MAKE) uninstall)
+	(cd vnus && $(MAKE) uninstall)
+
+DISTFILES = Makefile.in configure configure.ac README.tests TODO install-sh \
+	.cvsignore
+
+SUBDIRS = runtime vnus vnuslib
+
+include $(COMPILERSRCROOT)/Makefiles/Make.configure
+include $(COMPILERSRCROOT)/Makefiles/Make.dist
+include $(COMPILERSRCROOT)/Makefiles/Make.std

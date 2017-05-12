@@ -1,0 +1,8 @@
+// Minimal test program - Spar version.
+
+public class hellospar {
+    public static void main()
+    {
+	__println( 1, "Hello world" );
+    }
+}

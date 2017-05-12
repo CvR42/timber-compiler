@@ -1,0 +1,364 @@
+/*
+   Applyel1 engine
+
+   Find loops with single statements that have a condition that
+   does an IsOwner or Sender expression on a shape that has a
+   local distribution. If so, lift that part of the condition outside
+   the loop.
+   */
+
+.. File: applyel1.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtForeach
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "vnusctl.h"
+#include "applyel1.h"
+#include "search.h"
+#include "replace.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+static int determine_next_distribution_dim(
+    DistrExpr_list distr,
+    int start_dim)
+{
+    for (unsigned i=start_dim; i<distr->sz; i++)
+    {
+        switch (distr->arr[i]->tag)
+        {
+            case TAGNewDistDontCare:
+            case TAGNewDistReplicated:
+            case TAGNewDistAlign:
+            case TAGNewDistBlock:
+            case TAGNewDistCyclic:
+            case TAGNewDistBC:
+                break;
+            case TAGNewDistLocal:
+                return i;
+                break;
+        }
+    }
+    return -1;
+}
+
+
+/*
+  Bla, see comment at top of file.
+  */
+static statement rewrite_SmtForeach_action(
+  SmtForeach e, global_context gc )
+{
+/*
+  We want L:U:S as 0:U':1
+  */
+    e->cards = normalise_cardinalities(e->cards,gc);
+/*
+  The first match is to see whether the for-loop has only 1 statement which
+  should be an if-statement. The condition of this if-statement should be
+  an IsNewOwner or IsNewMaster test.
+  Also, the if-statement should not have an else-body, and the cardinality
+  should have a lowerbound=0 and a stride=1.
+  Finally, for now we only handle 1-dimensional arrays. Still to do are
+  multi-dimensional arrays with a 1-dimensional distribution, and after that
+  also multi-dimensional distributions.
+  */
+    if (warning_level >= WARN_DEBUG)
+	fprintf(stderr,"Applyel1: checking for IsOwner lift..\n");
+    bool rightForm = (e->cards->sz == 1);
+    
+    if (!rightForm)
+    {
+.call generate_descent_call "    " e->body block block
+    return e;
+    }
+    
+    int depth = 0;
+    SmtForeach loop = e;
+    block body = loop->body;
+    while ((body->statements->sz == 1) &&
+           (body->statements->arr[0]->tag == TAGSmtForeach))
+    {
+        loop = to_SmtForeach(body->statements->arr[0]);
+        body = loop->body;
+        depth++;
+    }
+    rightForm = false;
+    SmtIf ifstmt = SmtIfNIL;
+    if ((body->statements->sz == 1) &&
+        (body->statements->arr[0]->tag == TAGSmtIf))
+    {
+        ifstmt = to_SmtIf(body->statements->arr[0]);
+        rightForm = true;
+    }
+    
+    if (!rightForm)
+    {
+.call generate_descent_call "    " e->body block block
+    return e;
+    }
+    
+    if (warning_level >= WARN_DEBUG)
+	fprintf(stderr,"Applyel1: possible lift at depth %d!!!\n",depth);
+// No else-body?
+    if ((ifstmt->elsebody != blockNIL) &&
+        (ifstmt->elsebody->statements != statement_listNIL) &&
+        (ifstmt->elsebody->statements->sz != 0))
+        rightForm = false;
+    
+    if (!rightForm)
+    {
+.call generate_descent_call "    " e->body block block
+    return e;
+    }
+// Assuming all are owner expressions without side effects...
+    ifstmt->cond = normalise_ExprBinop(ifstmt->cond, BINOP_SHORTAND);
+    ExprReduction conditions = split_ExprBinop(ifstmt->cond, BINOP_SHORTAND);
+    assert (conditions->operands != expression_listNIL);
+
+    bool foundMatch = false;
+	// The following 4 vars are pointers into existing data.
+	// Take care with copying and deleting.
+    OwnerExpr on = OwnerExprNIL;
+    expression_list cmpProcExprL = expression_listNIL;
+    expression ownProcExpr = expressionNIL; // Just a name, not relevant yet
+    DistrExpr_list distrL = DistrExpr_listNIL;
+    int condNo = -1;
+    int dim = -1;
+//    bool isMultiDimDist = false;
+
+// This is the beginning of the matching part
+    for (unsigned i=0; i<conditions->operands->sz && dim==-1; i++)
+    {
+        condNo = i;
+	if (is_MappingIsExpression(conditions->operands->arr[condNo]))
+	{
+	    on = to_MappingIsExpression(conditions->operands->arr[condNo])->on;
+	    cmpProcExprL = to_MappingIsExpression(conditions->operands->arr[condNo])->proc;
+	}
+	else
+	{
+	    continue;
+	}
+
+	switch (on->tag)
+	{
+	    case TAGNewOwnDontCare:
+	    case TAGNewOwnReplicated:
+	    case TAGNewOwnMap:
+		continue;
+		break;
+	    case TAGNewOwnLocation:
+		distrL = to_NewOwnLocation(on)->distr;
+		ownProcExpr = to_NewOwnLocation(on)->proc;
+		break;
+	}
+	
+// Check distributions
+        if (distrL == DistrExpr_listNIL)
+        {
+            continue;
+        }
+	assert (distrL->sz == cmpProcExprL->sz);
+    
+        if (distrL->sz >1)
+	    if (warning_level >= WARN_DEBUG)
+		fprintf(stderr,"Applyel1: possible multi-dim dist\n");
+        report_distributions(distrL);
+#if 0
+        int noRealDistributions = count_real_distributions(distrL);
+        int noIffyDistributions = count_iffy_distributions(distrL);
+        isMultiDimDist = (noRealDistributions>1);
+        if (isMultiDimDist)
+        {
+	    if (warning_level >= WARN_DEBUG)
+		fprintf(stderr,"Applyel1:multidimensional distributions not yet supported\n");
+            continue;
+        }
+        if (noIffyDistributions != 0)
+        {
+	    if (warning_level >= WARN_DEBUG)
+		fprintf(stderr,"Applyel1:iffy distributions not yet supported\n");
+            continue;
+        }
+#endif
+        dim = -1;
+        while(true)
+        {
+            dim = determine_next_distribution_dim(distrL, dim+1);   
+            if (dim == -1)
+            {
+		if (warning_level >= WARN_DEBUG)
+		    fprintf(stderr,"Applyel1:didn't find usable distribution\n");
+                break;
+            }
+		/*
+		  We should check that the local distribution is independent
+		  of the loop variables. For now just check that it is a
+		  constant.
+		  */
+            NewDistLocal ndl = to_NewDistLocal(distrL->arr[dim]);
+// Only if "compare expr" independent of cardinality
+	    if (ndl->index->tag == TAGExprInt)
+	    {
+		bool isIndependent = true;
+		if (search_expression(cmpProcExprL->arr[dim], e->cards->arr[0]->name->sym))
+		    isIndependent = false;
+		for (unsigned j = 0; j<e->cards->arr[0]->secondaries->sz; j++)
+		{
+		    if (search_expression(cmpProcExprL->arr[dim], e->cards->arr[0]->secondaries->arr[j]->name->sym))
+			isIndependent = false;
+		}
+		if (isIndependent)
+		{
+		    foundMatch = true;
+		    break;
+		}
+	    }
+        }
+    }
+// This is the end of the matching part
+
+    if (!foundMatch)
+    {
+        rfre_ExprReduction(conditions);
+.call generate_descent_call "    " e->body block block
+        return e;
+    }
+    
+    if (warning_level >= WARN_RULE)
+    {
+	fprintf(stderr, "EL1: matched condition %d out of %d conditions\n", condNo, conditions->operands->sz);
+	fprintf(stderr, "EL1: matched owner %d out of %d owners\n", dim, distrL->sz);
+    }
+	/*
+	  In the case of multidimensional distributions we do not lift the whole
+	  condition, but only the specific distribution in 1 dim that was matched.
+	  The proc expression that is to be matched is handled similarly.
+	  */
+    DistrExpr distrLift = rdup_DistrExpr(distrL->arr[dim]);
+    DistrExpr_list distrLLift = new_DistrExpr_list();
+    distrLLift = append_DistrExpr_list(distrLLift, distrLift);
+    expression cmpProcExprLift = rdup_expression(cmpProcExprL->arr[dim]);
+    expression_list cmpProcExprLLift = new_expression_list();
+    cmpProcExprLLift = append_expression_list(cmpProcExprLLift, cmpProcExprLift);
+    expression ownProcExprLift = rdup_expression(ownProcExpr);
+    OwnerExpr onLift = new_NewOwnLocation(
+	ownProcExprLift,
+	distrLLift);
+    expression condLift = expressionNIL;
+
+	/*
+	  Discerning between the two is actually not necessary as with a
+	  local distribution the end result will be the same.
+	  But, just to be on the safe side, we create the same node as
+	  the original one.
+	  */
+    switch (conditions->operands->arr[condNo]->tag)
+    {
+	case TAGExprIsNewOwner:
+	    condLift = new_ExprIsNewOwner(
+		onLift,
+		cmpProcExprLLift);
+	    break;
+	case TAGExprIsNewMaster:
+	    condLift = new_ExprIsNewMaster(
+		onLift,
+		cmpProcExprLLift);
+	    break;
+	default:
+	    internal_error("EL1: should not have come here");
+	    break;
+    }
+
+    distrL = delete_DistrExpr_list(distrL, dim);
+    to_NewOwnLocation(on)->distr = distrL;
+	// Alias, but just to be sure.
+    cmpProcExprL = delete_expression_list(cmpProcExprL, dim);
+    to_MappingIsExpression(conditions->operands->arr[condNo])->proc = cmpProcExprL;
+		// Alias, but just to be sure.
+    
+    if (distrL->sz == 0)
+	conditions->operands = delete_expression_list(conditions->operands, condNo);
+
+    rfre_expression(ifstmt->cond);
+    if (conditions->operands->sz == 0)
+        ifstmt->cond = new_ExprBoolean(new_tmstring("TRUE"));
+    else
+        ifstmt->cond = form_ExprBinop(conditions);
+    rfre_ExprReduction(conditions);
+    SmtForeach old = e;
+/*
+  Yup, we got a local distribution. Now only lift it.
+  */
+// Not a really clean substitution, but it works.
+    tmsymbol findSym = e->cards->arr[0]->name->sym;
+    expression replaceExpr = new_ExprInt(0);
+    condLift = replace_expression(
+	condLift,
+	findSym, replaceExpr, locationNIL, gc);
+    if (e->cards->arr[0]->secondaries != secondary_listNIL &&
+	e->cards->arr[0]->secondaries->sz != 0)
+	internal_error("EL1: bummer, secondaries not substituted");
+    rfre_expression(replaceExpr);
+    SmtIf ret = new_SmtIf(
+        0,
+        gen_origin(),
+        new_Pragma_list(),
+        new_OwnerExpr_list(),
+        condLift,
+        new_block(
+            0,
+            gen_origin(),
+            new_Pragma_list(),
+            new_OwnerExpr_list(),
+            new_statement_list()),
+        new_block(
+            0,
+            gen_origin(),
+            new_Pragma_list(),
+            new_OwnerExpr_list(),
+            new_statement_list()));
+
+    ret->thenbody->statements = append_statement_list(
+        ret->thenbody->statements,
+        old);
+
+.call generate_descent_call "    " ret SmtIf SmtIf
+    return ret;
+}
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_el1(
+    vnusprog elm, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+    (void) rewrite_statement_list_walker;
+    (void) rewrite_SmtForeach_walker;
+    
+.call generate_descent_call "    " elm vnusprog vnusprog
+// We used marks, so now we have to remove them...
+    gc->prog->declarations = delete_marked_declaration_list(gc->prog->declarations);
+    return elm;
+}

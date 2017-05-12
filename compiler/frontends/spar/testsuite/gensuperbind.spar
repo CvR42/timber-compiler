@@ -1,0 +1,15 @@
+// Test the binding of methods with the superclass of the expected class
+
+package spar.testsuite;
+
+class t1 {}
+class t extends t1 {
+    static void f( t1 x ){}
+}
+
+public class gensuperbind {
+    public static void main()
+    {
+	t.f( new t() );
+    }
+}

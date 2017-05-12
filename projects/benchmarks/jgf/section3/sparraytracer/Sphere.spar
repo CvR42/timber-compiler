@@ -1,0 +1,72 @@
+/**************************************************************************
+*                                                                         *
+*             Java Grande Forum Benchmark Suite - Version 2.0             *
+*                                                                         *
+*                            produced by                                  *
+*                                                                         *
+*                  Java Grande Benchmarking Project                       *
+*                                                                         *
+*                                at                                       *
+*                                                                         *
+*                Edinburgh Parallel Computing Centre                      *
+*                                                                         *
+*                email: epcc-javagrande@epcc.ed.ac.uk                     *
+*                                                                         *
+*                 Original version of this code by                        *
+*            Florian Doyon (Florian.Doyon@sophia.inria.fr)                *
+*              and  Wilfried Klauser (wklauser@acm.org)                   *
+*                                                                         *
+*      This version copyright (c) The University of Edinburgh, 1999.      *
+*                         All rights reserved.                            *
+*                                                                         *
+**************************************************************************/
+
+
+package sparraytracer; 
+
+
+public class Sphere extends Primitive implements java.io.Serializable {
+  [double^3] c;
+  double   r2;
+
+  public Sphere([double^3] center, double radius) {
+    c = center;
+    r2 = radius*radius;
+  }
+  
+  public final [boolean,double,int,type Primitive,type Surface] intersect(Ray ry) {
+    double disc, t;
+
+    final [double^3] v = c - ry.P;
+    final double b = Vec.dot(v, ry.D);
+    final double vr = Vec.dot(v,v);
+    disc = b*b - vr + r2;
+    if (disc < 0.0) {
+      return [false,0.0,0,null,null];
+    }
+    disc = Math.sqrt(disc);
+    t = (b - disc < 1e-6) ? b + disc : b - disc;
+    if (t < 1e-6) {
+      return [false,0.0,0,null,null];
+    }
+    return [
+        true,
+	t,
+	vr > r2 + 1e-6 ? 1 : 0,
+	(Primitive) this,
+	surf
+    ];
+  }
+
+  public [double^3] normal([double^3] p) {
+    return Vec.normalize( p-c );
+  }
+
+  public [double^3] getCenter() {
+    return c;
+  }
+  public void setCenter([double^3] c) {
+    this.c = c;
+  }
+}
+

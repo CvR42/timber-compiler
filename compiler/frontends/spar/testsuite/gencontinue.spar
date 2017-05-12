@@ -1,0 +1,44 @@
+// File: gencontinue.spar
+// Test the code generation for the 'continue' statement.
+import java.io.*;
+
+public class gencontinue {
+    public static void print( char x[] ){
+	for (int k = 0; k < x.length; k++)
+	    __println( 1, (int) x[k] );
+    }
+    public static void main(){
+	for( int i=0; i<20; i++ ){
+	    __println( 1, i );
+	    continue;
+	}
+	l: for( int i=0; i<20; i++ ){
+	    __println( 1, i );
+	    continue l;
+	}
+	for( j:-0:20 ){
+	    __println( 1, j );
+	    continue;
+	}
+	l1: for( j:-0:20 ){
+	    __println( 1, j );
+	    continue l1;
+	}
+	int sum = 0;
+	foreach( j:-0:20 ){
+	    sum += j;
+	    continue;
+	}
+	__println( 1, sum );
+	l2: foreach( j:-0:20 ){
+	    sum += j;
+	    continue l2;
+	}
+	__println( 1, sum );
+	char x[] = { 'a', 'b', 'c' };
+	for( int k = 0; k < x.length; k++){
+	    __println( 1, (int) x[k] );
+	}
+	print( x );
+    }
+}

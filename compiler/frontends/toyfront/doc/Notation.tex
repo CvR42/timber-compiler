@@ -1,0 +1,162 @@
+\section{Definitions}
+
+\Booster\ programs specify computations that act on components
+called {\em locations}. {\em Variables\/} are bounded sets of
+locations that represent a value determined by the variable's {\em
+type}. If a value {\sc v} can be represented by a variable of type
+{\sc t}, then we say the value is a {\em member} of {\sc t}, and {\sc
+t} {\em contains} the value {\sc v}.
+
+The {\em form} of a variable is the sequence of its length in each
+dimension. The form of a zero dimensional variable (i.e.\ scalar) is
+the empty sequence.
+
+An {\em expression\/} specifies a computation that produces a value, a
+variable, or an enumeration of natural values called a {\em
+selection}. Expressions that produce variables are called {\em
+designators}. A designator can denote either a variable or the value
+of that variable, depending on the context. Expressions that produce
+selections are called {\em set expressions}. Expressions whose values
+can be determined statically are called {\em constant expressions}.
+
+\subsection*{Notational conventions}
+
+For the rest of this document we adopt the following notational
+conventions: 
+
+\begin{itemize}
+
+\item let \NT{NT} be a nonterminal of the \Booster\ grammar, the term
+\Language{\NT{NT}} denotes the language defined by the production
+rules of the \Booster\ grammar and the start symbol \NT{NT}.
+
+\item For the representation of \Booster\ program fragments we will use
+constructs of the extended BNF defined in Chapter \ref{BoosterGrammar}
+in an obvious way. Identifiers surrounded by \verb'<' and \verb'>'
+denote the language construct suggested by the Booster grammar. For
+instance, in the program fragment
+
+\begin{frag}
+{[}IMPLEMENTATION{]} MODULE <Id$_{\tt 1}$>;\\
+\> <ImplementationUnits>\\
+\> [BEGIN <StatementList>]\\
+END <Id$_{\tt 2}$>.
+\end{frag}
+
+\noindent the parts between brackets are optional. Furthermore, {\small
+\tt <Id$_{\tt 1}$>} and {\small \tt <Id$_{\tt 2}$>} are elements of
+\Language{\TC{Identifier}}, {\small \tt <ImplementationUnits>} $\in$
+\any{\Language{\NT{ImplementationUnit}}}, and {\small \tt
+<StatementList>} $\in$ \Language{\NT{StatementList}}.
+
+\end{itemize}
+
+\subsection*{Representation}
+
+The representation of terminal symbols in terms of characters is
+defined using the ASCII set. Symbols are identifiers, numbers,
+strings, operators, and delimiters. The following lexical rules must
+be observed: Blanks and line breaks must not occur within symbols,
+they are ignored unless they are essential to separate two consecutive
+symbols. Capital and lower-case letters are considered as distinct.
+
+\begin{description}
+
+\item[Identifiers] are symbols (represented by a sequence of letters
+and digits whose first character is a letter) declared as a name for a
+type, variable, procedure etc.
+
+\item[Numbers] are natural, integer, real, or complex
+constants. The type of a natural or  integer constant is the minimal
+type to which the value belongs. A real number always contains a
+decimal point; optionally it may also contain a decimal scale factor.
+The letter ``E'' means ``times ten to the power of.'' A complex number
+is represented by a tuple $(r_1, r_2)$ of two real numbers where $r_1$
+represents the real part and $r_2$ represents the imaginary part of
+the complex number.
+
+\item[Strings] are sequences of characters enclosed in single (')
+quote marks.
+
+\item[Operators and delimiters] are the special symbols listed
+below. The reserved words consist exclusively of capital letters and
+must not be declared as identifiers.
+
+{\small \tt
+\begin{tabular}{lllll}
+\verb'+' & \verb':='  & AND            & IN        & THEN\\
+\verb'-' & \verb'*'   & BEGIN          & INOUT     & TIMES\\
+\verb'=' & \verb'<>'  & CONST          & ITER      & TYPE\\
+\verb'>=' & \verb'<=' & DEFINITION     & MOD       & VAR\\
+\verb'#' & \verb'&'   & DIV            & MODULE    & VIEW\\
+\verb'<-' & \verb"//" & DO             & MACHINE   & WHILE\\    
+\verb'|' & \verb"'"   & ELSE           & NOT\\	   
+\verb'/' & \verb'..'  & ELSIF          & OF\\
+\verb',' & \verb'.'   & END            & OR\\
+\verb'\' & \verb';'   & EXTERN	       & OUT\\
+\verb'_' & \verb':'   & FROM           & OVER\\
+\verb'(' & \verb')'   & FUNCTION       & PROCEDURE\\
+\verb'[' & \verb']'   & IF             & PROCESSORS\\
+\verb'{' & \verb'}'   & IMPLEMENTATION & RESULT\\
+\verb'/*' & \verb'*/' & IMPORT         & SHAPE\\
+\end{tabular}}
+
+\end{description}
+
+\subsection*{Scope rules}
+
+Every identifier occuring in a program must be introduced by a
+declaration or import, unless it is a predeclared
+identifier. Declarations also specify certain permanent properties of
+an identifier, such as whether it is a constant, a type, a variable
+(and its type), or a procedure.  The identifier is used to refer to
+the associated entity.
+
+The scope of an identifier is the block (module, procedure, function,
+or statement) to which the declaration belongs and to which the
+identifier is local. Scopes can be nested. The meaning of an
+identifier is determined by the smallest enclosing scope in which the
+identifier is declared. Entities referred to by declared identifiers
+are called {\em visible}.
+
+\subsection*{Name spaces}
+
+Each scope $S$ consists of three {\em name spaces}:
+
+\begin{enumerate}
+
+\item The set $\TypeDefSet \subseteq \{(A, T) | A \in
+\Language{\TC{Identifier}} \mbox{ and } T \in \Language{\NT{Type}}\}$
+represents the set of user defined type definitions; i.e. $(A,T) \in
+\TypeDefSet$ iff in S a type definition $A\ \T{=}\ T$ is visible. The
+set $\TypeDefSet$ must define a function. An identifier $A$ such that
+there exists a type $T$ and $(A, T) \in {\cal T}$ is called a {\em
+declared} type.
+
+\item The set of function and procedure identifiers ${\cal F}$ is
+defined by the set of function and procedure declarations visible
+within $S$.  An identifier in ${\cal F}$ is called a {\em declared}
+procedure or function.
+
+\item The set ${\cal D}$ of variable, view, and constant identifiers
+defined by variable and constant declarations, or the variable
+bindings of a selector visible within $S$. An identifier in ${\cal D}$
+is called a {\em declared} variable, view or constant.
+
+\end{enumerate}
+
+\subsection*{Errors}
+
+A {\em static error} is an error that a language implementation must
+detect and report before program execution. Violations of the language
+definition are static errors unless they are explicitely classified as
+runtime errors.
+
+A {\em checked runtime error} is an error that a language
+implementation must detect and report. The method for reporting such
+errors is implementation-dependent. For reasons of efficiency a
+language implementation should provide a compiler option that
+suppresses checking and reporting of runtime errors. The occurrence of
+an {\em unchecked runtime error} may cause the subsequent behaviour of
+a computation to be arbitrary.
+

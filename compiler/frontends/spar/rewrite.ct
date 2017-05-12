@@ -1,0 +1,1129 @@
+.. File: rewrite.ct
+..
+.. Do the following rewrites on the parse tree:
+.. - Add explicit cast expressions to implement all type coersions that
+..   are allowed by Java.
+.. - Fold nested pragma expressions into one.
+.. - Replace 'TypeOf' expressions with the type of the expression.
+..
+..
+.. Return 'walk' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the datastructure we're walking on, and a type 't', of that variable,
+.. generate a return statement/
+.macro generate_walker_return indent var t
+$(indent)return $(var);
+.endmacro
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+.if ${member ${stemname $t} ${typelist}}
+$(indent)if( $(var) == 0 ){
+$(indent)    return $(var);
+$(indent)}
+.endif
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+static $t rewrite_$t_walker( $t $(var), rewrite_data *ctx )
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we're walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+static $t rewrite_$t_walker( $t $(var), rewrite_data *ctx );
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) rewrite_$(type)_action( $(var), ctx );
+.else
+$(indent)$(var) = ($(type)) rewrite_$(type)_action( to_$(type)( $(var) ), ctx );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) rewrite_$(type)_walker( $(var), ctx );
+.else
+$(indent)$(var) = ($(type)) rewrite_$(type)_walker( to_$(type)( $(var) ), ctx );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${len ${comm ${alltypes ${stemname $(type)} ${subclasses ${stemname $(type)}}} "" $(visit_types)}}
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.else
+$(indent)// alltypes $(type) ${subclasses $(type)}: ${alltypes $(type)} ${subclasses $(type)}
+$(indent)// Nothing to do for type '$(type)'
+.endif
+.endmacro
+..
+.. For which types are there actions defines?
+.set actors
+.append actors AnnotationExpression
+.append actors AssignStatement
+.append actors ShortopExpression
+.append actors Cardinality
+.append actors CastExpression
+.append actors ComplexExpression
+.append actors DoWhileStatement
+.append actors FunctionEntry
+.append actors GetSizeExpression
+.append actors GlobalVariableEntry
+.append actors IfExpression
+.append actors IfStatement
+.append actors InstanceOfExpression
+.append actors LocalVariableEntry
+.append actors MethodInvocation
+.append actors MethodInvocationExpression
+.append actors MethodInvocationStatement
+.append actors ForeachStatement
+.append actors NewArrayExpression
+.append actors SubscriptExpression
+.append actors SwitchStatement
+.append actors TypeOf
+.append actors ValueReturnStatement
+.append actors WhileStatement
+.append actors declaration
+.append actors statement
+.append actors statement_list
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk SparProgram "$(actors)"}
+..
+// ->->-> This is a GENERATED FILE <-<-<-
+
+/* File: rewrite.c
+ *
+ * Traverse the parse tree and rewrite all statements that are
+ * too powerful for the backend into simpler equivalents.
+ */
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "config.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "symbol_table.h"
+#include "typederive.h"
+#include "rewrite.h"
+#include "service.h"
+#include "error.h"
+#include "analyze.h"
+#include "pragma.h"
+#include "typename.h"
+#include "inliner.h"
+#include "codesize.h"
+#include "getscopes.h"
+#include "markadmin.h"
+#include "countrefs.h"
+#include "isgcsetting.h"
+#include "isgc.h"
+
+typedef struct str_rewrite_data {
+    SparProgram prog;
+    type rettype;
+    statement_list *spill_smt;
+    int inline_depth;
+    tmsymbol *scopename_ptr;
+    bool do_inlining;
+} rewrite_data;
+
+.call generate_walker_forwards "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+// Given a FunctionEntry f, return true iff this looks like a good
+// function to inline.
+static bool is_profitable_inlining_method( const_FunctionEntry f )
+{
+    Block body = f->body;
+    int callcost = 1*(f->parameters->sz+f->thisparameters->sz);
+
+    if( has_flags( f->flags, ACC_INLINE ) ){
+	if( trace_inlining ){
+	    tmstring nm = typename_Signature( f->realname );
+	    fprintf(
+		stderr,
+		"It method %s is declared `inline'\n",
+		nm
+	    );
+	    rfre_tmstring( nm );
+	}
+	return true;
+    }
+    if( !f->isvirtuallyused && f->directusecount<2 ){
+	if( trace_inlining ){
+	    tmstring nm = typename_Signature( f->realname );
+	    fprintf(
+		stderr,
+		"It method %s can be inlined since it only used once\n",
+		nm
+	    );
+	    rfre_tmstring( nm );
+	}
+	return true;
+    }
+    if( code_size_statement_list( body->statements, inlinable_codesize+callcost )<inlinable_codesize+callcost){
+	if( trace_inlining ){
+	    tmstring nm = typename_Signature( f->realname );
+	    fprintf(
+		stderr,
+		"It method %s is small enough to inline\n",
+		nm
+	    );
+	    rfre_tmstring( nm );
+	}
+	return true;
+    }
+    return false;
+}
+
+/* -------- actors ---------- */
+
+/* Action for type CastExpression. */
+static expression rewrite_CastExpression_action(
+    CastExpression e,
+    rewrite_data *ctx
+)
+{
+.call generate_walker_call "    " e CastExpression CastExpression
+    if( e->x->tag == TAGCastExpression ){
+        // Nested cast.
+
+	CastExpression ne = to_CastExpression( e->x );
+	// If its one of (t) (t) <expr> or (t) (t2) null, rewrite
+	// to (t) <expr> resp (t) null
+	if( ne->x->tag == TAGNullExpression || is_equivalent_type( e->t, ne->t ) ){
+	    // Remove the nested cast.
+	    e->x = ne->x;
+	    ne->x = expressionNIL;
+	    rfre_expression( ne );
+	    
+	}
+    }
+    const type rt = derive_type_expression( ctx->prog->symtab, e->x );
+    if( is_String_type( e->t ) && is_vnusstring_type( rt ) ){
+	internal_error( "String internalization should have been rewritten" );
+    }
+    rfre_type( rt );
+    return e;
+}
+
+/* Action for type ForeachStatement. */
+static ForeachStatement rewrite_ForeachStatement_action(
+    ForeachStatement elm,
+    rewrite_data *ctx
+)
+{
+    bool old_do_inlining = ctx->do_inlining;
+
+    ctx->do_inlining = !get_flag_pragma( Pragma_listNIL, elm->pragmas, "reduction" );
+.call generate_walker_call "    " elm ForeachStatement ForeachStatement
+    ctx->do_inlining = old_do_inlining;
+    return elm;
+}
+
+/* Action for type Cardinality. */
+static Cardinality rewrite_Cardinality_action(
+    Cardinality elm,
+    rewrite_data *ctx
+)
+{
+    elm->upperbound = force_basetype( ctx->prog->symtab, elm->upperbound, BT_INT );
+    if( elm->lowerbound != expressionNIL ){
+	elm->lowerbound = force_basetype( ctx->prog->symtab, elm->lowerbound, BT_INT );
+    }
+    if( elm->stride != expressionNIL ){
+	elm->stride = force_basetype( ctx->prog->symtab, elm->stride, BT_INT );
+    }
+.call generate_walker_call "    " elm Cardinality Cardinality
+    return elm;
+}
+
+/* Action for type ValueReturnStatement. */
+static statement rewrite_ValueReturnStatement_action(
+    ValueReturnStatement elm,
+    rewrite_data *ctx
+)
+{
+    elm->v = force_type( ctx->prog->symtab, elm->v, ctx->rettype );
+.call generate_walker_call "    " elm ValueReturnStatement ValueReturnStatement
+    if(
+        is_GCsetting_expression( ctx->prog->symtab, elm->v ) ||
+        is_GC_expression( ctx->prog->symtab, elm->v )
+    ){
+	// This return statement may cause the GC adminstration to
+	// change. Since we want to ensure that *functions* (as opposed
+	// to procedures) leave the GC administration unchanged, we
+	// must have an opportunity to put things right again. Therefore,
+	// we must break out return expressions that may touch the
+	// GC administration.
+	tmsymbol retvar = gen_tmsymbol( "retvar" );
+	type rettype = derive_type_expression( ctx->prog->symtab, elm->v );
+
+	FieldDeclaration fd = new_FieldDeclaration(
+	    originNIL,
+	    Pragma_listNIL,
+	    origsymbol_listNIL,
+	    0,
+	    false,
+	    new_origsymbol( retvar, originNIL ),
+	    rdup_type( rettype ),
+	    new_OptExprNone()
+	);
+	*(ctx->spill_smt) = append_statement_list( *(ctx->spill_smt), fd );
+
+	assert( ctx->scopename_ptr != NULL );
+	if( *ctx->scopename_ptr == tmsymbolNIL ){
+	    *ctx->scopename_ptr = gen_tmsymbol( "scope" );
+	}
+	LocalVariableEntry ve = new_LocalVariableEntry(
+	    retvar,
+	    Pragma_listNIL,
+	    0,				// Flags
+	    tmsymbolNIL,		// Owner
+	    tmsymbolNIL,		// Package
+	    false,			// is used?
+	    new_origsymbol( retvar, originNIL ),	// real name
+	    *ctx->scopename_ptr,
+	    rettype,
+	    new_OptExprNone()
+	);
+	ctx->prog->symtab = add_symtab( ctx->prog->symtab, ve );
+	expression x_big = elm->v;
+	elm->v = new_VariableNameExpression(
+	    new_origsymbol( retvar, originNIL ),
+	    VAR_GENERATED|VAR_LOCAL|VAR_FINAL
+	);
+	AssignStatement as = new_AssignStatement(
+	    originNIL,
+	    Pragma_listNIL,
+	    origsymbol_listNIL,
+	    ASSIGN,
+	    new_VariableNameExpression(
+		new_origsymbol( retvar, originNIL ),
+		VAR_GENERATED|VAR_LOCAL
+	    ),
+	    x_big
+	);
+	*(ctx->spill_smt) = append_statement_list( *(ctx->spill_smt), as );
+    }
+    return elm;
+}
+
+/* Action for type FunctionEntry. */
+static FunctionEntry rewrite_FunctionEntry_action(
+    FunctionEntry elm,
+    rewrite_data *ctx
+)
+{
+    type old_rettype = ctx->rettype;
+
+    ctx->rettype = elm->t;
+.call generate_walker_call "    " elm FunctionEntry FunctionEntry
+    if(
+	has_any_flag( elm->flags, ACC_INLINE ) &&
+	!get_flag_pragma( Pragma_listNIL, elm->pragmas, "inline" )
+    ){
+	// Pass the pragma annotation on to Vnus and the C compiler; perhaps
+	// they can do something useful with it.
+	if( elm->pragmas == NULL ){
+	 elm->pragmas = new_Pragma_list();
+	}
+	elm->pragmas = append_Pragma_list(
+	    elm->pragmas,
+	    new_FlagPragma( add_origsymbol( "inline" ) )
+	);
+    }
+    ctx->rettype = old_rettype;
+    return elm;
+}
+
+/* Action for type MethodInvocationExpression. */
+static expression rewrite_MethodInvocationExpression_action(
+    MethodInvocationExpression elm,
+    rewrite_data *ctx
+)
+{
+.call generate_walker_call "    " elm MethodInvocationExpression MethodInvocationExpression
+    MethodInvocation call = elm->invocation;
+    if( call->vtab == expressionNIL ){
+	// Since this is a static call, this is a candidate for inlining.
+	MethodEntry e = lookup_MethodEntry( ctx->prog->symtab, call->name->sym );
+	if(
+	    ctx->do_inlining &&
+	    !pref_no_inlining &&
+	    ctx->inline_depth<MAX_INFERRED_INLINE_DEPTH &&
+	    e != MethodEntryNIL &&
+	    e->tag == TAGFunctionEntry &&
+	    ctx->scopename_ptr != NULL
+	){
+	    FunctionEntry f = to_FunctionEntry(e);
+
+	    // It's a function with a body; even more a candidate for
+	    // inlining. See if it is profitable to inline it.
+	    if(
+		!has_any_flag( f->flags, ACC_BEING_INLINED ) &&
+	        is_profitable_inlining_method( f )
+	    ){
+		f->flags |= ACC_BEING_INLINED;
+		tmsymbol retvar = gen_tmsymbol( "retvar" );
+		FieldDeclaration fd = new_FieldDeclaration(
+		    originNIL,
+		    Pragma_listNIL,
+		    origsymbol_listNIL,
+		    0,
+		    false,
+		    new_origsymbol( retvar, originNIL ),
+		    rdup_type( e->t ),
+		    new_OptExprNone()
+		);
+		*(ctx->spill_smt) = append_statement_list( *(ctx->spill_smt), fd );
+
+		// Looks good, let's inline it.
+		Block blk = inline_method(
+		    ctx->prog->symtab,
+		    f,
+		    originNIL,
+		    call->thisparameters,
+		    call->parameters,
+		    retvar
+		);
+		countrefs_Block( blk, ctx->prog->symtab, 1 );
+		assert( ctx->scopename_ptr != NULL );
+		if( *ctx->scopename_ptr == tmsymbolNIL ){
+		    *ctx->scopename_ptr = gen_tmsymbol( "scope" );
+		}
+		LocalVariableEntry ve = new_LocalVariableEntry(
+		    retvar,
+		    Pragma_listNIL,
+		    0,				// Flags
+		    tmsymbolNIL,		// Owner
+		    tmsymbolNIL,		// Package
+		    false,			// is used?
+		    new_origsymbol( retvar, originNIL ),	// real name
+		    *ctx->scopename_ptr,
+		    rdup_type( e->t ),
+		    new_OptExprNone()
+		);
+		ctx->prog->symtab = add_symtab( ctx->prog->symtab, ve );
+		ctx->inline_depth++;
+.call generate_descent_call "		" blk Block Block
+		ctx->inline_depth--;
+		// TODO: don't allocate 'fd' when trivial.
+		// TODO: also do this when we can only inline if
+		// extract_trivial succeeds.
+		expression v = extract_trivial_inline_expression( blk, retvar );
+		if( v != expressionNIL ){
+		    // The inlined block is trivial, and evaluates to 'v'.
+		    // We might as well use that expression directly
+		    // instead of the block.
+		    rfre_Block( blk );
+		    rfre_expression( elm );
+		    return v;
+		}
+		BlockStatement res = new_BlockStatement(
+		    originNIL,
+		    Pragma_listNIL,
+		    origsymbol_listNIL,
+		    blk
+		);
+		*(ctx->spill_smt) = append_statement_list( *(ctx->spill_smt), res );
+		rfre_expression( elm );
+		f->directusecount--;
+		f->flags &= ~ACC_BEING_INLINED;
+		return new_VariableNameExpression(
+		    new_origsymbol( retvar, originNIL ),
+		    VAR_GENERATED|VAR_LOCAL|VAR_FINAL
+		);
+	    }
+	}
+    }
+    return elm;
+}
+
+/* Action for type MethodInvocationStatement. */
+static statement rewrite_MethodInvocationStatement_action(
+    MethodInvocationStatement elm,
+    rewrite_data *ctx
+)
+{
+.call generate_walker_call "    " elm MethodInvocationStatement MethodInvocationStatement
+    MethodInvocation call = elm->invocation;
+    if( call->vtab == NULL ){
+	// Since this is a static call, this is a candidate for inlining.
+	if(
+	    !pref_no_inlining &&
+	    ctx->inline_depth<MAX_INFERRED_INLINE_DEPTH
+	){
+	    MethodEntry e = lookup_MethodEntry( ctx->prog->symtab, call->name->sym );
+	    if(
+		e != NULL &&
+		e->tag == TAGFunctionEntry
+	    ){
+		FunctionEntry f = to_FunctionEntry(e);
+
+		// It's a function with a body; even more a candidate for
+		// inlining. See if it is profitable to inline it.
+		if(
+		    !has_any_flag( f->flags, ACC_BEING_INLINED ) &&
+		    is_profitable_inlining_method( f )
+		){
+		    f->flags |= ACC_BEING_INLINED;
+		    Block blk = inline_method(
+			ctx->prog->symtab,
+			f,
+			elm->org,
+			call->thisparameters,
+			call->parameters,
+			tmsymbolNIL
+		    );
+		    countrefs_Block( blk, ctx->prog->symtab, 1 );
+		    ctx->inline_depth++;
+.call generate_descent_call "		    " blk Block Block
+		    ctx->inline_depth--;
+		    BlockStatement res = new_BlockStatement(
+			elm->org,
+			elm->pragmas,
+			elm->labels,
+			blk
+		    );
+		    elm->org = originNIL;
+		    elm->pragmas = Pragma_listNIL;
+		    elm->labels = origsymbol_listNIL;
+		    rfre_statement( elm );
+		    f->directusecount--;
+		    f->flags &= ~ACC_BEING_INLINED;
+		    return res;
+		}
+	    }
+	}
+    }
+    return elm;
+}
+
+/* Given a function call, rewrite it to the final form for output. */
+static MethodInvocation rewrite_MethodInvocation_action(
+    MethodInvocation elm,
+    rewrite_data *ctx
+)
+{
+    type fntype = derive_type_name( ctx->prog->symtab, elm->name );
+
+    if( fntype == typeNIL ){
+	origsymbol_internal_error( elm->name, "Cannot determine the type of this function" );
+    }
+    if( fntype->tag != TAGFunctionType ){
+	tmstring tnm = typename_type( fntype );
+	origsymbol_internal_error( elm->name, "Not a function, but a %s", tnm );
+    }
+    const_FunctionType ft = to_const_FunctionType(fntype);
+    elm->thisparameters = force_type(
+	ctx->prog->symtab,
+	elm->name,
+	elm->thisparameters,
+	ft->thisformals
+    );
+    elm->parameters = force_type(
+	ctx->prog->symtab,
+	elm->name,
+	elm->parameters,
+	ft->formals
+    );
+    rfre_type( fntype );
+
+    if( elm->vtab != expressionNIL ){
+	// Try to eliminate virtual method invocations: if the class instance
+	// from which we get the vtable does not have subtypes, we know which
+	// method will be invoked, so me might as well call it directly.
+	MethodEntry e = lookup_MethodEntry( ctx->prog->symtab, elm->name->sym );
+	if( e != MethodEntryNIL && !e->isoverridden ){
+	    // We might as well make this a static call,
+	    // but we must make sure that we don't lose any sideeffects
+	    // caused by evaluating the expression.
+	    //
+	    // We're not interested in class inits and 'new's as side-effects.
+	    if(
+		maybe_has_sideeffect(
+		    elm->vtab,
+		    NO_SE_NULLPOINTER|NO_SE_CLASSINIT|NO_SE_NEW
+		)
+	    ){
+		ExpressionStatement smt = new_ExpressionStatement(
+		    gen_origin(),
+		    Pragma_listNIL,
+		    origsymbol_listNIL,
+		    elm->vtab
+		);
+		*(ctx->spill_smt) = append_statement_list( *(ctx->spill_smt), smt );
+	    }
+	    else {
+		rfre_expression( elm->vtab );
+	    }
+	    elm->vtab = expressionNIL;
+	}
+    }
+
+.call generate_walker_call "    " elm MethodInvocation MethodInvocation
+    return elm;
+}
+
+/* Action for type ShortopExpression. */
+static ShortopExpression rewrite_ShortopExpression_action(
+    ShortopExpression elm,
+    rewrite_data *ctx
+)
+{
+    elm->right = force_basetype( ctx->prog->symtab, elm->right, BT_BOOLEAN );
+    elm->left = force_basetype( ctx->prog->symtab, elm->left, BT_BOOLEAN );
+.call generate_walker_call "    " elm ShortopExpression ShortopExpression
+    return elm;
+}
+
+/* Action for type AnnotationExpression. */
+static AnnotationExpression rewrite_AnnotationExpression_action(
+    AnnotationExpression elm,
+    rewrite_data *ctx
+)
+{
+    expression x = elm->x;
+
+    /* Fold all nested annotation expressions into one long list. */
+    while( x->tag == TAGAnnotationExpression ){
+	elm->pragmas = concat_Pragma_list(
+	    elm->pragmas,
+	    to_AnnotationExpression(x)->pragmas
+	);
+	elm->x = to_AnnotationExpression(x)->x;
+	fre_expression( x );
+	x = to_AnnotationExpression(elm)->x;
+    }
+.call generate_walker_call "    " elm AnnotationExpression AnnotationExpression
+    return elm;
+}
+
+/* Action for type ComplexExpression. */
+static ComplexExpression rewrite_ComplexExpression_action(
+    ComplexExpression elm,
+    rewrite_data *ctx
+)
+{
+    elm->re = force_basetype( ctx->prog->symtab, elm->re, BT_DOUBLE );
+    elm->im = force_basetype( ctx->prog->symtab, elm->im, BT_DOUBLE );
+.call generate_walker_call "    " elm ComplexExpression ComplexExpression
+    return elm;
+}
+
+/* Action for type GetSizeExpression. */
+static GetSizeExpression rewrite_GetSizeExpression_action(
+    GetSizeExpression elm,
+    rewrite_data *ctx
+)
+{
+    elm->dim = force_basetype( ctx->prog->symtab, elm->dim, BT_INT );
+.call generate_walker_call "    " elm GetSizeExpression GetSizeExpression
+    return elm;
+}
+
+/* Action for type SubscriptExpression. */
+static SubscriptExpression rewrite_SubscriptExpression_action(
+    SubscriptExpression elm,
+    rewrite_data *ctx
+)
+{
+    if( elm->subscripts->tag == TAGVectorExpression ){
+	// We might as well force the subscripts to int now,
+	// so that rewriters get a say as soon as possible.
+	VectorExpression v = to_VectorExpression(elm->subscripts);
+	v->fields = force_basetype( ctx->prog->symtab, v->fields, BT_INT );
+    }
+.call generate_walker_call "    " elm SubscriptExpression SubscriptExpression
+    return elm;
+}
+
+/* Action for type NewArrayExpression. */
+static expression rewrite_NewArrayExpression_action(
+    NewArrayExpression elm,
+    rewrite_data *ctx
+)
+{
+    elm->sizes = force_int_vectors( ctx->prog->symtab, elm->sizes );
+.call generate_walker_call "    " elm NewArrayExpression NewArrayExpression
+    return elm;
+}
+
+/* Action for type IfExpression. */
+static IfExpression rewrite_IfExpression_action(
+    IfExpression elm,
+    rewrite_data *ctx
+)
+{
+    const type tx = calculate_ifexpression_type( ctx->prog->symtab, elm->org, elm->thenval, elm->elseval );
+
+    elm->cond = force_basetype( ctx->prog->symtab, elm->cond, BT_BOOLEAN );
+    elm->thenval = force_type( ctx->prog->symtab, elm->thenval, tx );
+    elm->elseval = force_type( ctx->prog->symtab, elm->elseval, tx );
+    rfre_type( tx );
+.call generate_walker_call "    " elm IfExpression IfExpression
+    return elm;
+}
+
+static expression rewrite_InstanceOfExpression_type(
+    SparProgram prog,
+    InstanceOfExpression elm,
+    type tx
+)
+{
+    expression res = expressionNIL;
+
+    switch( tx->tag ){
+	case TAGPragmaType:
+	    res = rewrite_InstanceOfExpression_type(
+		prog,
+		elm,
+		to_PragmaType(tx)->t
+	    );
+	    break;
+
+	case TAGNullType:
+	    // InstanceOf of a null pointer is 'false'.
+	    rfre_expression( elm );
+	    res = new_BooleanExpression( false );
+	    break;
+
+	case TAGPrimArrayType:
+	    internal_error( "Instanceof does not work on primitive arrays" );
+	    break;
+
+	case TAGArrayType:
+	    internal_error( "Instanceof currently does not work on array types" );
+	    break;
+
+	case TAGExceptionVariableType:
+	    internal_error( "You cannot do 'instanceof ExceptionVariableType'" );
+	    break;
+
+	case TAGGCTopRefLinkType:
+	    internal_error( "You cannot do 'instanceof GCTopRefLinkType'" );
+	    break;
+
+	case TAGGCRefLinkType:
+	    internal_error( "You cannot do 'instanceof GCRefLinkType'" );
+	    break;
+
+	case TAGGenericObjectType:
+	    internal_error( "Instanceof on parameterized type should have been rewritten" );
+	    break;
+
+	case TAGObjectType:
+	{
+	    expression realtest;
+	    ObjectType t = to_ObjectType( elm->t );
+
+	    if( is_interface_type( prog->typelist, t->name ) ){
+		realtest = new_InterfaceInstanceOfExpression(
+		    rdup_expression( elm->x ),
+		    rdup_origsymbol( t->name )
+		);
+	    }
+	    else {
+		realtest = new_ClassInstanceOfExpression(
+		    rdup_expression( elm->x ),
+		    rdup_origsymbol( t->name )
+		);
+	    }
+	    res = new_ShortopExpression(
+		new_BinopExpression(
+		    new_CastExpression( rdup_type( tx ), new_NullExpression() ),
+		    BINOP_NOTEQUAL,
+		    rdup_expression( elm->x )
+		),
+		SHORTOP_AND,
+		realtest
+	    );
+	    rfre_expression( elm );
+	    break;
+	}
+
+	case TAGPrimitiveType:
+	case TAGTypeType:
+	case TAGTupleType:
+	case TAGVectorType:
+	case TAGFunctionType:
+	case TAGTypeOf:
+	case TAGTypeOfIf:
+	case TAGVoidType:
+	    internal_error( "Instanceof only works on reference types" );
+	    break;
+    }
+    return res;
+}
+
+// Action for InstanceOfExpression.
+static expression rewrite_InstanceOfExpression_action(
+    InstanceOfExpression elm,
+    rewrite_data *ctx
+)
+{
+.call generate_walker_call "    " elm InstanceOfExpression InstanceOfExpression
+
+    const type tx = derive_type_expression( ctx->prog->symtab, elm->x );
+    assert( elm->t->tag == TAGObjectType );
+    expression res = rewrite_InstanceOfExpression_type( 
+	ctx->prog,
+	elm,
+	tx
+    );
+    rfre_type( tx );
+    return res;
+}
+
+/* Action for declaration. */
+static declaration rewrite_declaration_action(
+    declaration d,
+    rewrite_data *ctx
+)
+{
+    (void) ctx;
+    // Don't bother to do anything with declarations, since they will
+    // not be generated anyway.
+    (void) rewrite_declaration_walker;
+    return d;
+}
+
+/* Action for statement. */
+static statement rewrite_statement_action(
+    statement elm,
+    rewrite_data *ctx
+)
+{
+    statement_list smts = new_statement_list();
+    tmsymbol scopenm = tmsymbolNIL;
+    statement_list *old_spill_smt = ctx->spill_smt;
+    tmsymbol *old_scopename_ptr = ctx->scopename_ptr;
+    ctx->scopename_ptr = &scopenm;
+    ctx->spill_smt = &smts;
+.call generate_walker_call "    " elm statement statement
+    if( smts->sz != 0 ){
+	smts = append_statement_list( smts, elm );
+	elm = new_BlockStatement(
+	    gen_origin(),
+	    Pragma_listNIL,
+	    origsymbol_listNIL,	// Labels
+	    new_Block(
+		scopenm,	/* scope name */
+		new_Pragma_list(),
+		smts
+	    )
+	);
+    }
+    else {
+	rfre_statement_list( smts );
+    }
+    ctx->spill_smt = old_spill_smt;
+    ctx->scopename_ptr = old_scopename_ptr;
+    return elm;
+}
+
+/* Action for statement list */
+static statement_list rewrite_statement_list_action(
+    statement_list sl,
+    rewrite_data *ctx
+)
+{
+    if( sl == statement_listNIL ){
+	return sl;
+    }
+    unsigned int ix = 0;
+    // We cannot use the standard walker for statement_list, since we
+    // want to do our own manipulations on the list.
+    (void) rewrite_statement_list_walker;
+    while( ix<sl->sz ){
+.call generate_descent_call "	" sl->arr[ix] statement statement
+	statement smt = sl->arr[ix];
+	if( smt != statementNIL && smt->tag == TAGBlockStatement ){
+	    BlockStatement bsmt = to_BlockStatement( smt );
+	    Block body = bsmt->body;
+	    statement_list bsl = body->statements;
+	    if(
+		(bsmt->pragmas == Pragma_listNIL || smt->pragmas->sz == 0) &&
+		(bsmt->labels == origsymbol_listNIL || smt->labels->sz == 0) &&
+		body->scope == tmsymbolNIL &&
+		(bsl->sz == 0 || !is_declaration( bsl->arr[0] ))
+	    ){
+		// We might as well inline this block.
+		// Make sure 'bsl' is not deleted when the block
+		// statement is deleted.
+		body->statements = statement_listNIL;
+		sl = delete_statement_list( sl, ix );
+
+		// Let the ref count reflect that this code is deleted.
+		// We now have the 'bsl' left from the block statement.
+		sl = insertlist_statement_list( sl, ix, bsl );
+		continue;
+	    }
+	}
+	ix++;
+    }
+    return sl;
+}
+
+/* Action for type IfStatement. */
+static statement rewrite_IfStatement_action(
+    IfStatement elm,
+    rewrite_data *ctx
+)
+{
+    elm->cond = force_basetype( ctx->prog->symtab, elm->cond, BT_BOOLEAN );
+.call generate_walker_call "    " elm IfStatement IfStatement
+    expression cond = elm->cond;
+    if( cond->tag == TAGBooleanExpression ){
+	BooleanExpression b = to_BooleanExpression(cond);
+	Block blk;
+
+	// The condition expression is a boolean constant. Throw away
+	// the if, and take only the then or the else branch.
+	if( b->b ){
+	    // The condition expression is 'true'.
+	    blk = elm->thenbody;
+	    countrefs_Block( elm->elsebody, ctx->prog->symtab, -1 );
+	    elm->thenbody = BlockNIL;
+	}
+	else {
+	    // The condition expression is 'false'.
+	    blk = elm->elsebody;
+	    countrefs_Block( elm->thenbody, ctx->prog->symtab, -1 );
+	    elm->elsebody = BlockNIL;
+	}
+	BlockStatement res = new_BlockStatement(
+	    elm->org,
+	    elm->pragmas,
+	    elm->labels,
+	    blk
+	);
+	elm->org = originNIL;
+	elm->pragmas = Pragma_listNIL;
+	elm->labels = origsymbol_listNIL;
+	rfre_statement( elm );
+	return res;
+    }
+    return elm;
+}
+
+/* Action for type WhileStatement. */
+static WhileStatement rewrite_WhileStatement_action(
+    WhileStatement elm,
+    rewrite_data *ctx
+)
+{
+    elm->cond = force_basetype( ctx->prog->symtab, elm->cond, BT_BOOLEAN );
+.call generate_walker_call "    " elm WhileStatement WhileStatement
+    return elm;
+}
+
+/* Action for type DoWhileStatement. */
+static DoWhileStatement rewrite_DoWhileStatement_action(
+    DoWhileStatement elm,
+    rewrite_data *ctx
+)
+{
+    elm->cond = force_basetype( ctx->prog->symtab, elm->cond, BT_BOOLEAN );
+.call generate_walker_call "    " elm DoWhileStatement DoWhileStatement
+    return elm;
+}
+
+/* Action for type AssignStatement. */
+static AssignStatement rewrite_AssignStatement_action(
+    AssignStatement elm,
+    rewrite_data *ctx
+)
+{
+    switch( elm->op ){
+	case ASSIGN:
+	case ASSIGN_PLUS:
+	case ASSIGN_MINUS:
+	case ASSIGN_TIMES:
+	case ASSIGN_DIVIDE:
+	case ASSIGN_MOD:
+	case ASSIGN_XOR:
+	case ASSIGN_AND:
+	case ASSIGN_OR:
+	{
+	    type tlhs = derive_type_expression( ctx->prog->symtab, elm->lhs );
+	    elm->rhs = force_type( ctx->prog->symtab, elm->rhs, tlhs );
+	    rfre_type( tlhs );
+	    break;
+	}
+
+	case ASSIGN_SHIFTLEFT:
+	case ASSIGN_SHIFTRIGHT:
+	case ASSIGN_USHIFTRIGHT:
+	    elm->rhs = force_basetype( ctx->prog->symtab, elm->rhs, BT_INT );
+	    break;
+
+    }
+.call generate_walker_call "    " elm AssignStatement AssignStatement
+    return elm;
+}
+
+/* Action for type SwitchStatement. */
+static SwitchStatement rewrite_SwitchStatement_action(
+    SwitchStatement elm,
+    rewrite_data *ctx
+)
+{
+    elm->cond = force_basetype( ctx->prog->symtab, elm->cond, BT_INT );
+.call generate_walker_call "    " elm SwitchStatement SwitchStatement
+    return elm;
+}
+
+/* Action for type GlobalVariableEntry. */
+static GlobalVariableEntry rewrite_GlobalVariableEntry_action(
+    GlobalVariableEntry elm,
+    rewrite_data *ctx
+)
+{
+    elm->init = force_type( ctx->prog->symtab, elm->init, elm->t );
+.call generate_walker_call "    " elm GlobalVariableEntry GlobalVariableEntry
+    return elm;
+}
+
+/* Action for type LocalVariableEntry. */
+static LocalVariableEntry rewrite_LocalVariableEntry_action(
+    LocalVariableEntry elm,
+    rewrite_data *ctx
+)
+{
+    elm->init = force_type( ctx->prog->symtab, elm->init, elm->t );
+.call generate_walker_call "    " elm LocalVariableEntry LocalVariableEntry
+    return elm;
+}
+
+/* Action for type TypeOf. */
+static type rewrite_TypeOf_action(
+    TypeOf elm,
+    rewrite_data *ctx
+)
+{
+.call generate_walker_call "    " elm TypeOf TypeOf
+    type t = derive_type_expression( ctx->prog->symtab, elm->x );
+    rfre_type( elm );
+.call generate_descent_call "    " t type type
+    return t;
+}
+
+/* -------- End of action functions ---------- */
+
+.call generate_walker "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+// Given a list of types a ClassEntry, and a pointer to a class number,
+// assign the class number to this type, and assign the subsequent numbers
+// to its subclasses in depth-first order.
+static TypeEntry_list number_classes_walker(
+ TypeEntry_list types,
+ ClassEntry cl,
+ int *n
+)
+{
+    cl->classno = *n;
+    (*n)++;
+    if( cl->subclasses != tmsymbol_listNIL ){
+	tmsymbol_list subclasses = cl->subclasses;
+
+	for( unsigned int ix=0; ix<subclasses->sz; ix++ ){
+	    TypeEntry e = lookup_TypeEntry( types, subclasses->arr[ix] );
+
+	    if( e != TypeEntryNIL ){
+		if( e->tag == TAGClassEntry ){
+		    types = number_classes_walker( types, to_ClassEntry( e ), n );
+		}
+	    }
+	}
+    }
+    cl->last_subclassno = (*n)-1;
+    return types;
+}
+
+// Given a list of types, return the list of types, but with each
+// class assigned a number based on a depth-first traversal of the
+// class hierarchy. Each class is also assigned the highest-numbered
+// class that is a subclass of that class.
+static TypeEntry_list number_classes( TypeEntry_list types )
+{
+    int n = 1;
+    // Scan the list for root classes. Usually this is only
+    // java.lang.Object, but why not make this generic.
+    for( unsigned int ix=0; ix<types->sz; ix++ ){
+	TypeEntry te = types->arr[ix];
+
+	if( is_ConcreteTypeEntry( te ) ){
+	    ConcreteTypeEntry cte = to_ConcreteTypeEntry( te );
+
+	    if( cte->tag == TAGClassEntry ){
+	        ClassEntry cl = to_ClassEntry(cte);
+
+		if( cl->super == typeNIL ){
+		    types = number_classes_walker( types, cl, &n );
+		}
+	    }
+	    else {
+		cte->classno = 0;
+		cte->last_subclassno = 0;
+	    }
+	}
+    }
+    return types;
+}
+
+/* Given a Spar program, rewrite it into a simpler version. */
+SparProgram rewrite_SparProgram( SparProgram prog )
+{
+    statement_list smts = new_statement_list();
+    rewrite_data the_ctx;
+    the_ctx.spill_smt = &smts;
+    the_ctx.prog = prog;
+    the_ctx.do_inlining = true;
+    the_ctx.rettype = typeNIL;
+    the_ctx.inline_depth = 0;
+    the_ctx.scopename_ptr = (tmsymbol *) NULL;
+    rewrite_data *ctx = &the_ctx;
+
+    // First, assign numbers to all classes (and interfaces)
+    assert( the_ctx.inline_depth == 0 );
+    prog->typelist = number_classes( prog->typelist );
+.call generate_descent_call "    " prog SparProgram SparProgram
+    assert( smts->sz == 0 );
+    rfre_statement_list( smts );
+    return prog;
+}

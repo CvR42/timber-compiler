@@ -1,0 +1,1310 @@
+/*****
+
+$Author: leo $
+$Date: 1995/10/17 13:33:59 $
+$Log: booster.pars,v $
+Revision 1.1.1.1  1995/10/17 13:33:59  leo
+Initial frontend source tree.
+
+Revision 0.1  1995/06/23  11:44:03  joachim
+initial revision derived from arnauds frontend
+
+$Revision: 1.1.1.1 $
+$Source: /home/rama/timber/CVS/compiler/frontends/toyfront/src/booster.pars,v $ 
+
+*****/
+
+SCANNER boos_scan
+PARSER boos_pars
+
+GLOBAL{
+# include "Idents.h"
+# include "Positions.h"
+# include "StringMem.h"
+}
+
+BEGIN
+{
+}
+
+
+PREC LEFT '*' Plus '<' '<=' '<>' '>=' '>' Minus 'NOT'
+
+PROPERTY INPUT
+
+
+RULE
+
+/******* 1. Booster *******/
+
+
+Booster = Module .
+
+
+Module	=  <
+  DefinitionModule     = DefinitionHeader DefinitionBody .
+  ImplementationModule = ImplementationHeader ImplementationBody .
+  AnnotationModule     = AnnotationHeader AnnotationBody .
+> .
+
+
+/******* 2. Definition Module *******/
+
+
+DefinitionHeader = 'DEFINITION' 'MODULE' Identifier ';' .
+
+
+DefinitionBody = DefinitionUnits 'END' Identifier '.' .
+
+
+DefinitionUnits = <
+    DefinitionUnit0 = .
+    DefinitionUnit2 =  DefinitionUnit DefinitionUnits .
+> .
+
+
+DefinitionUnit = <
+    DefImport    = ImportUnit .
+    DefConstant  = ConstUnit .
+    DefType      = TypeUnit .
+    DefVariable  = VarUnit .
+    DefProcedure = ProcedureHeader .
+    DefFunction  = FunctionHeader .
+> .
+
+/******* 3. Implementation Module *******/
+
+
+ImplementationHeader = <
+    ProgModule = 'MODULE' Identifier ';' .
+    ImplModule = 'IMPLEMENTATION' 'MODULE' Identifier ';' .
+> .
+
+
+ImplementationBody = <
+    Impl     = ImplementationUnits 'END' Identifier '.' .
+    ImplInit = ImplementationUnits 'BEGIN' Stats 'END' Identifier '.' .
+> .
+
+
+ImplementationUnits = <
+    ImplementationUnit0 = .
+    ImplementationUnit2 = ImplementationUnit ImplementationUnits .
+> .
+
+
+ImplementationUnit = <
+    ImplImport     = ImportUnit .
+    ImplConstant   = ConstUnit .
+    ImplType       = TypeUnit .
+    ImplVariable   = VarUnit .
+    ImplProcedure  = Procedure .
+    ImplFunction   = Function .
+> .
+
+
+/******* 4. Annotation Module *******/
+
+
+AnnotationHeader = 'ANNOTATION' 'MODULE' Identifier ';' .
+
+
+AnnotationBody = AnnotationUnits 'BEGIN' Annotations 'END' Identifier '.'.
+
+
+AnnotationUnits = <
+    AnnotationUnit0 =  .
+    AnnotationUnit2 = AnnotationUnit AnnotationUnits .
+> .
+
+
+AnnotationUnit = <
+    AnnotImport             = ImportUnit .
+    AnnotMachineDeclaration = MachineDeclaration .
+> .
+
+
+Annotations = <
+    Annotation0 = .
+    Annotation2 = ViewStatement  ';' Annotations .
+> .
+
+
+/******* 5. Units *******/
+
+
+ImportUnit = <
+    ModuleImport = 'IMPORT' Identifiers ';' .
+    UnitImport   = 'FROM' Identifier 'IMPORT' Identifiers ';'.
+> .
+
+
+Identifiers = <
+    Ident1 = Identifier .
+    Ident2 = Identifier ',' Identifiers .
+> .
+
+
+ConstUnit = 'CONST' Constants 'END' ';' .
+
+
+Constants = <
+    Const0 = .
+    Const1 = ConstDefinition .
+    Const2 = ConstDefinition ';' Constants .
+> .
+
+
+ConstDefinition = Identifier '=' Expression .
+
+
+TypeUnit = 'TYPE' Types 'END' ';' .
+
+
+Types = <
+    Type0 =  .
+    Type1 = TypeDefinition .
+    Type2 = TypeDefinition ';' Types .
+> .
+
+
+TypeDefinition = Identifier '=' Type .
+
+
+Type = <
+    TypeId     = Identifier .
+    ShapeType    = 'SHAPE' '{' Cardinalities '}' 'OF' Type .
+    ViewType     = 'VIEW' '{' Cardinalities '}' 'OF' Type .
+> .
+	
+
+
+Cardinalities = <
+    Card1 = Cardinality .
+    Card2 = Cardinality '#' Cardinalities.
+>.
+
+
+Cardinality = <
+    Arbitrary    = '*' .
+    NatExpr	 = Expression .
+    GenericConst = 'CONST' Identifier .
+    QualExpr     = Identifier ':' Expression .
+> .
+
+
+VarUnit = <
+    VarDecl  = 'VAR' Decls 'END' ';' .
+    ExternVarDecl = 'EXTERN' 'VAR' Decls 'END' ';' .
+> .
+
+
+Decls =  <
+    Decl0 =  .
+    Decl1 = Declaration .
+    Decl2 = Declaration ';' Decls .
+> .
+
+
+Declaration = Identifiers ':' Type .
+
+
+MachineDeclaration = 'MACHINE' Decls 'END' ';' .
+
+
+Procedure = ProcedureHeader Body .
+
+
+ProcedureHeader	= <
+    ProcHeader        = 'PROCEDURE' Identifier '(' Arguments ')' ';'. 
+    ExternProcHeader  = 'EXTERN' 'PROCEDURE' Identifier '(' Arguments ')' ';'. 
+> .
+
+
+Function = FunctionHeader Body .
+
+
+FunctionHeader	= <
+    FuncHeader        = 'FUNCTION' FunId: Identifier '(' Arguments')'
+    	    	         'RESULT' ResId: Identifier ':' Type ';' . 
+    ExternFuncHeader  = 'EXTERN' 'FUNCTION' FunId: Identifier '(' Arguments ')'
+    	    	          'RESULT' ResId: Identifier ':' Type ';' . 
+> .
+
+
+Body = <
+    Decl0Body = 'BEGIN' Stats 'END' Identifier ';' .
+    DeclBody  = 'VAR' Decls 'END' ';'
+                  'BEGIN' Stats 'END'  Identifier ';' .
+> .
+
+
+Arguments = <
+    Arg0 =  . 
+    Arg1 = Argument . 
+    Arg2 = Argument ';' Arguments .
+> .
+
+
+Argument = <
+    InArgument    = 'IN' Identifiers ':' Type .
+    OutArgument   = 'OUT' Identifiers ':' Type .
+    InOutArgument = 'INOUT' Identifiers ':' Type .
+>.
+
+
+/******* 6. Statements *******/
+
+
+Stats = <
+    Stat0 = . 
+    Stat1 = Stat .
+    Stat2 = Stat ';' Stats .
+> .
+
+
+Stat = <
+    WhileStat   = WhileStatement .
+    IfStat      = IfStatement .
+    IterStat    = IterStatement .
+    ViewStat   	= ViewStatement .
+    ContentStat	= ContentStatement .
+    ProcCall	= ProcedureCall .
+> .
+
+
+WhileStatement = 'WHILE' Expression 'DO' Stats 'END' .
+
+
+IfStatement = 'IF' Expression 'THEN' Stats ElsePart 'END' .
+
+
+ElsePart = <
+    NoElse = .    
+    Else   = 'ELSE' Stats .
+    ElseIf = 'ELSIF' Expression 'THEN' Stats ElsePart .
+> .
+
+
+IterStatement = <
+    IterTimes  = 'ITER' Expression 'TIMES' Stats 'END' .
+    IterOver   = 'ITER' Identifier 'OVER' Expression 'DO'
+    	    	   Stats 'END' .
+> .
+
+
+ViewStatement = ViewDesignator '<-' Structure .
+
+
+ViewDesignator = <
+    ViewDesig     = QualIdent .
+    ViewDesigCard = QualIdent '{' Cardinalities '}' .
+> .
+    
+
+ContentStatement = <
+    Parallel   = Designator '|=' Expression .
+    Sequential = Designator ':=' Expression .
+>.
+
+
+Designator = <
+    DesigId     = QualIdent .
+    DesigSelect = QualIdent '[' Selectors ']' .
+> .
+    
+
+Selectors = <
+    Selector1 = Selector .
+    Selector2 = Selector ',' Selectors .
+> .
+
+
+Selector = <
+    Set   = Expression .
+    SetId = Identifier ':' Expression .
+> .
+
+
+ProcedureCall = <
+    Proc0 = QualIdent '(' ')' .
+    Proc  = QualIdent '(' Expressions ')' .
+> .
+
+
+Expressions = <
+    Expr1 = Expression .
+    Expr2 = Expression ',' Expressions .
+> .
+
+
+QualIdent = <
+    Ident  = Identifier .
+    QIdent = Ident1: Identifier '.' Ident2: Identifier .
+>.
+
+
+/*********** 6 Expressions *************/
+
+
+Expression =  <
+    Relation   = Expression RelOp ArithmeticExpression .
+    Arithmetic = ArithmeticExpression .
+> .
+
+
+ArithmeticExpression = <
+    Addition     = ArithmeticExpression AddOp Term .
+    MultOrFactor = Term .
+> .
+
+
+Term = <
+    Mult = Term MulOp Factor .
+    Fact = Factor .
+> .
+
+
+Factor = <
+    Struct    = Structure .
+    OpStruct  = UnOp Structure.
+    String    = StringLiteral .
+    SelectAll = Under_Score .
+> .
+
+
+Structure = <
+    Complex         = '(' Expr1: Expression ',' Expr2: Expression ')'.
+    Shape0Aggregate = '{'  '}' .
+    ShapeAggregate  = '{' Expressions '}' .
+    BracedExpr      = '(' Expression ')' .
+    NaturalNum      = NaturalConst .
+    IntegerNum      = IntegerConst .
+    RealNum         = RealConst .
+    Dollar          = '$' .
+    FuncCall        = FunctionCall .
+    Desig           = Designator .
+> . 
+
+
+FunctionCall =  <
+    Func0       = QualIdent '(' ')'.
+    Func        = QualIdent '(' Expressions ')'.
+    Func0Select = QualIdent '(' ')' '[' Selectors ']' .
+    FuncSelect  = QualIdent '(' Expressions ')' '[' Selectors ']' .
+> .
+
+
+/********* 7 Tokens *************/
+
+
+RelOp = <     
+    Greater   = '>' .
+    GreaterEq = '>=' .
+    UnEqual   = '<>' .
+    Equal     = '=' .
+    SmallerEq = '<=' .
+    Smaller   = '<' .
+    SetOr     = '|' . 
+> .
+
+AddOp = <    
+    SetAnd   = '&' .
+    Or	     = 'OR' .
+    AddPlus  = Plus .
+    AddMinus = Minus .
+> .
+
+MulOp = <  
+    And	   = 'AND' .
+    Dots   = '..' .
+    Div	   = 'DIV' .
+    Mod	   = 'MOD' .
+    Times  = '*' .
+    Divide = '/' .
+> .
+
+UnOp = <    
+    SetNot  = Exclude .
+    Not	    = 'NOT' .
+    UnPlus  = Plus .
+    UnMinus = Minus .
+>.
+
+Identifier  	:   [Ident : tIdent] {Ident := NoIdent ;} .
+NaturalConst    :   [Value: int] {Value := 0;} .
+IntegerConst    :   [Value: int] {Value := 0;} .
+RealConst    	:   [Value: float] {Value := 0.0;} .
+StringLiteral	:   [StringValue : tStringRef ] 
+    	    	    {StringValue := PutString("",0);} .
+
+
+
+MODULE Tree
+
+PARSER GLOBAL{
+# include "Errors.h"
+# include "Idents.h"
+# include "Positions.h"
+unsigned long i;
+}
+
+EXPORT{
+# include "Tree.h"
+tTree *ConstTree;
+char path[256];
+}
+
+
+
+BEGIN
+{
+}
+
+
+DECLARE
+
+    Module DefinitionHeader DefinitionBody DefinitionUnits
+    DefinitionUnit ImplementationHeader ImplementationBody
+    ImplementationUnit ImplementationUnits AnnotationHeader
+    AnnotationBody AnnotationUnits AnnotationUnit Annotations
+    ImportUnit Identifiers ConstUnit Constants ConstDefinition
+    TypeUnit Types TypeDefinition Type Cardinalities
+    Cardinality VarUnit Decls Declaration MachineDeclaration
+    Procedure ProcedureHeader Function FunctionHeader Body Arguments
+    Argument Stats Stat WhileStatement IfStatement
+    ElsePart IterStatement ViewStatement ViewDesignator
+    ContentStatement Designator Selectors Selector ProcedureCall
+    Expressions QualIdent Expression ArithmeticExpression Term Factor
+    Structure FunctionCall RelOp AddOp MulOp UnOp = [Tree : tTree] .
+
+RULE
+
+/*********  1. Booster *********/
+
+Booster	= { => { TreeRoot = mBooster(Module:Tree);};} . 
+
+
+DefinitionModule = { 
+    Tree := mDefinitionModule(DefinitionHeader:Tree, DefinitionBody:Tree);
+}.
+
+
+ImplementationModule = { 
+    Tree := mImplementationModule(ImplementationHeader:Tree, 
+              ImplementationBody:Tree);
+}.
+
+
+AnnotationModule = { 
+    Tree := mAnnotationModule(AnnotationHeader:Tree, AnnotationBody:Tree);
+}.
+
+
+/*********  2. Definition Module *********/
+
+
+DefinitionHeader = { 
+    Tree := mDefinitionHeader(Identifier:Position, Identifier:Ident);
+}.
+
+
+DefinitionBody = { 
+    Tree := mDefinitionBody(Identifier:Position, Identifier:Ident, 
+              DefinitionUnits:Tree)
+;}.
+
+
+DefinitionUnit0 = {
+    Tree := mNoDefUnit();
+}.
+
+
+DefinitionUnit2 = {
+    Tree := mDefUnit(DefinitionUnits:Tree, DefinitionUnit:Tree);
+}.
+
+
+DefImport = {
+    Tree := mDefImport(ImportUnit:Tree);
+}.
+
+
+DefConstant = {
+    Tree := mDefConstant(ConstUnit:Tree);
+}.
+
+
+DefType = {
+    Tree := mDefType(TypeUnit:Tree);
+}.
+
+
+DefVariable = {
+    Tree := mDefVariable(VarUnit:Tree);
+}.
+
+
+DefProcedure = {
+    Tree := mDefProcedure(ProcedureHeader:Tree);
+}.
+
+
+DefFunction = {
+    Tree := mDefFunction(FunctionHeader:Tree);
+}.
+
+
+/*********  3. Implementation Module *********/
+
+
+ProgModule = { 
+    Tree := mImplementationHeader(ProgModule, Identifier:Position, 
+              Identifier:Ident);
+}. 
+
+
+ImplModule = { 
+    Tree := mImplementationHeader(ImplModule, Identifier:Position, 
+              Identifier:Ident);
+}. 
+
+
+Impl = {
+    Tree := mImplementationBody(Identifier:Position, Identifier:Ident,
+              ImplementationUnits:Tree, mNoStat());
+}.
+
+
+ImplInit = { 
+    Tree := mImplementationBody(Identifier:Position, Identifier:Ident, 
+              ImplementationUnits:Tree, Stats:Tree);
+}.
+
+
+ImplementationUnit0 = {
+    Tree := mNoImplUnit();
+}.
+
+
+ImplementationUnit2 = {
+    Tree := mImplUnit(ImplementationUnit:Tree, ImplementationUnits:Tree);
+}.
+
+
+ImplImport = {
+    Tree := mImplImport(ImportUnit:Tree);
+}.
+
+
+ImplConstant = {
+    Tree := mImplConstant(ConstUnit:Tree);
+}.
+
+
+ImplType = {
+    Tree := mImplType(TypeUnit:Tree);
+}.
+
+
+ImplVariable = {
+    Tree := mImplVariable(VarUnit:Tree);
+}.
+
+
+ImplProcedure = {
+    Tree := mImplProcedure(Procedure:Tree);
+}.
+
+
+ImplFunction = {
+    Tree := mImplFunction(Function:Tree);
+}.
+
+
+/*********  3. Annotation Module *********/
+
+
+AnnotationHeader = { 
+    Tree := mAnnotationHeader(Identifier:Position, Identifier:Ident);
+}.
+
+
+AnnotationBody = { 
+    Tree := mAnnotationBody(Identifier:Position, Identifier:Ident,
+              AnnotationUnits:Tree, Annotations:Tree);
+}.
+
+
+AnnotationUnit0 = {
+    Tree := mNoAnnotUnit();
+}.
+
+
+AnnotationUnit2 = {
+    Tree := mAnnotUnit(AnnotationUnit:Tree, AnnotationUnits:Tree);
+}.
+
+
+AnnotImport = {
+    Tree := mAnnotImport(ImportUnit:Tree);
+}.
+
+
+Annotation0 = {
+    Tree := mNoAnnot();
+}.
+
+
+Annotation2 = {
+    Tree := mAnnot(ViewStatement:Tree, Annotations:Tree);
+}.
+
+
+/******** 5. Units *********/
+
+
+ModuleImport = {
+    Tree := mModuleImport('IMPORT':Position, Identifiers:Tree);
+}.
+
+
+UnitImport = {
+    Tree := mUnitImport(Identifier:Position, Identifier:Ident, 
+              Identifiers:Tree);
+}.
+
+
+Ident1 = {
+    Tree := mIdent(Identifier:Position, Identifier:Ident);
+}.
+
+
+Ident2 = {
+    Tree := mIdents(Identifier:Position, Identifier:Ident, Identifiers:Tree);
+}.
+
+
+ConstUnit = {
+    Tree := Constants:Tree;
+}.
+
+
+Const0 = {
+    Tree := mNoConst();
+}.
+
+
+Const1 = {
+    Tree := { ConstDefinition:Tree->\Const.Next = mNoConst();
+              Tree = ConstDefinition:Tree;
+    };
+}.
+
+
+Const2 = {
+    Tree := { ConstDefinition:Tree->\Const.Next = Constants:Tree;
+              Tree = ConstDefinition:Tree;
+    };
+}.
+
+
+ConstDefinition = {
+    Tree := mConst(NoTree, Identifier:Position, Identifier:Ident,
+              Expression:Tree);
+}.
+
+
+TypeUnit = {
+    Tree := Types:Tree;
+}.
+
+
+Type0 = {
+    Tree := mNoType();
+}.
+
+
+Type1 = {
+    Tree := { TypeDefinition:Tree->\Type.Next = mNoType();
+              Tree = TypeDefinition:Tree;
+    };
+}.
+
+
+Type2 = {
+    Tree := { TypeDefinition:Tree->\Type.Next = Types:Tree;
+              Tree = TypeDefinition:Tree;
+    };
+}.
+
+
+TypeDefinition = {
+    Tree := mType(NoTree, Identifier:Position, Identifier:Ident, Type:Tree);
+}.
+
+
+TypeId = {
+    Tree := mTypeId(Identifier:Position, Identifier:Ident);
+}.
+
+
+ShapeType = {
+    Tree := mShapeType(Cardinalities:Tree, Type:Tree);
+}.
+
+
+ViewType = {
+    Tree := mViewType(Cardinalities:Tree, Type:Tree);
+}.
+
+
+Card1 = {
+    Tree := { Cardinality:Tree->\Card.Next = mNoCard();
+              Tree = Cardinality:Tree;
+    };
+}.
+
+
+Card2 = {
+    Tree := { Cardinality:Tree->\Card.Next = Cardinalities:Tree;
+              Tree = Cardinality:Tree;
+    };
+}.
+
+
+Arbitrary = {
+    Tree := mArbitrary(NoTree);
+}.
+
+
+NatExpr = {
+    Tree := mNatExpr(NoTree, Expression:Tree);
+}.
+
+
+GenericConst = {
+    Tree := mGenericConst(NoTree, Identifier:Position, Identifier:Ident);
+}.
+
+
+QualExpr = {
+    Tree := mQualExpr(NoTree, Identifier:Position, Identifier:Ident, 
+              Expression:Tree);
+}.
+
+
+VarDecl = {
+    Tree := mVars(Decls:Tree);
+}.
+
+
+ExternVarDecl = {
+    Tree := mExtVars(Decls:Tree);
+}.
+
+
+Decl0 = {
+    Tree := mNoDecl();
+}.
+
+
+Decl1 = {
+    Tree := { Declaration:Tree->Decl.Next = mNoDecl();
+              Tree = Declaration:Tree;
+    };
+}.
+
+
+Decl2 = {
+    Tree := { Declaration:Tree->Decl.Next = Decls:Tree;
+              Tree = Declaration:Tree;
+    };
+}.
+
+
+Declaration = {
+    Tree := mDecl(NoTree, Identifiers:Tree, Type:Tree);
+}.
+
+
+MachineDeclaration = {
+    Tree := mMachineDeclarations(Decls:Tree);
+}.
+
+
+Procedure = {
+    Tree := mProcedure(ProcedureHeader:Tree, Body:Tree);
+}.
+
+
+ProcHeader = {
+    Tree := mProcedureHeader(Identifier:Position,  Identifier:Ident, 
+              BoosterFun, Arguments:Tree);
+}.
+
+
+ExternProcHeader = {
+    Tree := mProcedureHeader(Identifier:Position,  Identifier:Ident, 
+              ExternFun, Arguments:Tree);
+}.
+
+
+Function = {
+    Tree := mFunction(FunctionHeader:Tree, Body:Tree);
+}.
+
+
+FuncHeader = {
+    Tree := mFunctionHeader(FunId:Position,  FunId:Ident, BoosterFun, 
+              Arguments:Tree, FunId:Position,  FunId:Ident, Type:Tree);
+}.
+
+
+ExternFuncHeader = {
+    Tree := mFunctionHeader(FunId:Position,  FunId:Ident, ExternFun, 
+              Arguments:Tree, FunId:Position,  FunId:Ident, Type:Tree);
+}.
+
+
+Decl0Body = {
+    Tree := mBody(mNoVars(), Stats:Tree, Identifier:Position, 
+              Identifier:Ident);
+}.
+
+
+DeclBody = {
+    Tree := mBody(Decls:Tree, Stats:Tree, Identifier:Position, 
+              Identifier:Ident);
+}.
+
+
+Arg0 = {
+   Tree := mNoArgs();
+}.
+
+
+Arg1 = {
+    Tree := { Argument:Tree->\Arg.Next = mNoArgs();
+             Tree = Argument:Tree
+    };
+}.
+
+
+Arg2 = {
+    Tree := { Argument:Tree->\Arg.Next = Arguments:Tree;
+             Tree = Argument:Tree
+    };
+}.
+
+
+InArgument = {
+    Tree := mArg(NoTree, FlowTypeIn, 'IN':Position, Identifiers:Tree, 
+              Type:Tree);
+}.
+
+
+OutArgument = {
+    Tree := mArg(NoTree, FlowTypeOut, 'OUT':Position, Identifiers:Tree, 
+              Type:Tree);
+}.
+
+
+InOutArgument = {
+    Tree := mArg(NoTree, FlowTypeInOut, 'INOUT':Position, Identifiers:Tree, 
+              Type:Tree);
+}.
+
+
+/******* 6. Statements *******/
+
+Stat0 = {
+    Tree := mNoStat();
+}.
+
+
+Stat1 = {
+    Tree := { Stat:Tree->\Stat.Next = mNoStat();
+              Tree = Stat:Tree;
+    };
+}.
+
+
+Stat2 = {
+    Tree := { Stat:Tree->\Stat.Next = Stats:Tree;
+              Tree = Stat:Tree;
+    };
+}.
+
+
+WhileStat = {
+    Tree := mWhile(NoTree, WhileStatement:Tree);
+}.
+
+
+IfStat = {
+    Tree := mIf(NoTree, IfStatement:Tree);
+}.
+
+
+IterStat = {
+    Tree := mIter(NoTree, IterStatement:Tree);
+}.
+
+
+ViewStat = {
+    Tree := mViewStat(NoTree, ViewStatement:Tree);
+}.
+
+
+ContentStat = {
+    Tree := mContentStat(NoTree, ContentStatement:Tree);
+}.
+
+
+ProcCall = {
+    Tree := mProcCall(NoTree, ProcedureCall:Tree);
+}.
+
+
+WhileStatement = {
+    Tree := mWhileStatement(Expression:Tree, Stats:Tree);
+}.
+
+
+IfStatement = {
+    Tree := mIfStatement(Expression:Tree, Stats:Tree, ElsePart:Tree);
+}.
+
+
+NoElse = {
+    Tree := mNoElse();
+}.
+
+
+Else = {
+    Tree := mElse(Stats:Tree);
+}.
+
+
+ElseIf = {
+    Tree := mElseIf(Expression:Tree, Stats:Tree, ElsePart:Tree);
+}.
+
+
+IterTimes = {
+    Tree := mIterTimes(Expression:Tree, Stats:Tree);
+}.
+
+
+IterOver = {
+    Tree := mIterOver(Identifier:Position, Identifier:Ident, Expression:Tree,
+              Stats:Tree);
+}.
+
+
+ViewStatement = {
+    Tree := mViewStatement(ViewDesignator:Tree, Structure:Tree);
+}.
+
+
+ViewDesig = {
+    Tree := mViewDesignator( QualIdent:Tree, mNoCard());
+}.
+
+
+ViewDesigCard = {
+    Tree := mViewDesignator( QualIdent:Tree, Cardinalities:Tree);
+}.
+
+
+Parallel = {
+    Tree := mParallel(Designator:Tree, Expression:Tree);
+}.
+
+
+Sequential = {
+    Tree := mSequential(Designator:Tree, Expression:Tree);
+}.
+
+
+DesigId = {
+    Tree := mDesignator(QualIdent:Tree, mNoSelects());
+}.
+
+
+DesigSelect = {
+    Tree := mDesignator(QualIdent:Tree, Selectors:Tree);
+}.
+
+
+Selector1 = {
+    Tree := mSelectors(Selector:Tree, mNoSelects());
+}.
+
+
+Selector2 = {
+    Tree := mSelectors(Selector:Tree, Selectors:Tree);
+}.
+
+
+Set = {
+    Tree := mSet(Expression:Tree);
+}.
+
+
+SetId = {
+    Tree := mSetId(Identifier:Position, Identifier:Ident, Expression:Tree);
+}.
+
+
+Proc0 = {
+    Tree := mProcedureCall(QualIdent:Tree, mNoExpr());
+}.
+
+
+Proc = {
+    Tree := mProcedureCall(QualIdent:Tree, Expressions:Tree);
+}.
+
+
+Expr1 = {
+    Tree := mExpr(Expression:Tree, mNoExpr());
+}.
+
+
+Expr2 = {
+    Tree := mExpr(Expression:Tree, Expressions:Tree);
+}.
+
+
+Ident = {
+    Tree := mSIdent(Identifier:Position, Identifier:Ident);
+}.
+
+
+QIdent = {
+    Tree := mQIdent(Ident1:Position, Ident1:Ident, Ident2:Position, 
+              Ident1:Ident);
+}.
+
+
+/********* 7. Expressions **********/
+
+Relation = {
+    Tree := mRelation(Expression:Tree, RelOp:Tree, 
+              ArithmeticExpression:Tree);
+}.
+
+
+Arithmetic = {
+    Tree := mArithmetic(ArithmeticExpression:Tree);
+}.
+
+
+Addition = {
+    Tree := mAddition(ArithmeticExpression:Tree, AddOp:Tree, Term:Tree);
+}.
+
+
+MultOrFactor = {
+    Tree := mMultOrFactor(Term:Tree);
+}.
+
+
+Mult = {
+    Tree := mMult(Term:Tree, MulOp:Tree, Factor:Tree);
+}.
+
+
+Fact = {
+    Tree := mFact(Factor:Tree);
+}. 
+
+
+Struct = {
+    Tree := mOpStruct(mUnOp(NoOp, NoPosition), Structure:Tree);
+}.
+
+
+OpStruct = {
+    Tree := mOpStruct(UnOp:Tree, Structure:Tree);
+}.
+
+
+String = {
+    Tree := mString(StringLiteral:StringValue);
+}.
+
+
+SelectAll = {
+    Tree := mUnderScore();
+}.
+
+
+Complex = {
+    Tree := mComplex(Expr1:Tree, Expr2:Tree);
+}.
+
+
+Shape0Aggregate = {
+    Tree := mShapeAggregate(mNoExpr());
+}.
+
+
+ShapeAggregate = {
+    Tree := mShapeAggregate(Expressions:Tree);
+}.
+
+
+BracedExpr = {
+    Tree := mBracedExpr(Expression:Tree);
+}.
+
+
+NaturalNum = {
+    Tree := mNaturalNum(NaturalConst:Value);
+}.
+
+
+IntegerNum = {
+    Tree := mIntegerNum(IntegerConst:Value);
+}.
+
+
+RealNum = {
+    Tree := mRealNum(RealConst:Value);
+}.
+
+
+Dollar = {
+    Tree := mDollar();
+}.
+
+
+FuncCall = {
+    Tree := mFuncCall(FunctionCall:Tree);
+}.
+
+
+Desig = {
+    Tree := mDesig(Designator:Tree);
+}.
+
+
+Func0 = {
+    Tree := mFunc(QualIdent:Tree, mNoExpr());
+}.
+
+
+Func = {
+    Tree := mFunc(QualIdent:Tree, Expressions:Tree);
+}.
+
+
+Func0Select = {
+    Tree := mFuncSelect(QualIdent:Tree, mNoExpr(), Selectors:Tree);
+}.
+
+
+FuncSelect = {
+    Tree := mFuncSelect(QualIdent:Tree, Expressions:Tree, Selectors:Tree);
+}.
+
+
+/****** 8. Tokens ********/
+
+/* RelOp */
+
+Greater	= { 
+    Tree := mRelOp(Greater,'>':Position);
+}.
+
+SetOr = { 
+    Tree := mRelOp(SetOr,'|':Position);
+}.
+
+GreaterEq = { 
+    Tree := mRelOp(GreaterEq,'>=':Position);
+}.
+
+UnEqual	= { 
+    Tree := mRelOp(UnEqual,'<>':Position);
+}.
+
+Equal = { 
+    Tree := mRelOp(Equal,'=':Position);
+}.
+
+SmallerEq = { 
+    Tree := mRelOp(SmallerEq,'<=':Position);
+}.
+
+Smaller	= { 
+    Tree := mRelOp(Smaller,'<':Position);
+}.
+
+/* AddOp */
+SetAnd = { 
+    Tree := mAddOp(SetAnd,'&':Position);
+}.
+
+Or = { 
+    Tree := mAddOp(Or,'OR':Position);
+}.
+
+AddPlus	= { 
+    Tree := mAddOp(AddPlus,Plus:Position);
+}.
+
+AddMinus = { 
+     Tree := mAddOp(AddMinus,Minus:Position);
+}.
+
+/* MulOp */
+
+And = { 
+    Tree := mMulOp(And,'AND':Position);
+}.
+
+Dots = { 
+    Tree := mMulOp(Dots,'..':Position);
+}.
+
+Div = { 
+    Tree := mMulOp(Div,'DIV':Position);
+}.
+
+Mod = { 
+    Tree := mMulOp(Mod,'MOD':Position);
+}.
+
+Times = { 
+    Tree := mMulOp(Times,'*':Position);
+}.
+
+Divide = { 
+    Tree := mMulOp(Divide,'/':Position);
+}.
+
+/* UnOp */
+
+SetNot = { 
+    Tree := mUnOp(Not,Exclude:Position);
+}.
+
+Not = { 
+    Tree := mUnOp(SetNot,'NOT':Position);
+}.
+
+UnPlus = { 
+    Tree := mUnOp(UnPlus,Plus:Position);
+}.
+
+UnMinus	= { 
+    Tree := mUnOp(UnMinus,Minus:Position);
+}.
+
+END Tree
+
+    	

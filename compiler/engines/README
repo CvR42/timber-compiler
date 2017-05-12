@@ -1,0 +1,9 @@
+The sub-directories of this directory contain engines that transform
+high-level parallel programs into low-level explicitly parallel programs.
+The engines work on the intermedate representation Vnus, and are invoked
+by the main Timber compiler driver script.
+
+align
+mapper
+scheduler	Experimental runtime scheduling program. Not supported.
+

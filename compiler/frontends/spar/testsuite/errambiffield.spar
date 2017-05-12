@@ -1,0 +1,25 @@
+// This program should cause a complaint about ambiguous interface field refs.
+//
+// After JLS2 6.4.3
+
+
+package spar.testsuite;
+
+interface Colors {
+    int WHITE = 0, BLACK = 1;
+}
+
+interface Separates {
+    int CYAN = 0, MAGENTA = 1, YELLOW = 2, BLACK = 3;
+}
+
+interface ColorsAndSeparates extends Colors, Separates {
+    int DEFAULT = BLACK;
+}
+
+public class errambiffield {
+    public static void main()
+    {
+	int x = ColorsAndSeparates.DEFAULT;
+    }
+}

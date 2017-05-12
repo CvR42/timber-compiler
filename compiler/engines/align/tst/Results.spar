@@ -1,0 +1,63 @@
+import java.text.DecimalFormat;
+import Param;
+
+public class Results {
+	public static void Print(char Class,
+			int n1, 
+			int n2,
+			int n3,
+			int niter,
+			double t,
+			double mops,
+			String optype,
+			boolean passed_verification) {
+		DecimalFormat frmtFloat = new DecimalFormat("0.00");
+
+		__println(1);
+		__println(1);
+		__print(1," ");
+		__print(1,Param.Name);
+		__println(1," Benchmark Completed");
+		__print(1," Class           =             ");
+		__println(1,Class);
+		__print(1," Size            =             ");
+		__print(1,n1);
+		if (n2!=0){
+			__print(1," x ");
+			__print(1,n2);
+		}
+		if (n3!=0){
+			__print(1," x ");
+			__print(1,n3);
+		}
+		__println(1);
+		__print(1," Iterations      =             ");
+		__println(1,niter);
+		__print(1," Time in seconds =             ");
+		__println(1,frmtFloat.format(t));
+		__print(1," Mop/s total     =             ");
+		__println(1,frmtFloat.format(mops));
+		__print(1," Operation type  =             ");
+		__println(1,optype);
+		if (passed_verification)
+			__println(1," Verification    =             SUCCESSFUL");
+		else
+			__println(1," Verification    =             UNSUCCESSFUL");
+		__print(1," Version         =             ");
+		__println(1,Param.NPBVersion);
+		__print(1," Compile date    =             ");
+		__println(1,Param.COMPDATE);
+		__println(1);
+		__println(1," Compile options:");
+		__print(1,"    SPARC        =             ");
+		__println(1,Param.SPARC);
+		__print(1,"    SFLAGS       =             ");
+		__println(1,Param.SFLAGS);
+		__println(1);
+		__println(1," This version of the NAS Parallel Benchmark was made by the section ITS/PGS at");
+		__println(1," the TUDelft - The Netherlands and was build for the SPAR parallel compiler");
+		__println(1);
+		__println(1," Author: Sander Niemeijer - 1999");
+		__println(1);
+	}
+}

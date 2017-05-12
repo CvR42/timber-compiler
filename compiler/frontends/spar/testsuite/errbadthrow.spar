@@ -1,0 +1,19 @@
+class TestException extends Exception {
+   TestException() { super(); }
+   TestException(String s) { super(s); }
+}
+
+public final class errbadthrow {
+    public static void main( String args[] ){
+	if( args.length == 2 ){
+	    throw new errbadthrow();
+	}
+	try {
+	    throw new TestException();
+	}
+	catch( TestException x ){
+	    System.out.println( "Exception: " + x );
+	    throw x;
+	}
+    }
+}

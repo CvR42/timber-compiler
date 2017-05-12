@@ -1,0 +1,248 @@
+.. File: extract.ct
+..
+.. Variable name mangling
+..
+.. Return 'walk' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the datastructure we're walking on, and a type 't', of that variable,
+.. generate a return statement/
+.macro generate_walker_return indent var t
+$(indent)return;
+.endmacro
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+.if ${member ${stemname $t} ${typelist}}
+$(indent)if( $(var) == 0 ){
+$(indent)    return;
+$(indent)}
+.endif
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+static void extract_$t_walker( $t $(var), const tmsymbol scope )
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we're walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+static void extract_$t_walker( $t $(var), const tmsymbol scope );
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)extract_$(type)_action( $(var), scope );
+.else
+$(indent)extract_$(type)_action( to_$(type)( $(var) ), scope );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)extract_$(type)_walker( $(var), scope );
+.else
+$(indent)extract_$(type)_walker( to_$(type)( $(var) ), scope );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.endmacro
+..
+.. For which types are there actions defines?
+.set actors cardinality formalParameter block DeclFunction DeclProcedure
+.append actors DeclExternalFunction DeclExternalProcedure DeclExternalVariable
+.append actors DeclVariable
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+/* File: extract.c
+ *
+ * Extract symboltable information from a sugar vnus program.
+ */
+
+#include <stdio.h>
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "vnus_types.h"
+#include "tmadmin.h"
+#include "error.h"
+#include "symbol_table.h"
+#include "global.h"
+#include "extract.h"
+#include "collect.h"
+
+.foreach t ${aliases}
+typedef ${alias $t} $t;
+.endforeach
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* -------- actors ---------- */
+
+/* Extract symboltable info from a 'cardinality'. */
+static void extract_cardinality_action( cardinality t, const tmsymbol scope )
+{
+    add_symtab_cardvar( t->name, t->pragmas );
+.call generate_walker_call "    " t cardinality cardinality
+}
+
+/* Extract symboltable info from an formalParameter.  */
+static void extract_formalParameter_action( const formalParameter arg, const tmsymbol scope )
+{
+    assert( scope != 0 );
+    if( arg->t != typeNIL ){
+	add_symtab_formal( arg->name, scope, arg->pragmas, arg->t );
+    }
+.call generate_walker_call "    " arg formalParameter formalParameter
+}
+
+/* Extract symboltable info from a block.  */
+static void extract_block_action( const block t, const tmsymbol oldscope )
+{
+    tmsymbol scope;
+
+    if( t->scope == 0 && t->declarations->sz > 0 ){
+	t->scope = gen_tmsymbol( "scope" );
+    }
+    if( t->scope == 0 ){
+	scope = oldscope;
+    }
+    else {
+	scope = t->scope;
+    }
+.call generate_walker_call "    " t block block
+}
+
+/* Extract symboltable info from a DeclVariable.  */
+static void extract_DeclVariable_action( const DeclVariable t, const tmsymbol scope )
+{
+    if( scope == 0 ){
+	add_symtab_globalvar( t->name, t->pragmas, t->t, t->init );
+    }
+    else {
+	add_symtab_localvar( t->name, scope, t->pragmas, t->t, t->init );
+    }
+.call generate_walker_call "    " t DeclVariable DeclVariable
+}
+
+static void extract_DeclFunction_action( DeclFunction fn, const tmsymbol oldscope )
+{
+    block blk = fn->body;
+    tmsymbol scope;
+
+    (void) oldscope;
+    assert( blk->scope != tmsymbolNIL );
+    scope = blk->scope;
+.call generate_walker_call "    " fn DeclFunction DeclFunction
+    if( fn->rettype != typeNIL ){
+	add_symtab_returnvar(
+	    fn->retval,
+	    scope,
+	    fn->retpragmas,
+	    fn->rettype
+	);
+    }
+    add_symtab_function(
+	fn->pragmas,
+	fn->name,
+	fn->parms,
+	fn->retval,
+	fn->rettype,
+	fn->body
+    );
+}
+
+static void extract_DeclProcedure_action( DeclProcedure proc, const tmsymbol oldscope )
+{
+    block blk = proc->body;
+    tmsymbol scope;
+
+    (void) oldscope;
+    assert( blk->scope != tmsymbolNIL );
+    scope = blk->scope;
+.call generate_walker_call "    " proc DeclProcedure DeclProcedure
+    add_symtab_procedure( proc->pragmas, proc->name, proc->parms, proc->body );
+}
+
+static void extract_DeclExternalFunction_action( DeclExternalFunction fn, const tmsymbol oldscope )
+{
+    tmsymbol scope = fn->name->sym;
+
+    (void) oldscope;
+.call generate_walker_call "    " fn DeclExternalFunction DeclExternalFunction
+    if( fn->rettype != 0 && fn->retval != 0 ){
+	add_symtab_returnvar(
+	    fn->retval,
+	    fn->name->sym,
+	    fn->retpragmas,
+	    fn->rettype
+	);
+    }
+    add_symtab_external_function(
+	fn->pragmas,
+	fn->name,
+	fn->parms,
+	fn->rettype
+    );
+}
+
+static void extract_DeclExternalProcedure_action( DeclExternalProcedure proc, const tmsymbol oldscope )
+{
+    tmsymbol scope = proc->name->sym;
+
+    (void) oldscope;
+.call generate_walker_call "    " proc DeclExternalProcedure DeclExternalProcedure
+    add_symtab_external_procedure( proc->pragmas, proc->name, proc->parms );
+}
+
+static void extract_DeclExternalVariable_action( DeclExternalVariable v, const tmsymbol scope )
+{
+    add_symtab_externalvar( v->name, v->pragmas, v->t );
+.call generate_walker_call "    " v DeclExternalVariable DeclExternalVariable
+}
+
+/* -------- End of action functions ---------- */
+
+.call generate_walker "$(visit_types)"
+
+/* Extract symboltable info from a vnusprog. */
+vnusprog extract_vnusprog( vnusprog prog )
+{
+    const tmsymbol scope = 0;
+
+.call generate_descent_call "    " prog vnusprog vnusprog
+    rfre_vnusdeclaration_list( prog->vnusdecls );
+    prog->vnusdecls = get_symbol_table();
+    return prog;
+}

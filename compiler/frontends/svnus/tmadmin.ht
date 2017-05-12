@@ -1,0 +1,10 @@
+.. file: tmadmin.ht
+/* Template file:      tmadmin.ht
+   datastructure file: ${dsfilename}
+   tm version:         $(tmvers) 
+ */
+
+typedef bool vnus_boolean;
+
+.insert tmadmin.t
+.include tmc.ht

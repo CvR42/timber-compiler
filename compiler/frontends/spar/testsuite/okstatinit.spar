@@ -1,0 +1,13 @@
+// Test of static initializer handling.
+
+package spar.testsuite;
+
+class t2 {
+    static { __println( 1, "Hello from superclass static init" ); }
+}
+
+public class okstatinit extends t2 {
+    static { __println( 1, "Hello from class static init" ); }
+    public static void main(){
+    }
+}

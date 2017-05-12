@@ -1,0 +1,11 @@
+// Spar language extensions to Java. These should be flagged by the
+// compiler if the --noinline flag is given.
+
+package spar.testsuite;
+
+public class errnoinline {
+    public inline static void main()
+    {
+	__println( 1, "hello world" );
+    }
+}

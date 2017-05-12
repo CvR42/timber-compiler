@@ -1,0 +1,14 @@
+public class okvalueof {
+    okvalueof(){ System.out.println( "Hi! I'm a side-effect" ); }
+    public String toString() { return "<instance of okvalueof>"; }
+    public static void main(String args[])
+    {
+        System.out.println( ""+new okvalueof() );
+	okvalueof x = new okvalueof();
+	System.out.println( ""+x );
+	x = null;
+	System.out.println( ""+x );
+	System.out.println( ""+null );
+	System.out.println( ""+42 );
+    }
+}

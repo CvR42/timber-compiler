@@ -1,0 +1,13 @@
+// After JLS 5.1.3    Narrowing Primitive Conversions
+
+public class okjlsnarrow {
+    public static void main(String[] args) {
+        float fmin = Float.NEGATIVE_INFINITY;
+        float fmax = Float.POSITIVE_INFINITY;
+        __println(1,"long: " , (long)fmin , ".." , (long)fmax);
+        __println(1,"int: " , (int)fmin , ".." , (int)fmax);
+        __println(1,"short: " , (short)fmin , ".." , (short)fmax);
+        __println(1,"char: " , (int)(char)fmin , ".." , (int)(char)fmax);
+        __println(1,"byte: " , (byte)fmin , ".." , (byte)fmax);
+    }
+}

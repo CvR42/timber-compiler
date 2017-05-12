@@ -1,0 +1,94 @@
+The following errors are emitted by the Sugar Vnus front-end.
+
+There are some internal errors of the lexical analyzer and parser that
+are not listed here, but hopefully these are never generated.
+
+* "else" found without and "if"
+* a blocksize must be an expression of type natural
+* a boolean operator requires boolean operands
+* a cardinality should contain a ':'
+* a cardinality variable cannot be used as a location
+* a complex number is not allowed as printf argument
+* a condition expression must be of type boolean
+* a function or procedure cannot be local
+* a function or procedure cannot be used as a location
+* a function or procedure cannot be used as an expression
+* a numeric operator requires numeric operands
+* a printf must have at least two parameters
+* a processor number must be an expression of type natural
+* a range requires operands of type natural
+* a set is not allowed as printf argument
+* a set operator requires set operands
+* a size formal cannot be used as a location
+* a subscript cannot be negative
+* a subscript must be of type natural
+* bad assignment: cannot assign a <type> to a <type>
+* bad comparison: cannot compare a <type> to a <type>
+* bad parameter: cannot pass a <type> to a <type> parameter
+* cannot select elements of a scalar
+* cardinality range expression must be of type natural
+* declaration and symbol table entry differ
+* double entry: in argument list
+* double entry: in cardinality list
+* double entry: in declarations
+* double entry: in symbol table
+* end of file in comment
+* expression does not describe a location
+* expression for destination must be of type natural
+* expression for dimension must be of type natural
+* expression for source must be of type natural
+* external declarations not allowed in local declaration lists
+* flow type missing
+* form expression must be of type natural
+* function or procedure called with too few parameters
+* function or procedure called with too many parameters
+* function parameters must be value parameters
+* illegal block size
+* keyword "of" missing
+* missing argument for -e
+* missing argument for -o
+* names containing "__" are reserved for internal use
+* no external declarations allowed within a function
+* no function declarations allowed within a function
+* not a cardinality variable
+* not a formal parameter
+* not a function
+* not a function or procedure
+* not a procedure
+* not a return variable
+* not a view formal variable
+* only shapes and views have a size
+* parameter type missing
+* printf: the expression for the file must be of type natural
+* printf: the format string must be of type string
+* range expected
+* size formals only allowed in formal-parameter declarations
+* subscript out of range
+* syntax error
+* the 'not' operator requires a boolean operand
+* the imaginary part of a complex number must be of type real
+* the negation operator requires a numeric operand
+* the real part of a complex number must be of type real
+* the set difference operator requires a set operand
+* the unary '+' operator requires a numeric operand
+* there must be distributions for all dimensions of the shape
+* too few subscripts
+* too many subscripts
+* type name expected
+* undefined symbol
+* unexpected expression in cardinality
+* unknown aggregate symbol
+* unknown cardinality variable
+* unknown formal parameter
+* unknown function
+* unknown local symbol
+* unknown procedure
+* unknown return variable
+* unknown scope name
+* unknown symbol
+* unknown symbol table entry
+* unknown system error
+* unknown variable
+* unknown view formal variable
+* variable is not local
+* you must specify an element type

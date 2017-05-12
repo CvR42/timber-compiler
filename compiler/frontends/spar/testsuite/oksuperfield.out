@@ -1,0 +1,25 @@
+my n: 1
+my x: 3
+super n: 2
+super x: 4
+
+my n: 1
+my x: 3
+super n: 2
+super x: 5
+
+my n: 1
+my x: 6
+super n: 2
+super x: 5
+
+my n: 1
+my x: 6
+super n: 7
+super x: 5
+
+my n: 8
+my x: 6
+super n: 7
+super x: 5
+

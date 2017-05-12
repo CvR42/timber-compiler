@@ -1,0 +1,174 @@
+# Makefile for the V-nus library functions.
+
+
+
+COMPILERSRCROOT=../../..
+
+prefix=/Users/reeuwijk/lab
+exec_prefix=${prefix}
+INSTALL = /usr/bin/install -c
+UNINSTALL_DATA = rm -f
+INSTALL_DATA = ${INSTALL} -m 644
+INSTALL_INCLUDEDIR = ${prefix}/include/timber
+
+#If LIBBASE is defined we get the make rules for libraries for free:-)
+LIBBASE	= vnusglue
+LIB_T	= $(LIBBASE:%=../lib%-t.a)
+LIB_D	= $(LIBBASE:%=../lib%-d.a)
+LIB_M	= $(LIBBASE:%=../lib%-m.a)
+LIB_P	= $(LIBBASE:%=../lib%-p.a)
+LIB_TE	= $(LIBBASE:%=../lib%-te.a)
+LIB_E	= $(LIBBASE:%=../lib%-e.a)
+
+SRC_PTHREADS	= thread.cc ptclass.cc vnsupport.cc
+SRC_PVM		= pvm.cc
+SRC_MPI		= mpi.cc mpihack.cc
+SRC_TRIMEDIA	= ptm.cc
+SRC_PANDA	= panda.cc
+SRC_T	= $(SRC_PTHREADS)
+SRC_D	= $(SRC_PVM)
+SRC_M	= $(SRC_MPI)
+SRC_TE	= $(SRC_TRIMEDIA)
+SRC_E	= $(SRC_TRIMEDIA)
+SRC_P	= $(SRC_PANDA)
+
+OBJ_TE	    = $(SRC_TE:%.cc=%-te.o)
+OBJ_E	    = $(SRC_E:%.cc=%-e.o)
+OBJ_T	    = $(SRC_T:%.cc=%-t.o)
+OBJ_D	    = $(SRC_D:%.cc=%-d.o)
+OBJ_M	    = $(SRC_M:%.cc=%-m.o)
+OBJ_P	    = $(SRC_P:%.cc=%-p.o)
+
+GEN_H	= 
+GEN_C	= 
+
+DEPENDSRC =
+ifeq ($(HAVE_PTHREADS),yes)
+DEPENDSRC += $(SRC_PTHREADS)
+endif
+ifeq ($(HAVE_PVM),yes)
+DEPENDSRC += $(SRC_PVM)
+endif
+ifeq ($(HAVE_MPI),yes)
+DEPENDSRC += $(SRC_MPI)
+endif
+ifeq ($(HAVE_TRIMEDIA),yes)
+DEPENDSRC += $(SRC_TRIMEDIA)
+endif
+ifeq ($(HAVE_PANDA),yes)
+DEPENDSRC += $(SRC_PANDA)
+endif
+
+ECHO    = echo
+BUILDDEPENDS = g++ -MM
+
+TM_HDR = $(GEN_H:.h=.ht)
+TM_SRC = $(GEN_C:.cc=.cct)
+
+
+HDR = mpihack.h
+
+OTHER_SRC = \
+    pvm.cc \
+    thread.cc \
+    ptclass.cc \
+    vnsupport.cc \
+    panda.cc \
+    mpihack.cc \
+    mpi.cc
+
+DISTFILES = .cvsignore Makefile.in configure configure.ac $(SRC) $(OTHER_SRC) $(HDR) $(TM_SRC) $(TM_HDR)
+
+all:		depend targets
+
+# The magical stuff
+include $(COMPILERSRCROOT)/Makefiles/Make.vars
+include $(COMPILERSRCROOT)/Makefiles/Make.libs
+#
+#EXTRAFLAGS += -I/usr/include/lam
+EXTRAFLAGS += -g
+#EXTRAFLAGS += -pg
+#EXTRAFLAGS += -save-temps
+#EXTRAFLAGS += -DDEBUG_VnusCommunication
+
+CXX = g++
+CXXFLAGS = -g -O2 -Wall -W -ansi -pedantic -Woverloaded-virtual -Wcast-qual -Wundef -Wpointer-arith -Wcast-align -Wwrite-strings -Wconversion -Wmissing-prototypes -Wmissing-declarations
+
+JUNK += dist.lst $(OBJ_T) $(OBJ_D) $(OBJ_M) $(OBJ_P) $(GEN_H) $(OBJ_E) $(OBJ_TE) $(GEN_C) $(LIB_T) $(LIB_D) $(LIB_M) $(LIB_P) $(LIB_E) $(LIB_TE)
+PRECIOUSJUNK = $(DEPENDFILE)
+
+targets:	$(LIB_TC) $(LIB_DC) $(LIB_MC) $(LIB_PC) $(LIB_EC) $(LIB_TEC)
+
+help:
+	@$(ECHO) " Possible make targets:"
+	@$(ECHO) "depend           Update dependencies in $(DEPENDFILE)."
+	@$(ECHO) "all              Create local running programs."
+	@$(ECHO) "install          Install the software."
+	@$(ECHO) "clean            Delete all temporary files."
+	@$(ECHO) "empty            Delete all temporary files and executables."
+
+clean:
+	rm -f $(JUNK)
+
+empty: 	
+	rm -f $(JUNK) $(PRECIOUSJUNK)
+
+depend:	$(DEPENDFILE)
+
+INSTALLDEPEND =
+ifeq ($(HAVE_PTHREADS), yes)
+INSTALLDEPEND += $(LIB_T)
+endif
+ifeq ($(HAVE_PVM), yes)
+INSTALLDEPEND += $(LIB_D)
+endif
+ifeq ($(HAVE_MPI), yes)
+INSTALLDEPEND += $(LIB_M)
+endif
+ifeq ($(HAVE_ PANDA), yes)
+INSTALLDEPEND += $(LIB_P)
+endif
+
+install: $(INSTALLDEPEND)
+	$(INSTALL) -d ${exec_prefix}/lib
+	$(INSTALL) -d ${prefix}/include
+	$(INSTALL) -d $(INSTALL_INCLUDEDIR)
+ifeq ($(HAVE_PTHREADS), yes)
+	$(INSTALL_DATA) $(LIB_T) ${exec_prefix}/lib/lib$(LIBBASE)-t.a
+endif
+ifeq ($(HAVE_PVM), yes)
+	$(INSTALL_DATA) $(LIB_D) ${exec_prefix}/lib/lib$(LIBBASE)-d.a
+endif
+ifeq ($(HAVE_MPI), yes)
+	$(INSTALL_DATA) $(LIB_M) ${exec_prefix}/lib/lib$(LIBBASE)-m.a
+endif
+ifeq ($(HAVE_PANDA), yes)
+	$(INSTALL_DATA) $(LIB_P) ${exec_prefix}/lib/lib$(LIBBASE)-p.a
+endif
+
+uninstall: 
+	$(UNINSTALL_DATA) ${exec_prefix}/lib/lib$(LIBBASE)-t.a
+	$(UNINSTALL_DATA) ${exec_prefix}/lib/lib$(LIBBASE)-d.a
+	$(UNINSTALL_DATA) ${exec_prefix}/lib/lib$(LIBBASE)-m.a
+	$(UNINSTALL_DATA) ${exec_prefix}/lib/lib$(LIBBASE)-p.a
+
+%.h: %.ht lib.ds lib.t
+	tm lib.ds $< > $@
+
+%.cc: %.cct lib.ds lib.t
+	tm lib.ds $< > $@
+
+stats:
+	wc -l *.cc *.h
+
+genstats: $(GEN_C) $(GEN_H)
+	wc -l $(GEN_C) $(GEN_H)
+
+
+
+SUBDIRS =
+
+include $(COMPILERSRCROOT)/Makefiles/Make.configure
+include $(COMPILERSRCROOT)/Makefiles/Make.dist
+
+-include $(DEPENDFILE)

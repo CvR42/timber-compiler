@@ -1,0 +1,167 @@
+/* Applygetowner engine
+
+   This code was  ripped from Will't hoist engine to make it more modular.
+   Shape expressions/locations are found, and if the declaration contains
+   an owner a wrapper with the correct owner is put around the shape expr/loc.
+   */
+
+.. File: applygetowner.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors ExprSelection LocSelection
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "applygetowner.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Util ----------- */
+static TypeMap get_expression_typemap(global_context gc, expression e);
+static NewOwnLocation apply_map(expression_list e_l, TypeMap t);
+static expression sr_expression(origsymbol_list os_l, expression_list e_l, expression e);
+extern expression replace_expression_hack(
+    expression e, tmsymbol_list findSym_l, expression_list replaceExpr_l);
+
+static TypeMap get_expression_typemap(global_context gc, expression e) {
+    TypeMap res = TypeMapNIL;
+    type t = derive_type_expression(gc->prog->declarations, originNIL, e);
+    
+    assert(t != typeNIL);
+    type t2 = pierceTypePragmas(t);
+    assert(t2 != typeNIL);
+    if (t2->tag == TAGTypeMap) {
+	res = to_TypeMap(rdup_type(t2));
+    }
+    rfre_type(t);
+    return res;
+}
+
+static NewOwnLocation apply_map(expression_list e_l, TypeMap t) {
+    NewOwnLocation res = NewOwnLocationNIL;
+
+    if (t->map != OwnerExprNIL && t->map->tag == TAGNewOwnMap && 
+	to_NewOwnMap(t->map)->on->tag == TAGNewOwnLocation) {
+	origsymbol_list p_l = to_NewOwnMap(t->map)->parms;
+	NewOwnLocation  ol  = to_NewOwnLocation(to_NewOwnMap(t->map)->on);
+	
+	res = new_NewOwnLocation(rdup_expression(ol->proc), rdup_DistrExpr_list(ol->distr));
+	for (unsigned int i = 0; i < res->distr->sz; i++) {
+	    DistrExpr de = res->distr->arr[i];
+	    
+	    switch (de->tag) {
+		case TAGNewDistBlock:
+		    to_NewDistBlock(de)->index  = sr_expression(p_l, e_l, to_NewDistBlock(de)->index);
+		    to_NewDistBlock(de)->size   = sr_expression(p_l, e_l, to_NewDistBlock(de)->size);
+		    break;
+		case TAGNewDistCyclic:
+		    to_NewDistCyclic(de)->index  = sr_expression(p_l, e_l, to_NewDistCyclic(de)->index);
+		    to_NewDistCyclic(de)->extent = sr_expression(p_l, e_l, to_NewDistCyclic(de)->extent);
+		    break;
+		case TAGNewDistBC:
+		    to_NewDistBC(de)->index  = sr_expression(p_l, e_l, to_NewDistBC(de)->index);
+		    to_NewDistBC(de)->size   = sr_expression(p_l, e_l, to_NewDistBC(de)->size);
+		    to_NewDistBC(de)->extent = sr_expression(p_l, e_l, to_NewDistBC(de)->extent);
+		    break;
+		case TAGNewDistLocal:
+		    to_NewDistLocal(de)->index  = sr_expression(p_l, e_l, to_NewDistLocal(de)->index);
+		    break;
+		default:;
+	    }
+	}
+    }
+    
+    return res;
+}
+
+/*
+  Searches ExprNames in an expression having a name equal to the i'th entry in the os_l.
+  replaces it with the i'th expression from e_l.
+  Should be recursive. This is too simple. Indices, sizes and extents can be
+  more than just simple variables. Should use Frits' replace engine after it
+  has been generalised.
+  */
+static expression sr_expression(origsymbol_list os_l, expression_list e_l, expression e) {
+    if (os_l->sz != e_l->sz)
+	return e;
+    tmsymbol_list findSym_l = new_tmsymbol_list();
+    for (unsigned i=0; i<os_l->sz; i++)
+	findSym_l = append_tmsymbol_list(findSym_l, os_l->arr[i]->sym);
+    
+    expression res = replace_expression_hack(e, findSym_l, e_l);
+    fre_tmsymbol_list(findSym_l);
+    return res;
+}
+
+/* ----------- Actors ----------- */
+
+static expression rewrite_ExprSelection_action(
+    ExprSelection e, global_context gc )
+{
+.call generate_walker_call "    " e ExprSelection ExprSelection
+
+    TypeMap t = get_expression_typemap(gc, e->shape);
+
+    if (t == TypeMapNIL) {
+	return e;
+    }
+    else
+    {
+	ExprWrapper res = new_ExprWrapper(
+	    Pragma_listNIL,
+	    append_OwnerExpr_list(
+		new_OwnerExpr_list(),
+		apply_map(e->indices, t)),
+	    e);
+	rfre_type(t);
+	return res;
+    }
+}
+
+static location rewrite_LocSelection_action(
+    LocSelection e, global_context gc )
+{
+.call generate_walker_call "    " e LocSelection LocSelection
+
+    TypeMap t = get_expression_typemap(gc, e->shape);
+
+    if (t == TypeMapNIL) {
+	return e;
+    }
+    else
+    {
+	LocWrapper res = new_LocWrapper(
+	    Pragma_listNIL,
+	    append_OwnerExpr_list(
+		new_OwnerExpr_list(),
+		apply_map(e->indices, t)),
+	    e);
+	rfre_type(t);
+	return res;
+    }
+}
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_get_owner( vnusprog e, global_context gc )
+{
+.call generate_descent_call "    " e vnusprog vnusprog
+    return e;
+}

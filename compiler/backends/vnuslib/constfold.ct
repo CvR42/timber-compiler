@@ -1,0 +1,1330 @@
+.. File: constfold.ct
+..
+.. Constant folding
+..
+.. Return 'walk' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the datastructure we're walking on, and a type 't', of that variable,
+.. generate a return statement/
+.macro generate_walker_return indent var t
+$(indent)return $(var);
+.endmacro
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+.if ${member ${stemname $t} ${typelist}}
+$(indent)if( $(var) == 0 ){
+$(indent)    return $(var);
+$(indent)}
+.endif
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+static $t constfold_$t_walker( $t $(var) )
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we're walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+static $t constfold_$t_walker( $t $(var) );
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) constfold_$(type)_action( $(var) );
+.else
+$(indent)$(var) = ($(type)) constfold_$(type)_action( to_$(type)( $(var) ) );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) constfold_$(type)_walker( $(var) );
+.else
+$(indent)$(var) = ($(type)) constfold_$(type)_walker( to_$(type)( $(var) ) );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var', and a type 'type', generate
+.. the body of an empty walker function.
+.macro generate_empty_walker_body indent var type
+.endmacro
+..
+..
+.. For which types are there actions defines?
+.set actors
+.append actors ExprBinop
+.append actors ExprCast
+.append actors ExprCheckedIndex
+.append actors ExprIf
+.append actors ExprIsBoundViolated
+.append actors ExprIsLowerBoundViolated
+.append actors ExprIsUpperBoundViolated
+.append actors ExprLowerCheckedIndex
+.append actors ExprReduction
+.append actors ExprUnop
+.append actors ExprUpperCheckedIndex
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog expression_list size_list expression" "$(actors)"}
+..
+/* File: constfold.cc
+ *
+ * Do constant folding.
+ */
+
+#include <stdio.h>
+#include <assert.h>
+#include <tmc.h>
+#include <string.h>
+
+#include "config.h"
+#include "vnusbasetypes.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+
+.foreach t ${aliases}
+typedef ${alias $t} $t;
+typedef ${alias $t}_list $t_list;
+.endforeach
+
+.call generate_walker_forwards "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+static bool is_zero_int( const_expression x )
+{
+    return (x->tag == TAGExprInt && to_const_ExprInt(x)->v == 0);
+}
+
+static bool is_one_int( const_expression x )
+{
+    return (x->tag == TAGExprInt && to_const_ExprInt(x)->v == 1);
+}
+
+/* -------- actors ---------- */
+// Forward declarations;
+static expression constfold_ExprReduction_action( ExprReduction x );
+
+/* Constant folding for a cast expression
+ */
+static expression constfold_ExprCast_action( ExprCast x )
+{
+    if( x->x == expressionNIL ){
+	return x;
+    }
+.call generate_walker_call "    " x ExprCast ExprCast
+    if( x->t == typeNIL ){
+	return x;
+    }
+    if( x->t->tag == TAGTypeBase ){
+	BASETYPE bt = to_TypeBase(x->t)->base;
+	expression cx = x->x;
+	switch( bt ){
+	    case BT_INT:
+		switch( cx->tag ){
+		    case TAGExprLong:
+		    {
+			vnus_long n = to_ExprLong(cx)->v;
+			if(
+			    n <= (vnus_long) VNUS_INT_MAX &&
+			    n >= (vnus_long) VNUS_INT_MIN
+			){
+			    rfre_expression( x );
+			    return new_ExprInt( (vnus_int) n );
+			}
+			break;
+		    }
+
+		    case TAGExprInt:
+			// Casting an int to an int is always safe :-)
+			rfre_type( x->t );
+			fre_expression( x );
+			return cx;
+
+		    case TAGExprByte:
+		    {
+			// Casting a byte to an int is no problem
+			vnus_int n = to_ExprByte(cx)->v;
+			rfre_expression( x );
+			return new_ExprInt( n );
+		    }
+
+		    case TAGExprShort:
+		    {
+			vnus_int n = to_ExprShort(cx)->v;
+			rfre_expression( x );
+			return new_ExprInt( n );
+		    }
+
+		    case TAGExprChar:
+		    {
+			vnus_char v = to_ExprChar(cx)->c;
+			rfre_expression( x );
+			return new_ExprInt( v );
+		    }
+
+		    default:
+			break;
+		}
+		break;
+
+	    case BT_BYTE:
+		switch( cx->tag ){
+		    case TAGExprLong:
+		    {
+			vnus_long n = to_ExprLong(cx)->v;
+			if(
+			    n <= (vnus_long) VNUS_BYTE_MAX &&
+			    n >= (vnus_long) VNUS_BYTE_MIN
+			){
+			    rfre_expression( x );
+			    return new_ExprByte( (vnus_byte) n );
+			}
+			break;
+		    }
+
+		    case TAGExprInt:
+		    {
+			vnus_int n = to_ExprInt(cx)->v;
+			if(
+			    n <= (vnus_int) VNUS_BYTE_MAX &&
+			    n >= (vnus_int) VNUS_BYTE_MIN
+			){
+			    rfre_expression( x );
+			    return new_ExprByte( (vnus_byte) n );
+			}
+			break;
+		    }
+
+		    case TAGExprShort:
+		    {
+			vnus_short n = to_ExprShort(cx)->v;
+			if(
+			    n <= (vnus_short) VNUS_BYTE_MAX &&
+			    n >= (vnus_short) VNUS_BYTE_MIN
+			){
+			    rfre_expression( x );
+			    return new_ExprByte( (vnus_byte) n );
+			}
+			break;
+		    }
+
+		    case TAGExprChar:
+		    {
+			vnus_char v = to_ExprChar(cx)->c;
+			if(
+			    v <= (vnus_short) VNUS_BYTE_MAX &&
+			    v >= (vnus_short) VNUS_BYTE_MIN
+			){
+			    rfre_expression( x );
+			    return new_ExprByte( (vnus_byte) v );
+			}
+			break;
+		    }
+
+		    case TAGExprByte:
+			rfre_type( x->t );
+			fre_expression( x );
+			return cx;
+
+		    default:
+			break;
+		}
+		break;
+
+	    case BT_SHORT:
+		switch( cx->tag ){
+		    case TAGExprLong:
+		    {
+			vnus_long n = to_ExprLong(cx)->v;
+			if(
+			    n <= (vnus_long) VNUS_SHORT_MAX &&
+			    n >= (vnus_long) VNUS_SHORT_MIN
+			){
+			    rfre_expression( x );
+			    return new_ExprShort( (vnus_short) n );
+			}
+			break;
+		    }
+
+		    case TAGExprInt:
+		    {
+			vnus_int n = to_ExprInt(cx)->v;
+			if(
+			    n <= (vnus_int) VNUS_SHORT_MAX &&
+			    n >= (vnus_int) VNUS_SHORT_MIN
+			){
+			    rfre_expression( x );
+			    return new_ExprShort( (vnus_short) n );
+			}
+			break;
+		    }
+
+		    case TAGExprShort:
+			rfre_type( x->t );
+			fre_expression( x );
+			return cx;
+
+		    case TAGExprByte:
+		    {
+			vnus_int n = to_ExprByte(cx)->v;
+			rfre_expression( x );
+			return new_ExprShort( n );
+		    }
+
+		    case TAGExprChar:
+		    {
+			vnus_char v = to_ExprChar(cx)->c;
+			rfre_expression( x );
+			return new_ExprShort( v );
+		    }
+
+		    default:
+			break;
+		}
+		break;
+
+	    case BT_CHAR:
+		switch( cx->tag ){
+
+		    default:
+			break;
+		}
+		break;
+
+	    case BT_LONG:
+		switch( cx->tag ){
+		    case TAGExprLong:
+			rfre_type( x->t );
+			fre_expression( x );
+			return cx;
+
+		    case TAGExprInt:
+		    {
+			vnus_long n = to_ExprInt(cx)->v;
+			rfre_expression( x );
+			return new_ExprLong( n );
+		    }
+
+		    case TAGExprByte:
+		    {
+			vnus_long n = to_ExprByte(cx)->v;
+			rfre_expression( x );
+			return new_ExprLong( n );
+		    }
+
+		    case TAGExprShort:
+		    {
+			vnus_long n = to_ExprShort(cx)->v;
+			rfre_expression( x );
+			return new_ExprLong( n );
+		    }
+
+		    case TAGExprChar:
+		    {
+			vnus_char v = to_ExprChar(cx)->c;
+			rfre_expression( x );
+			return new_ExprLong( v );
+		    }
+
+		    default:
+			break;
+		}
+		break;
+
+	    case BT_FLOAT:
+		switch( cx->tag ){
+		    case TAGExprFloat:
+			rfre_type( x->t );
+			fre_expression( x );
+			return cx;
+
+		    default:
+			break;
+		}
+		break;
+
+	    case BT_DOUBLE:
+		switch( cx->tag ){
+		    case TAGExprDouble:
+			rfre_type( x->t );
+			fre_expression( x );
+			return cx;
+
+		    default:
+			break;
+		}
+		break;
+
+	    case BT_COMPLEX:
+		switch( cx->tag ){
+
+		    default:
+			break;
+		}
+		break;
+
+	    case BT_BOOLEAN:
+		switch( cx->tag ){
+		    case TAGExprBoolean:
+			rfre_type( x->t );
+			fre_expression( x );
+			return cx;
+
+		    default:
+			break;
+		}
+		break;
+
+	    case BT_STRING:
+		switch( cx->tag ){
+		    case TAGExprString:
+			rfre_type( x->t );
+			fre_expression( x );
+			return cx;
+
+		    default:
+			break;
+		}
+		break;
+	}
+    }
+    return x;
+}
+
+/* Constant folding for an if expression. (?:) */
+static expression constfold_ExprIf_action( ExprIf x )
+{
+.call generate_walker_call "    " x ExprIf ExprIf
+    expression cond = x->cond;
+
+    switch( cond->tag ){
+	case TAGExprBoolean:
+	{
+	    ExprBoolean bx = to_ExprBoolean( cond );
+
+	    if( bx->b ){
+		// The expression is always true. If the false branch
+		// doesn't have side-effects, we can fold this expression.
+		if( !maybe_has_sideeffect( x->elseval, NO_SE_NEW ) ){
+		     expression res = x->thenval;
+		     x->thenval = expressionNIL;
+		     rfre_expression( x );
+		     return res;
+		}
+	    }
+	    else {
+		// The expression is always false. If the true branch
+		// doesn't have side-effects, we can fold this expression.
+		if( !maybe_has_sideeffect( x->thenval, NO_SE_NEW ) ){
+		     expression res = x->elseval;
+		     x->elseval = expressionNIL;
+		     rfre_expression( x );
+		     return res;
+		}
+	    }
+	}
+
+	default:
+	    break;
+    }
+    return x;
+}
+
+/* Constant folding for an IsBoundViolated expression. */
+static expression constfold_ExprIsBoundViolated_action( ExprIsBoundViolated x )
+{
+.call generate_walker_call "    " x ExprIsBoundViolated ExprIsBoundViolated
+    if( x->val->tag == TAGExprInt && x->upperbound->tag == TAGExprInt ){
+	vnus_int val = to_ExprInt(x->val)->v;
+	vnus_int upperbound = to_ExprInt(x->upperbound)->v;
+	vnus_boolean res = val<0 || val>=upperbound;
+	rfre_expression( x );
+	return new_ExprBoolean( res );
+    }
+    return x;
+}
+
+/* Constant folding for an IsUpperBoundViolated expression. */
+static expression constfold_ExprIsUpperBoundViolated_action( ExprIsUpperBoundViolated x )
+{
+.call generate_walker_call "    " x ExprIsUpperBoundViolated ExprIsUpperBoundViolated
+    if( x->val->tag == TAGExprInt && x->upperbound->tag == TAGExprInt ){
+	vnus_int val = to_ExprInt(x->val)->v;
+	vnus_int upperbound = to_ExprInt(x->upperbound)->v;
+	vnus_boolean res = val>=upperbound;
+	rfre_expression( x );
+	return new_ExprBoolean( res );
+    }
+    return x;
+}
+
+/* Constant folding for an IsLowerBoundViolated expression. */
+static expression constfold_ExprIsLowerBoundViolated_action( ExprIsLowerBoundViolated x )
+{
+.call generate_walker_call "    " x ExprIsLowerBoundViolated ExprIsLowerBoundViolated
+    if( x->val->tag == TAGExprInt ){
+	vnus_int val = to_ExprInt(x->val)->v;
+	vnus_boolean res = val<0;
+	rfre_expression( x );
+	return new_ExprBoolean( res );
+    }
+    return x;
+}
+
+/* Constant folding for an CheckedIndex expression. */
+static expression constfold_ExprCheckedIndex_action( ExprCheckedIndex x )
+{
+.call generate_walker_call "    " x ExprCheckedIndex ExprCheckedIndex
+    if( x->val->tag == TAGExprInt && x->upperbound->tag == TAGExprInt ){
+	vnus_int val = to_ExprInt(x->val)->v;
+	vnus_int upperbound = to_ExprInt(x->upperbound)->v;
+
+	if( val>=0 && val<upperbound ){
+	    // Value is in bounds, no checking is necessary.
+	    expression res = x->val;
+	    x->val = expressionNIL;
+	    rfre_expression( x );
+	    return res;
+	}
+    }
+    return x;
+}
+
+/* Constant folding for an UpperCheckedIndex expression. */
+static expression constfold_ExprUpperCheckedIndex_action( ExprUpperCheckedIndex x )
+{
+.call generate_walker_call "    " x ExprUpperCheckedIndex ExprUpperCheckedIndex
+    if( x->val->tag == TAGExprInt && x->upperbound->tag == TAGExprInt ){
+	vnus_int val = to_ExprInt(x->val)->v;
+	vnus_int upperbound = to_ExprInt(x->upperbound)->v;
+
+	if( val<upperbound ){
+	    // Value is in bound, no checking is necessary.
+	    expression res = x->val;
+	    x->val = expressionNIL;
+	    rfre_expression( x );
+	    return res;
+	}
+    }
+    return x;
+}
+
+/* Constant folding for an LowerCheckedIndex expression. */
+static expression constfold_ExprLowerCheckedIndex_action( ExprLowerCheckedIndex x )
+{
+.call generate_walker_call "    " x ExprLowerCheckedIndex ExprLowerCheckedIndex
+    if( x->val->tag == TAGExprInt ){
+	vnus_int val = to_ExprInt(x->val)->v;
+
+	if( val>=0 ){
+	    // Value is in bound, no checking is necessary.
+	    expression res = x->val;
+	    x->val = expressionNIL;
+	    rfre_expression( x );
+	    return res;
+	}
+    }
+    return x;
+}
+
+/* Constant folding for a unary operator.  */
+static expression constfold_ExprUnop_action( ExprUnop x )
+{
+.call generate_walker_call "    " x ExprUnop ExprUnop
+    expression operand = x->operand;
+    bool folded = false;
+
+    switch( x->optor ){
+	case UNOP_PLUS:
+	    folded = true;
+	    break;
+
+	case UNOP_NEGATE:
+	    switch( operand->tag ){
+		case TAGExprUnop:
+		{
+		    ExprUnop x1 = to_ExprUnop(operand);
+
+		    if( x1->optor == UNOP_NEGATE ){
+			// Rewrite -(-<expr>) to <expr>
+			expression res = x1->operand;
+			x1->operand = expressionNIL;
+			rfre_expression( x );
+			return res;
+		    }
+		}
+
+		case TAGExprByte:
+		{
+		    ExprByte ox = to_ExprByte( operand );
+		    ox->v = -ox->v;
+		    folded = true;
+		    break;
+		}
+
+		case TAGExprShort:
+		{
+		    ExprShort ox = to_ExprShort( operand );
+		    ox->v = -ox->v;
+		    folded = true;
+		    break;
+		}
+
+		case TAGExprInt:
+		{
+		    ExprInt ox = to_ExprInt( operand );
+		    ox->v = -ox->v;
+		    folded = true;
+		    break;
+		}
+
+		case TAGExprLong:
+		{
+		    ExprLong ox = to_ExprLong( operand );
+		    ox->v = -ox->v;
+		    folded = true;
+		    break;
+		}
+
+		default:
+		    break;
+	    }
+	    break;
+
+	case UNOP_NOT:
+	    switch( operand->tag ){
+		case TAGExprByte:
+		{
+		    ExprByte ox = to_ExprByte( operand );
+		    ox->v = ~ox->v;
+		    folded = true;
+		    break;
+		}
+
+		case TAGExprShort:
+		{
+		    ExprShort ox = to_ExprShort( operand );
+		    ox->v = ~ox->v;
+		    folded = true;
+		    break;
+		}
+
+		case TAGExprInt:
+		{
+		    ExprInt ox = to_ExprInt( operand );
+		    ox->v = ~ox->v;
+		    folded = true;
+		    break;
+		}
+
+		case TAGExprLong:
+		{
+		    ExprLong ox = to_ExprLong( operand );
+		    ox->v = ~ox->v;
+		    folded = true;
+		    break;
+		}
+
+		case TAGExprBoolean:
+		    to_ExprBoolean(operand)->b = !to_ExprBoolean(operand)->b;
+		    folded = true;
+		    break;
+
+		default:
+		    break;
+	    }
+	    break;
+    }
+    expression res = x;
+    if( folded ){
+	res = operand;
+	fre_expression( x );
+    }
+    return res;
+}
+
+/* Constant folding for a binary operator. */
+static expression constfold_ExprBinop_action( ExprBinop x )
+{
+    if( x->left == NULL || x->right == NULL ){
+	return x;
+    }
+    if( is_associative_operator( x->optor ) ){
+	if(
+	    x->left->tag == TAGExprBinop &&
+	    to_ExprBinop(x->left)->optor == x->optor
+	){
+	    // We have a nest of operands. May as well convert to a
+	    // reduction expression.
+	    ExprBinop left = to_ExprBinop(x->left);
+	    expression_list xl = new_expression_list();
+	    xl = append_expression_list( xl, left->left );
+	    xl = append_expression_list( xl, left->right );
+	    xl = append_expression_list( xl, x->right );
+	    ExprReduction res = new_ExprReduction( x->optor, xl );
+	    fre_expression( left );
+	    fre_expression( x );
+.call generate_descent_call "	    " res ExprReduction ExprReduction
+	    return res;
+	}
+	if(
+	    x->right->tag == TAGExprBinop &&
+	    to_ExprBinop(x->right)->optor == x->optor
+	){
+	    // We have a nest of operands. May as well convert to a
+	    // reduction expression.
+	    ExprBinop right = to_ExprBinop(x->right);
+	    expression_list xl = new_expression_list();
+	    xl = append_expression_list( xl, x->left );
+	    xl = append_expression_list( xl, right->left );
+	    xl = append_expression_list( xl, right->right );
+	    ExprReduction res = new_ExprReduction( x->optor, xl );
+	    fre_expression( right );
+	    fre_expression( x );
+.call generate_descent_call "	    " res ExprReduction ExprReduction
+	    return res;
+	}
+    }
+.call generate_walker_call "    " x ExprBinop ExprBinop
+    switch( x->optor ){
+	case BINOP_SHORTAND:
+	    if(
+		x->left->tag == TAGExprBoolean &&
+		x->right->tag == TAGExprBoolean
+	    ){
+		bool b = to_ExprBoolean(x->left)->b;
+		expression res;
+
+		if( b ){
+		    // Result is determined by the righthandside expression
+		    res = x->right;
+		    x->right = expressionNIL;
+		}
+		else {
+		    // Result is always 'false', but that's already represented
+		    // by x->left, so use that expression.
+		    res = x->left;
+		    x->left = expressionNIL;
+		}
+		rfre_expression( x );
+		return res;
+	    }
+	    break;
+
+	case BINOP_SHORTOR:
+	    if(
+		x->left->tag == TAGExprBoolean &&
+		x->right->tag == TAGExprBoolean
+	    ){
+		bool b = to_ExprBoolean(x->left)->b;
+		expression res;
+
+		if( b ){
+		    // Result is always 'true', but that's already represented
+		    // by x->left, so use that expression.
+		    res = x->left;
+		    x->left = expressionNIL;
+		}
+		else {
+		    // Result is determined by the righthandside expression
+		    res = x->right;
+		    x->right = expressionNIL;
+		}
+		rfre_expression( x );
+		return res;
+	    }
+	    break;
+
+	case BINOP_PLUS:
+	    if( x->left->tag == x->right->tag ){
+		// TODO: be more subtle than this.
+		// - more general operations
+		// - better handling of over/underflow
+		switch( x->left->tag ){
+		    case TAGExprString:
+		    {
+			const char *sleft = to_ExprString( x->left )->s;
+			const char *sright = to_ExprString( x->right )->s;
+
+			tmstring res = create_tmstring( strlen( sleft ) + strlen( sright ) );
+			sprintf( res, "%s%s", sleft, sright );
+			rfre_expression( x );
+			return new_ExprString( res );
+		    }
+
+		    case TAGExprInt:
+		    {
+			vnus_int left = to_ExprInt( x->left )->v;
+			vnus_int right = to_ExprInt( x->right )->v;
+
+			if( left>-10000 && left<10000 && right>-10000 && right<10000 ){
+			    left += right;
+			    rfre_expression( x );
+			    return new_ExprInt( left );
+			}
+			break;
+		    }
+
+		    default:
+			break;
+		}
+	    }
+	    else {
+		// <val>+0 => <val>
+		if( is_zero_int( x->right ) ){
+		    expression res = x->left;
+		    x->left = expressionNIL;
+		    rfre_expression( x );
+		    return res;
+		}
+		// 0+<val> => <val>
+		if( is_zero_int( x->left ) ){
+		    expression res = x->right;
+		    x->right = expressionNIL;
+		    rfre_expression( x );
+		    return res;
+		}
+	    }
+	    break;
+
+.set opsym_BINOP_TIMES *
+.set opsym_BINOP_DIVIDE /
+.set opsym_BINOP_MOD %
+.set opsym_BINOP_MINUS -
+.set opsym_BINOP_AND &
+.set opsym_BINOP_XOR ^
+.set opsym_BINOP_OR |
+.foreach op BINOP_TIMES BINOP_DIVIDE BINOP_MOD BINOP_MINUS BINOP_AND BINOP_OR BINOP_XOR
+	case $(op):
+	    if( x->left->tag == x->right->tag ){
+		switch( x->left->tag ){
+		    case TAGExprInt:
+		    {
+			vnus_int left = to_ExprInt( x->left )->v;
+			vnus_int right = to_ExprInt( x->right )->v;
+
+.switch $(op)
+.case BINOP_AND BINOP_OR BINOP_XOR BINOP_TIMES BINOP_MINUS
+			// Evaluation is always allowed
+.case BINOP_MOD
+			if( left<0 || right <= 0 ){
+			    break;
+			}
+.case BINOP_DIVIDE
+			if( right == 0 ){
+			    break;
+			}
+.endswitch
+			left = left $(opsym_$(op)) right;
+			rfre_expression( x );
+			return new_ExprInt( left );
+		    }
+
+		    default:
+			break;
+		}
+	    }
+	    else {
+.. Now implement some operator-specific optimizations.
+.switch $(op)
+.case BINOP_AND
+.case BINOP_MOD
+.case BINOP_XOR BINOP_OR
+		// <val>$(opsym_$(op))0 => <val>
+		if( is_zero_int( x->right ) ){
+		    expression res = x->left;
+		    x->left = expressionNIL;
+		    rfre_expression( x );
+		    return res;
+		}
+		// 0$(opsym_$(op))<val> => <val>
+		if( is_zero_int( x->left ) ){
+		    expression res = x->right;
+		    x->right = expressionNIL;
+		    rfre_expression( x );
+		    return res;
+		}
+.case BINOP_TIMES
+		// <val>*1 => <val>
+		if( is_one_int( x->right ) ){
+		    expression res = x->left;
+		    x->left = expressionNIL;
+		    rfre_expression( x );
+		    return res;
+		}
+		// 1*<val> => <val>
+		if( is_one_int( x->left ) ){
+		    expression res = x->right;
+		    x->right = expressionNIL;
+		    rfre_expression( x );
+		    return res;
+		}
+.case BINOP_MINUS
+		// <val>-0 => <val>
+		if( is_zero_int( x->right ) ){
+		    expression res = x->left;
+		    x->left = expressionNIL;
+		    rfre_expression( x );
+		    return res;
+		}
+.case BINOP_DIVIDE
+		// <val>/1 => <val>
+		if( is_one_int( x->right ) ){
+		    expression res = x->left;
+		    x->left = expressionNIL;
+		    rfre_expression( x );
+		    return res;
+		}
+.endswitch
+	    }
+	    break;
+
+.endforeach
+.set opsym_BINOP_EQUAL ==
+.set opsym_BINOP_NOTEQUAL !=
+.set opsym_BINOP_LESS <
+.set opsym_BINOP_LESSEQUAL <=
+.set opsym_BINOP_GREATER >
+.set opsym_BINOP_GREATEREQUAL >=
+.foreach op BINOP_EQUAL BINOP_NOTEQUAL BINOP_LESS BINOP_LESSEQUAL BINOP_GREATER BINOP_GREATEREQUAL
+	case $(op):
+	    if( x->left->tag == x->right->tag ){
+		if( is_equivalent_expression( x->left, x->right ) ){
+		    vnus_boolean res = (0 $(opsym_$(op)) 0);
+		    rfre_expression( x );
+		    return new_ExprBoolean( res );
+		}
+		switch( x->left->tag ){
+		    case TAGExprByte:
+		    {
+			vnus_byte left = to_ExprByte( x->left )->v;
+			vnus_byte right = to_ExprByte( x->right )->v;
+			vnus_boolean res = (left $(opsym_$(op)) right);
+			rfre_expression( x );
+			return new_ExprBoolean( res );
+		    }
+
+		    case TAGExprShort:
+		    {
+			vnus_short left = to_ExprShort( x->left )->v;
+			vnus_short right = to_ExprShort( x->right )->v;
+			vnus_boolean res = (left $(opsym_$(op)) right);
+			rfre_expression( x );
+			return new_ExprBoolean( res );
+		    }
+
+		    case TAGExprChar:
+		    {
+			vnus_char left = to_ExprChar( x->left )->c;
+			vnus_char right = to_ExprChar( x->right )->c;
+			vnus_boolean res = (left $(opsym_$(op)) right);
+			rfre_expression( x );
+			return new_ExprBoolean( res );
+		    }
+
+		    case TAGExprInt:
+		    {
+			vnus_int left = to_ExprInt( x->left )->v;
+			vnus_int right = to_ExprInt( x->right )->v;
+			vnus_boolean res = (left $(opsym_$(op)) right);
+			rfre_expression( x );
+			return new_ExprBoolean( res );
+		    }
+
+		    case TAGExprLong:
+		    {
+			vnus_long left = to_ExprLong( x->left )->v;
+			vnus_long right = to_ExprLong( x->right )->v;
+			vnus_boolean res = (left $(opsym_$(op)) right);
+			rfre_expression( x );
+			return new_ExprBoolean( res );
+		    }
+
+		    case TAGExprBoolean:
+		    {
+			vnus_boolean left = to_ExprBoolean( x->left )->b;
+			vnus_boolean right = to_ExprBoolean( x->right )->b;
+			vnus_boolean res = (left $(opsym_$(op)) right);
+			rfre_expression( x );
+			return new_ExprBoolean( res );
+		    }
+
+		    case TAGExprString:
+		    {
+			vnus_string left = to_ExprString( x->left )->s;
+			vnus_string right = to_ExprString( x->right )->s;
+			vnus_boolean res = strcmp( left, right ) $(opsym_$(op)) 0;
+			rfre_expression( x );
+			return new_ExprBoolean( res );
+		    }
+
+		    default:
+			break;
+		}
+	    }
+	    break;
+
+.endforeach
+	case BINOP_SHIFTLEFT:
+	    if( x->left->tag == TAGExprInt && x->right->tag == TAGExprInt ){
+		vnus_int left = to_ExprInt( x->left )->v;
+		vnus_int right = to_ExprInt( x->right )->v;
+
+		// This might cause overflow, but that would also happen
+		// at runtime, so we don't care.
+		vnus_int res = left<<right;
+		rfre_expression( x );
+		return new_ExprInt( res );
+	    }
+	    break;
+
+	case BINOP_SHIFTRIGHT:
+	case BINOP_USHIFTRIGHT:
+	    break;
+    }
+    return x;
+}
+
+/* Constant folding for a reduction expression. */
+static expression constfold_ExprReduction_action( ExprReduction x )
+{
+.call generate_walker_call "    " x ExprReduction ExprReduction
+    expression_list operands = x->operands;
+
+    assert( operands->sz != 0 );
+    unsigned int i = 0;
+    // See if you can splice in binary operators or reductions with the same
+    // operand.
+    while( i<operands->sz ){
+	expression e = operands->arr[i];
+
+	if( e->tag == TAGExprReduction ){
+	    ExprReduction er = to_ExprReduction(e);
+
+	    // A nested reduction. See if we can inline it.
+	    // The operators must be the same (though we could do something
+	    // cute with addition, subtraction and negation), 
+	    // and for some operators inlining is only possible at
+	    // the first element in the list.
+	    if(
+		er->optor == x->optor &&
+		( i == 0 || is_associative_operator( er->optor ) )
+	    ){
+		operands = insertlist_expression_list( operands, i+1, er->operands );
+		er->operands = expression_listNIL;
+		operands = delete_expression_list( operands, i );
+		continue;
+	    }
+	}
+	else if( e->tag == TAGExprBinop ){
+	    ExprBinop eb = to_ExprBinop(e);
+
+	    // A nested reduction. See if we can inline it.
+	    // The operators must be the same (though we could do something
+	    // cute with addition, subtraction and negation), 
+	    // and for some operators inlining is only possible at
+	    // the first element in the list.
+	    if(
+		eb->optor == x->optor &&
+		( i == 0 || is_associative_operator( eb->optor ) )
+	    ){
+		operands = insert_expression_list( operands, i+1, eb->right );
+		operands = insert_expression_list( operands, i+1, eb->left );
+		eb->left = expressionNIL;
+		eb->right = expressionNIL;
+		operands = delete_expression_list( operands, i );
+		continue;
+	    }
+	    if( eb->optor == BINOP_MINUS && x->optor == BINOP_PLUS ){
+		expression x;
+
+
+		if( eb->right->tag == TAGExprUnop && to_ExprUnop(eb->right)->optor == UNOP_NEGATE ){
+		    ExprUnop uo = to_ExprUnop(eb->right);
+		    x = uo->operand;
+		    uo->operand = expressionNIL;
+		}
+		else {
+		    x = new_ExprUnop( UNOP_NEGATE, eb->right );
+		    eb->right = expressionNIL;
+		}
+		operands = insert_expression_list( operands, i+1, x );
+		operands = insert_expression_list( operands, i+1, eb->left );
+		eb->left = expressionNIL;
+		operands = delete_expression_list( operands, i );
+		continue;
+	    }
+	}
+	i++;
+    }
+
+    switch( x->optor ){
+.foreach op BINOP_SHORTAND BINOP_SHORTOR
+.switch $(op)
+.case BINOP_SHORTAND
+.set neutral true
+.case BINOP_SHORTOR
+.set neutral false
+.endswitch
+	case $(op):
+	{
+	    // Remove all '$(neutral)' operands, and zap everything starting
+	    // from a !'$(neutral)' upwards.
+	    unsigned int ix = 0;
+
+	    while( ix<operands->sz ){
+		expression e = operands->arr[ix];
+
+		if( e->tag == TAGExprBoolean ){
+		    bool b = to_ExprBoolean(e)->b;
+
+		    if( b == $(neutral)  ){
+			// A neutral operand doesn't contribute anything
+			// interesting.
+			operands = delete_expression_list( operands, ix );
+		    }
+		    else {
+			// Anything beyond this operand is uninteresting,
+			// since it will never be evaluated, so zap it
+			ix++;
+			while( ix<operands->sz ){
+			    operands = delete_expression_list( operands, ix );
+			}
+		    }
+		    continue;
+		}
+		if( !maybe_has_sideeffect( e, NO_SE_NEW|NO_SE_EXCEPTION ) ){
+		    // Zap all equivalent expressions
+		    unsigned iy = ix+1;
+		    while( iy<operands->sz ){
+			expression e1 = operands->arr[iy];
+
+			// TODO: use a test for equivalent expressions if it
+			// ever is written.
+			if( isequal_expression( e, e1 ) ){
+			    // The same expression twice in a shortand/shortor
+			    // is useless. Zap.
+			    operands = delete_expression_list( operands, iy );
+			}
+			else {
+			    iy++;
+			}
+		    }
+		}
+		ix++;
+	    }
+	    if( operands->sz == 0 ){
+		// Maintain the invariant "reduction lists cannot be
+		// empty" at all costs.
+		operands = append_expression_list(
+		    operands,
+		    new_ExprBoolean( $(neutral) )
+		);
+	    }
+	    break;
+	}
+
+.endforeach
+
+	case BINOP_PLUS:
+	{
+	    unsigned int ix = 0;
+
+	    while( ix<operands->sz ){
+again:		expression e = operands->arr[ix];
+
+		if( e->tag == TAGExprInt ){
+		    vnus_int v = to_ExprInt(e)->v;
+
+		    // We have a constant, assimilate other constants.
+		    unsigned int iy = ix+1;
+		    while( iy<operands->sz ){
+			expression y = operands->arr[iy];
+			if( y->tag == TAGExprInt ){
+			    vnus_int vy = to_ExprInt(y)->v;
+
+			    v += vy;
+			    operands = delete_expression_list( operands, iy );
+			    continue;
+
+			}
+			iy++;
+		    }
+		    to_ExprInt(e)->v = v;
+		    if( v == 0 && operands->sz>1  ){
+			// A neutral operand doesn't contribute anything
+			// interesting.
+			operands = delete_expression_list( operands, ix );
+			continue;
+		    }
+		}
+		if( operands->sz>2 && !maybe_has_sideeffect( e, NO_SE_NEW|NO_SE_EXCEPTION ) ){
+		    if( e->tag == TAGExprUnop && to_ExprUnop(e)->optor == UNOP_NEGATE ){
+			// We have -<expr>, see if we have a corresponding
+			// <expr> so that the two can cancel out.
+			expression nx = to_ExprUnop(e)->operand;
+			for( unsigned iy = ix+1; iy<operands->sz; iy++ ){
+			    if( is_equivalent_expression( nx, operands->arr[iy] ) ){
+				// Yep, cancel 'em out.
+				operands = delete_expression_list( operands, iy );
+				operands = delete_expression_list( operands, ix );
+				goto again;
+
+			    }
+			}
+		    }
+		    else {
+			// We have -<expr>, see if we have a corresponding
+			// <expr> so that the two can cancel out.
+			for( unsigned iy = ix+1; iy<operands->sz; iy++ ){
+			    expression y = operands->arr[iy];
+
+			    if(
+				y->tag == TAGExprUnop &&
+				to_ExprUnop(y)->optor == UNOP_NEGATE &&
+				is_equivalent_expression( e, to_ExprUnop(y)->operand )
+			    ){
+				// Yep, cancel 'em out.
+				operands = delete_expression_list( operands, iy );
+				operands = delete_expression_list( operands, ix );
+				goto again;
+
+			    }
+			}
+		    }
+		}
+		ix++;
+	    }
+	    assert( operands->sz != 0 );
+	    break;
+	}
+
+	case BINOP_MINUS:
+	case BINOP_MOD:
+	case BINOP_DIVIDE:
+	    break;
+
+.set opsym_BINOP_XOR ^
+.set opsym_BINOP_OR |
+.set opsym_BINOP_AND &
+.set opsym_BINOP_TIMES *
+.foreach op BINOP_TIMES BINOP_AND BINOP_OR BINOP_XOR
+	case $(op):
+	{
+	    unsigned int ix = 0;
+
+	    while( ix<operands->sz ){
+		expression e = operands->arr[ix];
+
+		if( e->tag == TAGExprInt ){
+		    vnus_int v = to_ExprInt(e)->v;
+
+		    // Eat all other ExprInt.
+		    unsigned int iy = ix+1;
+		    while( iy<operands->sz ){
+			expression y = operands->arr[iy];
+
+			if( y->tag == TAGExprInt ){
+			    v = v $(opsym_$(op)) to_ExprInt( y )->v;
+			    operands = delete_expression_list( operands, iy );
+			    continue;
+			}
+			iy++;
+		    }
+		    to_ExprInt(e)->v = v;
+		    // Since we have eaten all other ExprInt, there is
+		    // no reason to keep searching.
+		    break;
+
+		}
+		ix++;
+	    }
+	    break;
+	}
+
+.endforeach
+	case BINOP_NOTEQUAL:
+	case BINOP_EQUAL:
+	case BINOP_LESS:
+	case BINOP_LESSEQUAL:
+	case BINOP_GREATER:
+	case BINOP_GREATEREQUAL:
+	    assert( true );
+	    break;
+
+	case BINOP_SHIFTRIGHT:
+	case BINOP_USHIFTRIGHT:
+	case BINOP_SHIFTLEFT:
+	    break;
+    }
+    assert( x->operands->sz != 0 );
+    if( x->operands->sz == 1 ){
+	// A reduction over one expression is just the expression...
+	expression res = x->operands->arr[0];
+	x->operands->arr[0] = expressionNIL;
+	rfre_expression( x );
+	return res;
+    }
+    return x;
+}
+
+/* -------- End of action functions ---------- */
+
+.call generate_walker "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+expression constant_fold_expression( expression x )
+{
+.call generate_descent_call "    " x expression expression
+    return x;
+}
+
+expression_list constant_fold_expression_list( expression_list x )
+{
+.call generate_descent_call "    " x expression_list expression_list
+    return x;
+}
+
+size_list constant_fold_size_list( size_list x )
+{
+.call generate_descent_call "    " x size_list size_list
+    return x;
+}
+
+vnusprog constant_fold_vnusprog( vnusprog x )
+{
+.call generate_descent_call "    " x vnusprog vnusprog
+    return x;
+}

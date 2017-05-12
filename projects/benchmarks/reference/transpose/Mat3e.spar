@@ -1,0 +1,22 @@
+import transpose.ElasticArray;
+
+public class Mat3e {
+    final static int M = 13*13;
+    final static int iters = 40;
+
+    public static void main( String args[] ){
+	ElasticArray(|int,3|) A = new ElasticArray(|int,3|)([M,M,M]);
+	ElasticArray(|int,3|) B = new ElasticArray(|int,3|)([M,M,M]);
+
+	__println( 1, "Doing ", M*M*M*iters, " iterations" );
+	for( int iter=0; iter<iters; iter++ ){
+	    for( int i=0; i<M; i++ ){
+		for( int j=0; j<M; j++ ){
+		    for( int k=0; k<M; k++ ){
+			A[i,j,k] = B[k,j,i];
+		    }
+		}
+	    }
+	}
+    }
+}

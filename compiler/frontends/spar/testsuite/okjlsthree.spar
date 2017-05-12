@@ -1,0 +1,12 @@
+// File: okjlsthree.spar
+//
+// After JLS2 14.4.2    Scope of Local Variable Declarations
+
+
+public class okjlsthree {
+    public static void main() {
+        __print(1,"2+1=");
+        int two = 2, three = two + 1;
+        __println(1,three);
+    }
+}

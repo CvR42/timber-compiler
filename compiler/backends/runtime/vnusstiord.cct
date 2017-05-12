@@ -1,0 +1,25 @@
+.insert lib.t
+/*
+ * Distributed read functions use broadcasts!
+ */
+
+#include "vnusstio.h"
+#include "io/ioseq.h"
+#include "io/iopar.h"
+#include "../runtime/vnusrtl.h"
+#include <stdio.h>
+
+.foreach type $(typelist)
+${call gen_read_hdr $(type) vp__}
+{
+    VnusInt result = NOT_EXECUTED;
+    if (isThisProcessor(0))
+    {
+        result = ${call gen_read_call $(type) vs__};
+        vnus_broadcast(sizeof(*elt), elt);
+    }
+    vnus_receive(0, sizeof(*elt), elt);
+    vnus_wait_pending();
+    return result;
+}
+.endforeach

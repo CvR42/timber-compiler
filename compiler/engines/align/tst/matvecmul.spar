@@ -1,0 +1,58 @@
+// Minimal test program.
+
+globalpragmas <$boundscheck=false$>;
+
+package spar.testsuite;
+
+public class matvecmul
+{
+    static final int N = 1000;
+    static final int ITER = 100;
+    static final boolean NAH = false;
+    static double A[*,*] <$dist="[block,collapsed]"$> = new double[N,N] <$dist="[block, collapsed]"$>;
+    static double B[*] <$dist="[replicated]"$> = new double[N] <$dist="[replicated]"$>;
+    static double C[*] <$dist="[block]"$> = new double[N] <$dist="[block]"$>;
+    static double D[*] <$dist="[local 0]"$> = new double[N] <$dist="[local 0]"$>;
+
+    public static void main()
+        {
+            __println(1, "In the air");
+	    foreach (j:-:N)
+		foreach (i:-:N)
+                    A[i,j] = i+j;
+//	    __println(1,"stage2");
+	    foreach (i:-:N)
+		B[i] = i;
+//		__println(1,"stage3");
+            for (loop:-:ITER) 
+            {
+//	    __print(1,"loop:");
+//	    __println(1,loop);
+//		__println(1,"stage1");
+		foreach (i:-:N)
+		    C[i] = 0;
+//		__println(1,"stage4");
+		    foreach (i:-:N){
+//		    __println(1,i);
+			<$ independent $> foreach (j:-:N){
+			    C[i] = (<$resident$>C[j]) + A[i,j]*(<$resident$>B[j]);
+			}
+		    }
+//		__println(1,"stage5");
+            }
+	    if (NAH){
+	        foreach (i:-:N)
+                        D[i] = C[i];
+	    }
+            __println(1, "Finished");
+	    if (NAH){
+                __println(1, "D:");
+		foreach (i:-:N){
+                        __print(1,D[i]);
+		        __print(1," ");
+		    }
+		    __println(1,"");
+	    }
+        }
+}
+

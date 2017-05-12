@@ -1,0 +1,245 @@
+.. File: iszero.ct
+..
+.. Tree analyzer to determine wether the given expression is zero.
+.. Answers are yes, no, or maybe.
+..
+.set reduction_type AFLAG
+.set neutral_element AF_UNKNOWN
+.set analysis_name iszero
+..
+.macro generate_formal_parameters nm t
+.return "( const_$t $(nm), const_ProgramState_list state )"
+.endmacro
+..
+.macro generate_actual_parameters nm should_type is_type
+.if ${eq $(should_type) $(is_type)}
+.return "( $(nm), state )"
+.else
+.return "( (const_$(should_type)) $(nm), state )"
+.endif
+.endmacro
+..
+.macro generate_reduction_operation a b
+.return "aflag_both( $a, $b )"
+.endmacro
+..
+.. Generate a test expression that evaluates to true iff there is
+.. no point in continuing the analyzis.
+.macro generate_termination_test v
+.return "($v)"
+.endmacro
+..
+.macro generate_empty_analyzer_body indent t
+$(indent)(void) state;
+.endmacro
+..
+.macro generate_setup_code t indent elm res
+.if ${member ${metatype $t} list class constructor constructorbase}
+$(indent)if( $(elm) == $tNIL ){
+$(indent)$(indent)return AF_MAYBE;
+$(indent)}
+.endif
+.endmacro
+..
+.. For which types are there actions defines?
+.set actors
+.append actors ${nonvirtual expression ${subclasses expression}}
+..
+.. Actions for all visited types
+..
+.insert tmcanalyze.t
+.set analyze_action_AnnotationExpression reduction
+.set analyze_action_ArrayInitExpression constant AF_NO
+.set analyze_action_AssignOpExpression function is_zero_AssignOpExpression
+.set analyze_action_BinopExpression constant AF_MAYBE
+.set analyze_action_BooleanExpression function is_zero_BooleanExpression
+.set analyze_action_BracketExpression reduction
+.set analyze_action_ByteExpression function is_zero_ByteExpression
+.set analyze_action_CastExpression reduction
+.set analyze_action_CharExpression function is_zero_CharExpression
+.set analyze_action_ClassExpression constant AF_MAYBE
+.set analyze_action_ClassIdExpression constant AF_MAYBE
+.set analyze_action_ClassInstanceOfExpression constant AF_MAYBE
+.set analyze_action_ComplexExpression reduction
+.set analyze_action_ConstructorInvocationExpression constant AF_NO
+.set analyze_action_DefaultValueExpression constant AF_YES
+.set analyze_action_DoubleExpression function is_zero_DoubleExpression
+.set analyze_action_FieldExpression constant AF_MAYBE
+.set analyze_action_FieldInvocationExpression constant AF_MAYBE
+.set analyze_action_FloatExpression function is_zero_FloatExpression
+.set analyze_action_ForcedCastExpression reduction
+.set analyze_action_GetBufExpression constant AF_NO
+.set analyze_action_GetLengthExpression constant AF_MAYBE
+.set analyze_action_GetSizeExpression constant AF_MAYBE
+.set analyze_action_IfExpression function is_zero_IfExpression
+.set analyze_action_InstanceOfExpression constant AF_MAYBE
+.set analyze_action_IntExpression function is_zero_IntExpression
+.set analyze_action_InterfaceInstanceOfExpression constant AF_MAYBE
+.set analyze_action_InternalizeExpression constant AF_NO
+.set analyze_action_LongExpression function is_zero_LongExpression
+.set analyze_action_MethodInvocationExpression constant AF_MAYBE
+.set analyze_action_NewArrayExpression constant AF_NO
+.set analyze_action_NewClassExpression constant AF_NO
+.set analyze_action_NewInitArrayExpression constant AF_NO
+.set analyze_action_NewInnerClassExpression constant AF_NO
+.set analyze_action_NewRecordExpression constant AF_NO
+.set analyze_action_NotNullAssertExpression constant AF_NO
+.set analyze_action_NullExpression constant AF_YES
+.set analyze_action_OuterSuperFieldExpression constant AF_MAYBE
+.set analyze_action_OuterSuperInvocationExpression constant AF_MAYBE
+.set analyze_action_OuterThisExpression constant AF_NO
+.set analyze_action_PostDecrementExpression constant AF_MAYBE
+.set analyze_action_PostIncrementExpression constant AF_MAYBE
+.set analyze_action_PreDecrementExpression constant AF_MAYBE
+.set analyze_action_PreIncrementExpression constant AF_MAYBE
+.set analyze_action_ShortExpression function is_zero_ShortExpression
+.set analyze_action_ShortopExpression constant AF_MAYBE
+.set analyze_action_SizeofExpression constant AF_NO
+.set analyze_action_StringExpression constant AF_NO
+.set analyze_action_SubscriptExpression constant AF_MAYBE
+.set analyze_action_SuperFieldExpression constant AF_MAYBE
+.set analyze_action_SuperInvocationExpression constant AF_MAYBE
+.set analyze_action_TypeExpression constant AF_NO
+.set analyze_action_TypeFieldExpression constant AF_MAYBE
+.set analyze_action_TypeInstanceOfExpression constant AF_MAYBE
+.set analyze_action_TypeInvocationExpression constant AF_MAYBE
+.set analyze_action_UnopExpression constant AF_MAYBE
+.set analyze_action_VariableNameExpression function is_zero_VariableNameExpression
+.set analyze_action_VectorExpression constant AF_MAYBE
+.set analyze_action_VectorSubscriptExpression reduction
+.set analyze_action_WhereExpression constant AF_MAYBE
+.set analyze_action_type ignore
+..
+.set visit_types ${call calc_analyzer "expression" "$(actors)"}
+..
+/* File: iszero.c
+ *
+ * Given an expression 'x', try to determine if the expression evaluates
+ * to zero/null/false. Possible answers are yes, no, or maybe.
+ */
+
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "symbol_table.h"
+#include "pragma.h"
+#include "global.h"
+#include "analyze.h"
+#include "iszero.h"
+
+.call generate_analyzer_forwards "$(visit_types)"
+
+// --------- user functions -----------------
+
+static AFLAG is_zero_IfExpression${call generate_formal_parameters x IfExpression}
+{
+    (void) state;
+    // TODO: be smarter about constant conditions.
+    return aflag_either(
+        is_zero( x->thenval, state ),
+	is_zero( x->elseval, state )
+    );
+}
+
+static AFLAG is_zero_DoubleExpression${call generate_formal_parameters x DoubleExpression}
+{
+    (void) state;
+    return (x->v == 0.0)?AF_YES:AF_NO;
+}
+
+static AFLAG is_zero_FloatExpression${call generate_formal_parameters x FloatExpression}
+{
+    (void) state;
+    return (x->v == 0.0)?AF_YES:AF_NO;
+}
+
+static AFLAG is_zero_LongExpression${call generate_formal_parameters x LongExpression}
+{
+    (void) state;
+    return (x->v == 0)?AF_YES:AF_NO;
+}
+
+static AFLAG is_zero_ShortExpression${call generate_formal_parameters x ShortExpression}
+{
+    (void) state;
+    return (x->v == 0)?AF_YES:AF_NO;
+}
+
+static AFLAG is_zero_CharExpression${call generate_formal_parameters x CharExpression}
+{
+    (void) state;
+    return (x->c==0)?AF_YES:AF_NO;
+}
+
+static AFLAG is_zero_IntExpression${call generate_formal_parameters x IntExpression}
+{
+    (void) state;
+    return (x->v == 0)?AF_YES:AF_NO;
+}
+
+static AFLAG is_zero_ByteExpression${call generate_formal_parameters x ByteExpression}
+{
+    (void) state;
+    return (x->v == 0)?AF_YES:AF_NO;
+}
+
+static AFLAG is_zero_BooleanExpression${call generate_formal_parameters x BooleanExpression}
+{
+    (void) state;
+    return (x->b)?AF_NO:AF_YES;
+}
+
+static AFLAG is_zero_VariableNameExpression${call generate_formal_parameters x VariableNameExpression}
+{
+    unsigned int lvl;
+    unsigned int pos;
+    tmsymbol nm = x->name->sym;
+    AFLAG res;
+
+    if(
+        state != NULL &&
+	search_var_programstates( state, state->sz, nm, &lvl, &pos )
+    ){
+	VarState v = state->arr[lvl]->varStates->arr[pos];
+	bool maybe_overwritten = false;
+
+	if( !v->final ){
+	    // See wether there are any iterations between our level
+	    // and the level where the variable state is registered.
+	    // We don't care wether the level of the variable is an
+	    // iteration, since if so, the state change was caused
+	    // within the iteration.
+	    for( unsigned int ix=lvl+1; ix<state->sz; ix++ ){
+		if( state->arr[ix]->iterated ){
+		    maybe_overwritten = true;
+		    break;
+		}
+	    }
+	}
+	if( maybe_overwritten ){
+	    res = AF_MAYBE;
+	}
+	else {
+	    res = v->value->zero;
+	}
+    }
+    else {
+	res = AF_MAYBE;
+    }
+    return res;
+}
+
+static AFLAG is_zero_AssignOpExpression${call generate_formal_parameters x AssignOpExpression}
+{
+    return is_zero( x->right, state );
+}
+
+// --------- end user functions -----------------
+
+.call generate_analyzer "$(visit_types)"
+
+AFLAG is_zero( const_expression x, const_ProgramState_list state )
+{
+    return $(analysis_name)_expression${call generate_actual_parameters x expression expression};
+}

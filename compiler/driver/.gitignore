@@ -1,0 +1,9 @@
+Makefile
+config.status
+spar
+configure
+config.log
+autom4te.cache
+runner-develop-config.sh
+runner-install-config.sh
+spar-installed

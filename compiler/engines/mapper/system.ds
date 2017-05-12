@@ -1,0 +1,9 @@
+|| Internal representation of parsed processor pragmas
+ProcessorType =
+    SimpleProcType: { name:origsymbol, type:vnus_string }
+    ;
+
+ProcessorDecl =
+    SimpleProcDecl: { name:origsymbol, type:origsymbol } |
+    ArrayProcDecl: { name:origsymbol, type:origsymbol, sizes:[vnus_int] }
+    ;

@@ -1,0 +1,4 @@
+errambclfield.spar:19: Field reference 'BLACK' in 'spar.testsuite.errambclfield' is ambiguous:
+errambclfield.spar:9: This is a candidate (in spar.testsuite.Colors)
+errambclfield.spar:13: This is a candidate (in spar.testsuite.Separates)
+You can resolve this by qualifying the name.

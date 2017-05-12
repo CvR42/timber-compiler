@@ -1,0 +1,12 @@
+// After JLS2 15.26.2    Compound Assignment Operators
+
+
+public class okjls71 {
+    public static void main(String[] args) {
+        int k = 1;
+        int[] a = { 1 };
+        k += (k = 4) * (k + 2);
+        a[0] += (a[0] = 4) * (a[0] + 2);
+        __println(1,"k==" , k , " and a[0]==" , a[0]);
+    }
+}

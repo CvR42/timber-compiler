@@ -1,0 +1,18 @@
+// After JLS2 6.5.6.1    Simple Expression Names
+//
+// We try to assign to final 'f'.
+
+public class errjlsfinal {
+    static int v;
+
+    static final int f = 3;
+
+    public static void main(String[] args) {
+        int i;
+        i = 1;
+        v = 2;
+        f = 33;                                        // compile-time error
+        System.out.println(i + " " + v + " " + f);
+    }
+
+}

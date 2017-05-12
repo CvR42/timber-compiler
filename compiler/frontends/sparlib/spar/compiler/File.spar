@@ -1,0 +1,125 @@
+// File: File.spar
+//
+// Helper functions
+
+package spar.compiler;
+
+public final class File {
+    private File() { /* this class is not instantiable by the general public */ }    
+    // Given a file handle 'hnd', a pointer to a byte array 'buf'
+    // an offset 'off' and a length 'len', write these
+    <$ noGC $> final public static native boolean write( int hnd, __array(byte) buf, int off, int len );
+
+    // Given a file handle 'hnd', a pointer to a byte array 'buf'
+    // an offset 'off' and a length 'len', read at most 'len' bytes.
+    // return the number of bytes actually read, or -1 if there was
+    // an error.
+    <$ noGC $> final public static native int read( int hnd, __array(byte) buf, int off, int len );
+
+    // Given a file handle 'hnd', return the next byte in the file.
+    <$ noGC $> final public static native int readByte( int hnd );
+
+    public static final int IOERRORCODE = 130; 
+
+
+    // Given a file path, return true iff a file with that name exists.
+    <$ noGC $> final public static native int exists( __array(char) name, int length ) ;
+
+    <$ noGC $> final public static int exists( char name[] ) {
+	return exists( __getbuf(name), name.length );
+    }
+
+    <$ noGC $> final public static int exists( String name ) {
+	char namebuf[] = name.toCharArray();
+	int res = exists( __getbuf(namebuf), namebuf.length );
+	__delete( namebuf );
+	return res;
+    }
+
+
+
+    // Given a file path, return true iff a file with that name is readable.
+    <$ noGC $> final public static native boolean readable( __array(char) name, int length );
+
+    <$ noGC $> final public static boolean readable( char name[] ) {
+	return readable( __getbuf(name), name.length );
+    }
+
+    <$ noGC $> final public static boolean readable( String name ) {
+	char namebuf[] = name.toCharArray();
+	boolean res = readable( __getbuf(namebuf), namebuf.length );
+	__delete( namebuf );
+	return res;
+    }
+
+
+    // Given a file path, return true iff a file with that name is writable.
+    <$ noGC $> final public static native boolean writable( __array(char) name, int length ) ;
+
+    <$ noGC $> final public static boolean writable( char name[] ) {
+	return writable( __getbuf(name), name.length );
+    }
+
+    <$ noGC $> final public static boolean writeable( String name ) {
+	char namebuf[] = name.toCharArray();
+	boolean res = writeable( __getbuf(namebuf), namebuf.length );
+	__delete( namebuf );
+	return res;
+    }
+
+
+    // Given a path, return true iff the path points to a file, and
+    // not a directory, or any other special file.
+    <$ noGC $> final public static native int isFile( __array(char) name, int length ) ;
+
+    <$ noGC $> final public static int isFile( char name[] ) {
+	return isFile( __getbuf(name), name.length );
+    }
+
+    <$ noGC $> final public static int isFile( String name ) {
+	char namebuf[] = name.toCharArray();
+	int res = isFile( __getbuf(namebuf), namebuf.length );
+	__delete( namebuf );
+	return res;
+    }
+
+
+    // Given a path, return true iff the path points to a file, and
+    // not a directory, or any other special file.
+    <$ noGC $> final public static native int isDirectory( __array(char) name, int length ) ;
+
+    <$ noGC $> final public static int isDirectory( char name[] ) {
+	return isDirectory( __getbuf(name), name.length );
+    }
+
+    <$ noGC $> final public static int isDirectory( String name ) {
+	char namebuf[] = name.toCharArray();
+	int res = isDirectory( __getbuf(namebuf), namebuf.length );
+	__delete( namebuf );
+	return res;
+    }
+
+
+    // Given a file path, open the file for input, and return the file
+    // handle. If there is an error, return a negative number.
+    <$ noGC $> final public static native int openInput( __array(char) name, int length ) ;
+
+    // Given a file path, open the file for output, and return the file
+    // handle. If there is an error, return a negative number.
+    <$ noGC $> final public static native int openOutput( __array(char) name, int length ) ;
+
+    // Given a file path, open the file for append, and return the file
+    // handle. If there is an error, return a negative number.
+    <$ noGC $> final public static native int openAppend( __array(char) name, int length ) ;
+
+    // Given a file handle, close the file.
+    <$ noGC $> final public static native boolean close( int hnd );
+
+    // Given a file handle and a number of bytes, skip that many
+    // bytes in the file
+    <$ noGC $> final public static native long skip( int hnd, long n );
+
+    // Given a file handle, return the number of bytes that can be
+    // read from it without blocking.
+    <$ noGC $> final public static native int available( int hnd );
+}

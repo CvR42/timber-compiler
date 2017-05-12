@@ -1,0 +1,130 @@
+This file, README.parallel, describes the requirements, configuration
+and use of the parallelization features of the Timber compiler.
+For parallelization to work properly, it is of course necessary that
+sequential compilation also works correctly. See the file README for
+details on that.
+
+Generic remarks
+
+Parallel programming is now officially supported, although
+things may not go as smoothly as for a sequential compiler.  The compiler
+can use PVM or the `lam' or `mpich' flavours of MPI for communication.
+
+Although the support is designed to be generic, most testing has
+been done with MPI-mpich on Linux systems. 
+
+Many parallel runtime systems like PVM and MPI require you to be able
+to access other computers without using a password. Thus, you
+should be able to do something like
+
+    rsh <node> date
+
+Where <node> is a computing nodes that will be used for parallel
+computation.
+
+Please check that you can do this via rsh or ssh. With rsh and
+(sometimes) ssh you can enable this via /etc/hosts.equiv or via your
+.rhosts file. With ssh you should also be able to achieve this via host
+keys. Please consult your rsh or ssh manual for further information.
+
+To compile in support for the various communication libraries, use
+the following options:
+
+  --with-pvm              Compile support for PVM
+  --with-mpi              Compile support for the `lam' version of MPI
+  --with-mpi=lam          Compile support for the `lam' version of MPI
+  --with-mpi=mpich        Compile support for the `mpich' version of MPI
+
+See the items below for a detailed discussion of the requirements
+for each communication libraries.
+
+Writing parallel programs
+-------------------------
+
+The directory 'samples' contains an example parallel program.
+See the README in that directory for instructions for compiling
+that program.
+
+
+Known issues
+------------
+
+There are a number of known issues with compilation of parallel code.
+
+- Although the framework was designed to be more general, the current
+implementation only supports a single processor array, and therefore
+only a single type of processor. It is in fact not necessary to
+declare a processor array. When it is omitted, a one-dimensional
+processor array is assumed.
+
+- When a processor array is declared incorrectly, the compiler
+fails an assert, and crashes in a controlled way instead of
+generating a nice error message.
+
+- Distributed arrays of reference types are accepted by the compiler,
+but incorrect code is generated.
+
+- Task-parallel code sometimes incorrect code. See the samples directory
+for an example of what to avoid.
+
+
+MPI
+---
+
+The standard configuration expects the LAM implementation of MPI.  If you
+want to use the MPICH implementation, you should use the --with-mpi=mpich
+option. The option --with-mpi=lam is also supported, and is equivalent
+with just --with-mpi.
+
+When Lam is chosen, configure will first try to find it in the directory
+/usr/local. If it is not there it will try to find the files installed by
+the Debian Lam packages. Setting of Lam specific environment variables
+should probably not be necessary.  The Debian Lam packages contain
+all the documentation, so please read that first for information about
+how to start the Lam daemons.  We do not use the Lam wrapper hcc, but
+use g++ directly with the appropriate options. As we use rather strict
+options you might get some warnings you wouldn't get when using the hcc
+wrapper. Please don't worry about this:-)
+
+
+PVM
+---
+
+You can enable the pvm libraries by using the following option when you
+run configure:
+	--with-pvm
+
+When using PVM under Linux you can install it yourself, or you can
+rely on a standard installation. If you install it yourself you need to set
+the PVM_ROOT environment variable to point to the place where you installed
+the software. Configure will try to find out which option you have chosen,
+and whether PVM has been installed at all.
+
+You will have to create the following directory under Linux:
+
+	$HOME/pvm3/bin/LINUX/
+
+This is the place where pvm will look for the executables to be executed
+on other nodes of your system.
+
+You also will have to check password-free access to other systems.
+Under Debian you can softlink /etc/alternatives/pvm-rsh to /usr/bin/ssh
+if rsh has been disabled.
+
+When you want to run a PVM program you first have to start the PVM
+daemon.  You do this by running the pvm program. This program can also
+be used to add other systems to your current "PVM system" besides your
+own computer.  After this you can simply run your compiled PVM program
+from the command line.
+
+We use the PVM group server to enable processes to communicate with each
+other. Under the standard Debian(potato) installation you might get the
+following error when running programs:
+
+	"failed to start group server"
+
+When this is the case you have to create the following softlink:
+
+	ln -s /usr/bin/pvmgs /usr/lib/pvm3/bin/LINUX/pvmgs
+
+This is because the installation has not been done completely correct.

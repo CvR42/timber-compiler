@@ -1,0 +1,10 @@
+public class tst3 {
+  public static void main() {
+    int a;
+
+    {
+        a = (<$ on = dsp2D[(cyclic 7), _] $> 7) *
+            (<$ on = dsp2D[_all, (cyclic 3 17)] $> 8); 
+    }
+  }
+};

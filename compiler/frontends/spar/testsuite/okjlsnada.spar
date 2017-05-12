@@ -1,0 +1,21 @@
+// After JLS2 15.13.2    Examples: Array Access Evaluation Order
+//
+// Note that this example is rewritten to a void an error in GCC.
+
+
+public class okjlsnada {
+
+    public static void main(String[] args) {
+        int index = 1;
+	int v;
+
+        try {
+            v = nada(args)[index=2];
+        } catch (Exception e) {
+            System.out.println(e + ", index=" + index);
+        }
+    }
+    // The weird test is to avoid that the null is propagated and triggers
+    // a bug in GCC. Sigh.
+    static int[] nada(String args[]) { return (args.length==42)?new int[3]:null; }
+}

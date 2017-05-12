@@ -1,0 +1,203 @@
+# Makefile for the V-nus library functions.
+
+
+
+COMPILERSRCROOT=../..
+
+prefix=/Users/reeuwijk/lab
+exec_prefix=${prefix}
+INSTALL = /usr/bin/install -c
+INSTALL_DATA = ${INSTALL} -m 644
+UNINSTALL_DATA = rm -f
+INSTALL_INCLUDEDIR = ${prefix}/include/timber
+RANLIB = ranlib
+
+#If LIBBASE is defined we get the make rules for libraries for free:-)
+LIBBASE	= vnusrtl
+LIB_S	= $(LIBBASE:%=lib%-s.a)
+LIB_TS	= $(LIBBASE:%=lib%-ts.a)
+
+SRC	= arrayboundviolated.cc notnullassert.cc outofmemory.cc \
+	garbagecollect.cc vnusalloc.cc reflinkdummy.cc vnusstd.cc \
+	vnusstio.cc shape.cc vnusservice.cc \
+	bclus.cc blus.cc clus.cc partsend.cc \
+	vnusstiox.cc vnusstiowd.cc vnusstiord.cc taskpar.cc
+SRC_S	= $(SRC)
+SRC_TS	= $(SRC)
+
+OBJ_S	    = $(SRC_S:%.cc=%-s.o)
+OBJ_TS	    = $(SRC_TS:%.cc=%-ts.o)
+CTEST	    = ctests.cc
+CTEST2      = ctests2.cc
+
+GEN_H	= vnusstio.h
+GEN_C	= vnusstiort.cc vnusstiord.cc \
+	  vnusstiowt.cc vnusstiowd.cc
+
+VNUSTEST    = vnustests-d.v
+ECHO    = echo
+
+JUNK	= $(CTEST:%.cc=%-*) $(CTEST2:%.cc=%-*) $(VNUSTEST:%.v=%.g*) $(VNUSTEST:%.v=%.o) $(VNUSTEST:%.v=%)  testout dist.lst
+
+TM_SRC = $(GEN_H:.h=.ht) $(GEN_C:.cc=.cct) lib.ds lib.t
+
+
+HDR = \
+    vnuscomplex.h \
+    arrayboundviolated.h \
+    outofmemory.h \
+    notnullassert.h \
+    garbagecollect.h \
+    vnusalloc.h \
+    longlong.h \
+    arrayalloc.h \
+    partsend.h \
+    polywrite.h \
+    vnusservice.h \
+    shape.h \
+    vnusbaseclass.h \
+    taskpar.h \
+    shapebase.h \
+    shaped0.h \
+    shaped1.h \
+    shaped2.h \
+    shaped3.h \
+    shapedn.h \
+    vnusprocdefs.h \
+    vnusrtl.h \
+    vnusstd.h \
+    vnustypes.h
+
+OTHER_SRC = \
+    blus.cc \
+    clus.cc \
+    bclus.cc \
+    vnusalloc.cc \
+    reflinkdummy.cc \
+    partsend.cc \
+    taskpar.cc \
+    vnusstiox.cc
+
+TESTFILES = vnusgood.out cgood.out $(CTEST) $(CTEST2) vnustests-d.v
+
+DISTFILES = Makefile.in configure configure.ac $(SRC) $(OTHER_SRC) $(HDR) $(TM_SRC) $(TESTFILES)
+
+PRECIOUSJUNK += $(LIB_S) $(LIB_TS) $(DEPENDFILE) config.h.in
+JUNK += $(OBJ_S) $(OBJ_TS) $(GEN_H) $(GEN_C)
+
+all: depend targets
+	(cd glue && $(MAKE) all)
+	(cd io && $(MAKE) all)
+
+# The magical stuff
+include $(COMPILERSRCROOT)/Makefiles/Make.vars
+include $(COMPILERSRCROOT)/Makefiles/Make.libs
+#
+#EXTRAFLAGS += -I/usr/include/lam
+EXTRAFLAGS += -g
+
+#EXTRAFLAGS += -pg
+#EXTRAFLAGS += -save-temps
+#EXTRAFLAGS += -DDEBUG_VnusCommunication
+
+CXX = g++
+CXXFLAGS = -g -O2 -Wall -W -ansi -pedantic -Woverloaded-virtual -Wcast-qual -Wundef -Wpointer-arith -Wcast-align -Wwrite-strings -Wconversion -Wmissing-prototypes -O3
+BUILDDEPENDS = g++ -MM
+
+targets:	$(LIB_S) $(LIB_TSC)
+
+help:
+	@$(ECHO) " Possible make targets:"
+	@$(ECHO) "depend           Update dependencies in $(DEPENDFILE)."
+	@$(ECHO) "all              Create local running programs."
+	@$(ECHO) "check            Test the library."
+	@$(ECHO) "install          Install the software."
+	@$(ECHO) "clean            Delete all temporary files."
+	@$(ECHO) "empty            Delete all temporary files and executables."
+
+touch:
+	touch $(SRC) 
+
+IOHEADERS=io/ioseq.h io/iopar.h
+
+depend:	$(IOHEADERS) $(DEPENDFILE)
+
+$(DEPENDFILE): $(GEN_H)
+
+JUNK += deepdowndepend
+
+$(IOHEADERS):
+	(cd io && $(MAKE) headers)
+
+$(CTEST:%.cc=%-s): $(LIB_T)
+
+doctests: $(CTEST:%.cc=%-s)
+	./$(CTEST:%.cc=%-s) > testout
+	diff testout cgood.out
+
+dovnustests: $(VNUSTEST:%.v=%)
+	./$(VNUSTEST:%.v=%) > testout
+	diff testout vnusgood.out
+
+tests: doctests
+check: doctests
+
+install: $(LIB_S) shape.h
+	(cd glue && $(MAKE) install)
+	(cd io && $(MAKE) install)
+	$(INSTALL) -d ${exec_prefix}/lib
+	$(INSTALL) -d ${prefix}/include
+	rm -rf $(INSTALL_INCLUDEDIR)
+	$(INSTALL) -d $(INSTALL_INCLUDEDIR)
+	$(INSTALL_DATA) $(LIB_S) ${exec_prefix}/lib/$(LIB_S)
+	$(RANLIB) ${exec_prefix}/lib/$(LIB_S)
+	$(INSTALL_DATA) shape.h $(INSTALL_INCLUDEDIR)/shape.h
+	$(INSTALL_DATA) shaped0.h $(INSTALL_INCLUDEDIR)/shaped0.h
+	$(INSTALL_DATA) shaped1.h $(INSTALL_INCLUDEDIR)/shaped1.h
+	$(INSTALL_DATA) shaped2.h $(INSTALL_INCLUDEDIR)/shaped2.h
+	$(INSTALL_DATA) shaped3.h $(INSTALL_INCLUDEDIR)/shaped3.h
+	$(INSTALL_DATA) shapedn.h $(INSTALL_INCLUDEDIR)/shapedn.h
+	$(INSTALL_DATA) vnusstio.h $(INSTALL_INCLUDEDIR)/vnusstio.h
+	$(INSTALL_DATA) arrayalloc.h $(INSTALL_INCLUDEDIR)/arrayalloc.h
+	$(INSTALL_DATA) vnusstd.h $(INSTALL_INCLUDEDIR)/vnusstd.h
+	$(INSTALL_DATA) vnusrtl.h $(INSTALL_INCLUDEDIR)/vnusrtl.h
+	$(INSTALL_DATA) vnustypes.h $(INSTALL_INCLUDEDIR)/vnustypes.h
+	$(INSTALL_DATA) vnusbaseclass.h $(INSTALL_INCLUDEDIR)/vnusbaseclass.h
+	$(INSTALL_DATA) vnuscomplex.h $(INSTALL_INCLUDEDIR)/vnuscomplex.h
+	$(INSTALL_DATA) vnusprocdefs.h $(INSTALL_INCLUDEDIR)/vnusprocdefs.h
+	$(INSTALL_DATA) vnusservice.h $(INSTALL_INCLUDEDIR)/vnusservice.h
+	$(INSTALL_DATA) longlong.h $(INSTALL_INCLUDEDIR)/longlong.h
+	$(INSTALL_DATA) polywrite.h $(INSTALL_INCLUDEDIR)/polywrite.h
+	$(INSTALL_DATA) shapebase.h $(INSTALL_INCLUDEDIR)/shapebase.h
+	$(INSTALL_DATA) taskpar.h $(INSTALL_INCLUDEDIR)/taskpar.h
+	$(INSTALL_DATA) outofmemory.h $(INSTALL_INCLUDEDIR)/outofmemory.h
+	$(INSTALL_DATA) garbagecollect.h $(INSTALL_INCLUDEDIR)/garbagecollect.h
+	$(INSTALL_DATA) vnusalloc.h $(INSTALL_INCLUDEDIR)/vnusalloc.h
+	$(INSTALL_DATA) notnullassert.h $(INSTALL_INCLUDEDIR)/notnullassert.h
+	$(INSTALL_DATA) arrayboundviolated.h $(INSTALL_INCLUDEDIR)/arrayboundviolated.h
+
+uninstall: $(LIB_S) shape.h
+	(cd glue && $(MAKE) uninstall)
+	(cd io && $(MAKE) uninstall)
+	rm -rf $(INSTALL_INCLUDEDIR)
+	$(UNINSTALL_DATA) ${exec_prefix}/lib/$(LIB_S)
+
+%.h: %.ht lib.ds lib.t
+	tm lib.ds $< > $@
+
+%.cc: %.cct lib.ds lib.t
+	tm lib.ds $< > $@
+
+stats:
+	wc -l *.cc *.h
+
+genstats: $(GEN_C) $(GEN_H)
+	wc -l $(GEN_C) $(GEN_H)
+
+SUBDIRS = io glue
+
+include $(COMPILERSRCROOT)/Makefiles/Make.configure
+include $(COMPILERSRCROOT)/Makefiles/Make.dist
+include $(COMPILERSRCROOT)/Makefiles/Make.std
+
+-include $(DEPENDFILE)

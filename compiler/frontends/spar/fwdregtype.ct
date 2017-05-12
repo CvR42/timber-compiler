@@ -1,0 +1,279 @@
+.. File: fwdregtype.ct
+..
+.. Register forward declarations for all types
+..
+.. Return 'walk' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the datastructure we're walking on, and a type 't', of that variable,
+.. generate a return statement/
+.macro generate_walker_return indent var t
+$(indent)return $(var);
+.endmacro
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+.if ${member ${stemname $t} ${typelist}}
+$(indent)if( $(var) == 0 ){
+$(indent)    return $(var);
+$(indent)}
+.endif
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+static $t fwdregtype_$t_walker( $t $(var), fwdregtype_data *ctx )
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we're walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+static $t fwdregtype_$t_walker( $t $(var), fwdregtype_data *ctx );
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) fwdregtype_$(type)_action( $(var), ctx );
+.else
+$(indent)$(var) = ($(type)) fwdregtype_$(type)_action( to_$(type)( $(var) ), ctx );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) fwdregtype_$(type)_walker( $(var), ctx );
+.else
+$(indent)$(var) = ($(type)) fwdregtype_$(type)_walker( to_$(type)( $(var) ), ctx );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var', and a type 'type', generate
+.. the body of an empty walker function.
+.macro generate_empty_walker_body indent var type
+$(indent)(void) ctx;
+.endmacro
+..
+..
+.. For which types are there actions defines?
+.set actors
+.append actors ClassDeclaration
+.append actors InterfaceDeclaration
+.append actors SparProgramUnit
+.append actors Block
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "SparProgramUnit" "$(actors)"}
+..
+/* File: fwdregtype.c (generated from fwdretype.ct)
+ *
+ * Forward registration of all classes.
+ */
+
+#include <stdio.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "error.h"
+#include "symbol_table.h"
+#include "global.h"
+#include "fwdregtype.h"
+#include "collect.h"
+#include "typederive.h"
+#include "typename.h"
+#include "service.h"
+#include "doimports.h"
+
+typedef struct str_fwdregtype_data {
+    TypeEntry_list typelist;	/* List of types being constructed. */
+    GenericMapping_list generics;	/* List of generic types. */
+    tmsymbol owner;		/* Fully qualified name of owner. */
+    tmsymbol package;		/* Fully qualified name of the package. */
+} fwdregtype_data;
+
+.call generate_walker_forwards "$(visit_types)"
+
+#line $[1+${tpllineno}] "${tplfilename}"
+
+static void forward_register_type( fwdregtype_data *ctx, TypeEntry e )
+{
+    ctx->typelist = register_TypeEntry( ctx->typelist, e );
+}
+
+static void register_generic( fwdregtype_data *ctx, GenericMapping e )
+{
+    ctx->generics = append_GenericMapping_list( ctx->generics, e );
+    if( trace_generics ){
+	tmstring str_formals = typename_formals( e->formals );
+	fprintf(
+	    stderr,
+	    "Registered %s%s as a generic type\n", 
+	    e->name->name,
+	    str_formals
+	);
+	rfre_tmstring( str_formals );
+    }
+}
+
+/* -------- actors ---------- */
+
+/* Register a class declaration. */
+static ClassDeclaration fwdregtype_ClassDeclaration_action(
+ ClassDeclaration cl,
+ fwdregtype_data *ctx
+)
+{
+    tmsymbol oldowner = ctx->owner;
+    unsigned int pos;
+
+    ctx->owner = qualify_tmsymbol( ctx->owner, cl->name->sym );
+    if( search_TypeEntry_pos( ctx->typelist, ctx->owner, &pos ) ){
+	const_TypeEntry e = ctx->typelist->arr[pos];
+
+	origin_error( cl->name->org, "Already defined: '%s'", ctx->owner->name );
+	origin_error( e->name->org, "   previous definition" );
+    }
+    TypeEntry e = new_ForwardObjectEntry(
+	new_origsymbol( ctx->owner, rdup_origin( cl->name->org ) ),
+	ctx->package,
+	oldowner,
+	0,
+	new_tmsymbol_list(),
+	Pragma_listNIL,
+	cl->flags
+    );
+    forward_register_type( ctx, e );
+    if( cl->formals->sz != 0 ){
+	// This is a generic type, so register it as such
+	GenericMapping m = new_GenericMapping(
+	    ctx->owner,
+	    rdup_FormalParameter_list( cl->formals ),
+	    new_GenericBinding_list()
+	);
+	register_generic( ctx, m );
+    }
+.call generate_walker_call "    " cl ClassDeclaration ClassDeclaration
+    ctx->owner = oldowner;
+    return cl;
+}
+
+/* Register an interface declaration. */
+static InterfaceDeclaration fwdregtype_InterfaceDeclaration_action(
+ InterfaceDeclaration inf,
+ fwdregtype_data *ctx
+)
+{
+    tmsymbol oldowner = ctx->owner;
+    unsigned int pos;
+
+    ctx->owner = qualify_tmsymbol( ctx->owner, inf->name->sym );
+    if( search_TypeEntry_pos( ctx->typelist, ctx->owner, &pos ) ){
+	const_TypeEntry e = ctx->typelist->arr[pos];
+	origin_error( inf->name->org, "Already defined: '%s'", ctx->owner->name );
+	origin_error( e->name->org, "   previous definition" );
+    }
+    TypeEntry e = new_ForwardObjectEntry(
+	new_origsymbol( ctx->owner, rdup_origin( inf->name->org ) ),
+	ctx->package,
+	oldowner,
+	0,
+	new_tmsymbol_list(),
+	Pragma_listNIL,
+	inf->flags
+    );
+    forward_register_type( ctx, e );
+    if( inf->formals->sz != 0 ){
+	// This is a generic type, so register it as such
+	GenericMapping m = new_GenericMapping(
+	    ctx->owner,
+	    rdup_FormalParameter_list( inf->formals ),
+	    new_GenericBinding_list()
+	);
+	register_generic( ctx, m );
+    }
+.call generate_walker_call "    " inf InterfaceDeclaration InterfaceDeclaration
+    ctx->owner = oldowner;
+    return inf;
+}
+
+/* Register a Block declaration. */
+static Block fwdregtype_Block_action(
+ Block unit,
+ fwdregtype_data *ctx
+)
+{
+    // The tree walker also wants to visit local class declarations,
+    // but for our purposes these are not interesting, and may in fact
+    // cause problems, so stop the tree walk right here.
+    (void) ctx;
+    (void) fwdregtype_Block_walker;
+    return unit;
+}
+
+/* Register a SparProgramUnit declaration. */
+static SparProgramUnit fwdregtype_SparProgramUnit_action(
+ SparProgramUnit unit,
+ fwdregtype_data *ctx
+)
+{
+    tmsymbol oldowner = ctx->owner;
+
+    if( unit->packagename != origsymbolNIL ){
+	ctx->package = unit->packagename->sym;
+	ctx->owner = unit->packagename->sym;
+    }
+.call generate_walker_call "    " unit SparProgramUnit SparProgramUnit
+    ctx->owner = oldowner;
+    return unit;
+}
+
+
+/* -------- End of action functions ---------- */
+
+.call generate_walker "$(visit_types)"
+
+#line $[1+${tpllineno}] "${tplfilename}"
+
+/* Register all declarations in a SparProgramUnit. */
+void fwdregtype_SparProgramUnit( SparProgram *prog, SparProgramUnit unit )
+{
+    fwdregtype_data the_ctx;
+    fwdregtype_data *ctx = &the_ctx;
+
+    the_ctx.typelist = (*prog)->typelist;
+    the_ctx.generics = (*prog)->generics;
+    the_ctx.package = tmsymbolNIL;
+    the_ctx.owner = add_tmsymbol( "" );
+.call generate_descent_call "    " unit SparProgramUnit SparProgramUnit
+    (*prog)->typelist = the_ctx.typelist;
+    (*prog)->generics = the_ctx.generics;
+}

@@ -1,0 +1,81 @@
+This series of technical reports account for the detailed description of
+the \Booster\ language and its semantics.
+
+The \Booster\ project has a long history. The project started off in 1988 and
+had as goal the development of a high level language for scientific
+programming on parallel computers, which would pair expressiveness with
+efficiency of execution.
+
+The first concepts of the language have been presented in 1989
+\cite{Paalvast89} \cite{Paalvast89a}. The major features of \Booster,
+such as the View concept and the separation of algorithm description
+and machine mapping were introduced.
+
+At the same time, the first thoughts on how to translate such a
+language were developed. It was felt that a properly defined semantic
+system was required to be able to translate and optimize programs in
+such a high-level language. After some investigations it was decided
+to take a calculus-based approach, since this would enable us to
+define transformations in the form of rewriting expressions. This
+approach is also followed in translating functional languages with the
+$\lambda$-calculus as basic semantic formalism \cite{Jones87}.
+However, the $\lambda$-calculus is not a very adequate vehicle for
+expressing optimizations \cite{Plasmeijer93} and certainly not for
+array based operations.  Other formalisms, such as the Bird-Meertens
+formalism \cite{Bird89} which is essentially list-based, had the same
+problems.
+
+Hence it was decided to develop an array based calculus named {\sl
+V}-cal.  A first outline of such a calculus was given in
+\cite{vanGemund89}. In \cite{Paalvast90} it was shown how this
+calculus could be used in translating \Booster\ and in \cite{Paalvast91}
+it was shown that SPMD programs could automatically be derived from
+data decomposition descriptions in any similar language.
+
+Based on these developments a full definition of the \Booster\ language
+and {\sl V}-cal were given in Paalvast's PhD thesis
+\cite{Paalvast92}. He also showed how \Booster\ programs could be
+transformed into {\sl V}-cal expressions. Other papers giving global
+descriptions of the \Booster\ language are \cite{Paalvast91a}, and
+\cite{deJong92}.
+
+A third important decision in the \Booster\ project was to use
+rule-based translation technology for translating and optimizing
+\Booster\ programs, an approach inspired by \cite{Wang91}. The rationale
+for this approach was that rule-based compilation would enable easy
+experimentation with several transformation schemes and give a
+flexible tool for experimentation. A rule-based translation system was
+developed \cite{Breebaart92} \cite{Breebaart92a} and used as a first
+translation system.
+
+With all three things in place: the \Booster\ language definition,
+{\sl V}-cal, and the rule-based translator efforts began in 1993 to
+make a full compiler for the language. During that time it was found
+that the automatic translation of \Booster\ constructs to {\sl V}-cal
+expressions gave rise to difficulties. In part this was due to the
+expressive power of the \Booster\ language itself, but also missing
+abstractions in {\sl V}-cal caused technical problems. 
+
+A possible solution could have been to define arbitrary restrictions
+for the \Booster language, but we did not want to end with complicated
+and inelegant static semantics, like found in for instance Fortran 90.
+Instead a redesign of both language and calculus has taken place in
+1994.  \Booster\ has been restricted somewhat, especially regarding
+data dependent views. On the other hand, some features have been
+added, such as to allow function calls in view expressions and
+function recursion. \Booster's denotational semantics have been defined
+such that any \Booster\ program can now mechanically be translated
+into {\sl V-cal} expressions.  A global outline of the new approach
+can be found in \cite{Trescher94}.
+
+In perspective, \Booster\ has been one of the early data parallel
+languages.  Other early efforts were directed towards extending
+existing languages like C* \cite{Quinn89}, Kali \cite{Koelbel91}, Id
+nouveau \cite{Rogers89}, and Fortran \cite{Gerndt89}
+\cite{Callahan88}. Later on these developments found their way in the
+definition of High Performance Fortran \cite{HPFF93} in which most of
+these research groups participated.
+
+\vspace{2\baselineskip}
+
+\noindent Henk Sips \hfill{\today}

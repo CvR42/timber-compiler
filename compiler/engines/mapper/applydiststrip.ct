@@ -1,0 +1,57 @@
+/* Applydiststrip engine
+
+   Strip old style distribution annotations from all types.
+   Only old style distributions left are the ones inside shape types.
+   */
+
+.. File: applytag.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors TypePragmas
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "applydiststrip.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+static TypePragmas rewrite_TypePragmas_action(
+    TypePragmas e, global_context gc)
+{
+.call generate_walker_call "    " e TypePragmas TypePragmas
+    int pos;
+    while ((pos = pragma_list_find_index_tmsymbol(
+	e->pragmas, add_tmsymbol("dist"))) != -1)
+    {
+	e->pragmas = delete_Pragma_list(e->pragmas, pos);
+	fprintf(stderr,"DistStrip: removed a distribution\n");
+    }
+    return e;
+}
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_dist_strip( vnusprog elm, global_context gc )
+{
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}
+

@@ -1,0 +1,468 @@
+// This is a test program for the sugar V-nus frontend.
+// It tests the execution of sequential programs.
+
+globalpragmas <$boundscheck=true$>;
+
+package spar.testsuite;
+
+/* This a C-style comment. */
+/* This is a longer
+ * C-style
+ * comment
+ * spanning
+ * several
+ * lines. This tests whether the lines are correctly counted
+ * a comment.
+ */
+
+
+class VnusLib {
+    <$pure$> static native void writeString( int f, __string s );
+    static native void writeLong( int f, long l );
+    static native void writeInt( int f, int i );
+    static native void writeComplex( int f, complex c );
+    static native void writeBoolean( int f, boolean b );
+    static native void writeFloat( int f, float r );
+}
+
+public class okbig {
+    <$notorious$> static float x = 0.0f;
+    static int i;
+    static int n = 2;
+    static complex c;
+    static complex c2;
+    static int tpi;
+    static int tpo;
+    static int tpio;
+    static boolean b;
+    static __string s;
+    static int f = 0;
+    static int shp[*,*] = new int[5, 8];
+    static int A[] = new int[20];
+    static int B[] = new int[20];
+    static int s0[] = new int[1];
+
+    <$pure$> static void test_scopes( int f, int n )
+    {
+	int nloc;
+
+	nloc = n*2;
+	VnusLib.writeInt( f, n );
+	VnusLib.writeString( f, " " );
+	VnusLib.writeInt( f, nloc );
+	VnusLib.writeString( f, "\n" );
+	<$pointless, testboolean = false, testint = 42, teststring = "hello world" $>;
+	{
+	    int nsub;
+
+	    nsub = nloc*3;
+	    VnusLib.writeInt( f, n );
+	    VnusLib.writeString( f, " " );
+	    VnusLib.writeInt( f, nloc );
+	    VnusLib.writeString( f, " " );
+	    VnusLib.writeInt( f, nsub );
+	    VnusLib.writeString( f, "\n" );
+	    <$bigdeal$> if ( nsub>nloc ){
+		int n1 = 3;
+
+		while( n1>0 ){
+		    __println( f, "n=", n1 );
+		    n1 = n1-1;
+		}
+		do {
+		    __println( f, "n=", n1 );
+		    n1 = n1-1;
+		} while( n1>0 );
+	    }
+	    else
+	    {
+		int n1;
+
+		n1 = 6;
+		while( n1>0 ){
+		    n1 = n1-1;
+		    nsub = nsub + n1;
+		}
+		VnusLib.writeInt( f, nsub );
+		VnusLib.writeString( f, "\n" );
+	    }
+	}
+	for( i :- :nloc ) {
+	    int[] A = new int[23];
+
+	    foreach( i1 :- :A.getSize(0) ){
+		int z;
+
+		z = i1+2;
+		A[i1] = z;
+	    }
+	}
+    }
+
+    static void test_dynamic(
+	int f,
+	int [] aout,
+	int [*] bout,
+	int [] ain,
+	int [*] bin
+    )
+    {
+	int tmp[] = new int[bin.getSize(0)];
+	int lim;
+
+	lim = 10;
+	if( bin.getSize(0)<lim ){
+	    lim = bin.getSize(0);
+	}
+	VnusLib.writeString( f, "lim = " );
+	VnusLib.writeInt( f, lim );
+	VnusLib.writeString( f, "\n" );
+	foreach( i :- :lim ){
+	    <$testpragmamangling=(@ain @i)$>
+	    tmp[i] = ain[i]+bin[i];
+	}
+	foreach( i :- :lim ){
+	    aout[i] = tmp[i];
+	    bout[i] = tmp[i];
+	}
+    }
+
+    static void run_test_dynamic( int f, int n )
+    {
+	int ain[] = new int[10];
+	int bin[] = new int[n];
+	int aout[] = new int[10];
+	int bout[] = new int[n];
+	boolean bad;
+	boolean allok;
+
+	foreach( i :- :10 ) { ain[i] = 1; }
+	foreach( i :- :n ) { bin[i] = 1; }
+	test_dynamic( f, aout, bout, ain, bin );
+	allok = true;
+	for( i :- :10 ) {
+	    if( aout[i] != 2 ){
+		VnusLib.writeString( f, "test_dynamic: bad value for aout\n" );
+		VnusLib.writeString( f, "aout[" );
+		VnusLib.writeInt( f, i );
+		VnusLib.writeString( f, "] = " );
+		VnusLib.writeInt( f, aout[i] );
+		VnusLib.writeString( f, "\n" );
+		allok = false;
+	    }
+	}
+	bad = false;
+	for( i :- :10 ) {
+	    bad = bad | ( bout[i] != aout[i] );
+	}
+	if( bad ){
+	    VnusLib.writeString( f, "test_dynamic: bad value for bout\n" );
+	    allok = false;
+	}
+	if( allok ){
+	    VnusLib.writeString( f, "test_dynamic: everything ok\n" );
+	}
+    }
+
+    static void empty_proc()
+    {
+    }
+
+    static void empty_proc1( int [*] v )
+    {
+    l:    v[0] = 42;
+    }
+
+    static void Print1dShape( int f, int [*] A )
+    {
+	for(  i :- :A.getSize(0) ){
+	    __print( f, A[i], " " );
+	}
+	__println( f, "" );
+    }
+
+    static int inc( int i )
+    {
+	return i+1;
+    }
+
+    static int dec( int i )
+    {
+	return i-1;
+    }
+
+    static void testcmpint( int f, int a, int b )
+    {
+	VnusLib.writeInt( f, a );
+	VnusLib.writeString( f, "=" );
+	VnusLib.writeInt( f, b );
+	if( a==b ){
+	    VnusLib.writeString( f, " yes\n" );
+	}
+	else {
+	    VnusLib.writeString( f, " no\n" );
+	}
+	VnusLib.writeInt( f, a );
+	VnusLib.writeString( f, "!=" );
+	VnusLib.writeInt( f, b );
+	if (a!=b) {
+	    VnusLib.writeString( f, " yes\n" );
+	}
+	else {
+	    VnusLib.writeString( f, " no\n" );
+	}
+	VnusLib.writeInt( f, a );
+	VnusLib.writeString( f, "<" );
+	VnusLib.writeInt( f, b );
+	if( a<b ){
+	    VnusLib.writeString( f, " yes\n" );
+	}
+	else {
+	    VnusLib.writeString( f, " no\n" );
+	}
+	VnusLib.writeInt( f, a );
+	VnusLib.writeString( f, "<=" );
+	VnusLib.writeInt( f, b );
+	if( a<=b ) {
+	    VnusLib.writeString( f, " yes\n" );
+	}
+	else {
+	    VnusLib.writeString( f, " no\n" );
+	}
+	VnusLib.writeInt( f, a );
+	VnusLib.writeString( f, ">" );
+	VnusLib.writeInt( f, b );
+	if( a>b) {
+	    VnusLib.writeString( f, " yes\n" );
+	}
+	else {
+	    VnusLib.writeString( f, " no\n" );
+	}
+	VnusLib.writeInt( f, a );
+	VnusLib.writeString( f, ">=" );
+	VnusLib.writeInt( f, b );
+	if( a>=b ){
+	    VnusLib.writeString( f, " yes\n" );
+	}
+	else {
+	    VnusLib.writeString( f, " no\n" );
+	}
+    }
+
+    public static void main()
+    {
+	f = 1;
+	VnusLib.writeString( f, "Hello world\n" );
+	__println( f, "Hello world" );
+	if( true ){
+	    VnusLib.writeString( f, "Yep, true is true\n" );
+	}
+	else {
+	    VnusLib.writeString( f, "Huh, true is false?\n" );
+	}
+	if( false ){
+	    VnusLib.writeString( f, "Huh, false is true?\n" );
+	}
+	else {
+	    VnusLib.writeString( f, "Yep, false is false\n" );
+	}
+	b = false;
+	b = !b;
+	b = false | b;
+	b = true & b;
+	i = 2;
+	i = 50-i;
+	i = 5+i;
+	i = 5*i;
+	i = i/12;
+	i = -i;
+	i = +i;
+	i = inc( inc( i ) );
+	i = dec( i );
+	n = 7;
+	n = +n;
+	n = 7+n;
+	n = n-5;
+	n = n*12;
+	n = n/13;
+	n = n*6;
+	n = n/3;
+	x = 2.1f;
+	x = -x;
+	x = +x;
+	x = 0.7f+x;
+	x = x-5e2f;
+	x = x*0.12f;
+	x = x/0.13f;
+	s = "test string";
+	c = complex ( 2, 3 );
+	c2 = complex ( 5, 12 );
+	c = -c;
+	VnusLib.writeString( f, "c: " );
+	VnusLib.writeComplex( f, c );
+	VnusLib.writeString( f, "\n" );
+	c = +c;
+	VnusLib.writeString( f, "c: " );
+	VnusLib.writeComplex( f, c );
+	VnusLib.writeString( f, "\n" );
+	c = c+c2;
+	VnusLib.writeString( f, "c: " );
+	VnusLib.writeComplex( f, c );
+	VnusLib.writeString( f, "\n" );
+	c = c*c2;
+	VnusLib.writeString( f, "c: " );
+	VnusLib.writeComplex( f, c );
+	VnusLib.writeString( f, "\n" );
+	c = c-c2;
+	VnusLib.writeString( f, "c: " );
+	VnusLib.writeComplex( f, c );
+	VnusLib.writeString( f, "\n" );
+	c = c/c2;
+	VnusLib.writeString( f, "c: " );
+	VnusLib.writeComplex( f, c );
+	VnusLib.writeString( f, "\n" );
+	VnusLib.writeString( f, "n: " );
+	VnusLib.writeInt( f, n );
+	VnusLib.writeString( f, "\n" );
+	VnusLib.writeString( f, "i: " );
+	VnusLib.writeInt( f, i );
+	VnusLib.writeString( f, "\n" );
+	VnusLib.writeString( f, "b: " );
+	VnusLib.writeBoolean( f, b );
+	VnusLib.writeString( f, "\n" );
+	VnusLib.writeString( f, "x: " );
+	VnusLib.writeFloat( f, x );
+	VnusLib.writeString( f, "\n" );
+	VnusLib.writeString( f, "s: " );
+	VnusLib.writeString( f, s );
+	VnusLib.writeString( f, "\n" );
+	VnusLib.writeString( f, "c: " );
+	VnusLib.writeComplex( f, c );
+	VnusLib.writeString( f, "\n" );
+	VnusLib.writeString( f, "\n" );
+	i = -42;
+	VnusLib.writeString( f, "i: " );
+	VnusLib.writeInt( f, i );
+	VnusLib.writeString( f, "\n" );
+	__println( f, "n: ", n );
+	__println( f, "i: ", i );
+	__println( f, "b: ", b );
+	__println( f, "s: ", s );
+
+	VnusLib.writeFloat( f, 1.0f );
+	VnusLib.writeString( f, "\n");
+
+	VnusLib.writeFloat( f, (float) (byte) 1+'c' );
+	VnusLib.writeString( f, "\n");
+
+	n = 3;
+	while( n>0 ) n = n-1;
+
+	__println( f, "n: ", n );
+
+	i = 14;
+	while( i>0 ){
+	    VnusLib.writeString( f, "i = " );
+	    VnusLib.writeInt( f, i );
+	    VnusLib.writeString( f, "\n" );
+
+	    i = i-1;
+	}
+	for(  i :- :3, j :- :4 ){
+	    VnusLib.writeString( f, "i = " );
+	    VnusLib.writeInt( f, i );
+	    VnusLib.writeString( f, ", " );
+	    VnusLib.writeString( f, "j = " );
+	    VnusLib.writeInt( f, j );
+	    VnusLib.writeString( f, "\n" );
+	}
+	testcmpint( f, 1, 2 );
+	testcmpint( f, 1, 1 );
+	testcmpint( f, 2, 1 );
+	testcmpint( f, 223, 1 );
+	foreach( i :- :5, j :- :8 ){
+	    shp[i,j] = i+j;
+	}
+	for( i :- :5,j :- :8 ){
+	    VnusLib.writeString( f, "shp[" );
+	    VnusLib.writeInt( f, i );
+	    VnusLib.writeString( f, "," );
+	    VnusLib.writeInt( f, j );
+	    VnusLib.writeString( f, "] = " );
+	    VnusLib.writeInt( f, shp[i,j] );
+	    VnusLib.writeString( f, "\n" );
+	}
+	VnusLib.writeString( f, "A = 66;\n" );
+
+	for( i :- :A.getSize(0) ){
+	    A[i] = 66;
+	}
+
+	Print1dShape( f, A );
+
+	VnusLib.writeString( f, "A[i] = 0;\n" );
+
+	foreach( i :- :A.getSize(0) ){
+	    A@[i] = 0;
+	}
+
+	VnusLib.writeString( f, "A: " );
+
+	Print1dShape( f, A );
+
+	VnusLib.writeString( f, "B[i] = i;\n" );
+
+	foreach( i :- :A.getSize(0) ){
+	    B[i] = i;
+	}
+
+	VnusLib.writeString( f, "B: " );
+	Print1dShape( f, B );
+
+	VnusLib.writeString( f, "A[i] = B[i];\n" );
+
+	foreach( i :- :A.getSize(0) ){
+	    A[i] = B[i];
+	}
+
+	VnusLib.writeString( f, "A: ");
+	Print1dShape( f, A );
+	test_scopes( f, 42 );
+	run_test_dynamic( f, 42 );
+	//VnusLib.writeString( f, "3<4 -> " );
+	VnusLib.writeString( f, 3<4?"yes\n":"no\n" );
+	VnusLib.writeInt( f, (int) (byte) 12 );
+	VnusLib.writeString( f, "\n" );
+	switch (3) {
+	    case 4: {
+		__println( f, "four" );
+	    }
+
+	    case 3: {
+		__println( f, "three" );
+	    }
+
+	    case 2:
+	    case 1: 
+		__println( f, "one" );
+		break;
+
+	    case 0:
+		__println ( f, "zero" );
+	    
+	    default: 
+		__println( f, "default" );
+	}
+	next:
+	__println( f, "left shifts: int:",1<<2," byte:",((byte) 1)<<2," short:",((short) 1)<<2," long:",1l<<2 );
+	__println( f, "right shifts: int:",55>>2," byte:",((byte) 55)>>2," short:",((short) 55)>>2," long:",55l>>2 );
+	__println( f, "unsigned right shifts: int:",55>>>2," byte:",((byte) 55)>>>2," short:",((short) 55)>>>2," long:",55l>>>2 );
+	__println( f, "shifts of negative numbers: left:",(-11)<<2," right:",(-11)>>2," unsigned right:",(-11)>>>2 );
+	__println( f, "bitwise operations: and:", 17 & 18, " or:",17 | 18," xor:",17 ^ 18 );
+	__println( f, "boolean operations: and:", true & false, " or:",true | false," xor:",true ^ false );
+	__println( f,"bitwise not:", !12," ", ! (-144));
+	__println( f,"boolean not:", !false," ", !true);
+	empty_proc();
+	empty_proc1( s0 );
+    }
+}

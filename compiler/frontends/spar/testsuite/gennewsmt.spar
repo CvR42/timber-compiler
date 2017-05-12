@@ -1,0 +1,10 @@
+// Test break and continue statements
+
+package spar.testsuite;
+
+public class gennewsmt {
+    public static void main()
+    {
+	new gennewsmt();
+    }
+}

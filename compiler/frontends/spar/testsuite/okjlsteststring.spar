@@ -1,0 +1,34 @@
+// After JLS2 6.2    Names and Identifiers
+
+
+public class okjlsteststring {
+    char[] value;
+    int offset, count;
+    okjlsteststring( String s ){
+	offset = 0;
+	value = s.toCharArray();
+	count = value.length;
+    }
+    int indexOf(okjlsteststring str, int fromIndex) {
+        char[] v1 = value, v2 = str.value;
+        int max = offset + (count - str.count);
+        int start = offset + ((fromIndex < 0) ? 0 : fromIndex);
+    i:
+        for (int i = start; i <= max; i++)
+        {
+            int n = str.count, j = i, k = str.offset;
+            while (n-- != 0) {
+                if (v1[j++] != v2[k++])
+                    continue i;
+            } 
+            return i - offset;
+        }
+        return -1;
+    }
+    public static void main(){
+	okjlsteststring s1 = new okjlsteststring( "bladiebla" );
+	okjlsteststring s2 = new okjlsteststring( "bla" );
+	System.out.println( s1.indexOf( s2, 0 ) );
+	System.out.println( s1.indexOf( s2, 2 ) );
+    }
+}

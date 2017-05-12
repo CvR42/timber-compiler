@@ -1,0 +1,12 @@
+*-g.cc
+autom4te.cache
+Makefile
+align
+tmadmin.h
+tmadmin.cc
+*.d
+config.cache
+config.log
+config.status
+configure
+dist.lst

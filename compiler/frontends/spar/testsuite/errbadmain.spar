@@ -1,0 +1,10 @@
+// File: errbadmain.spar
+//
+// Test handling of a bad 'main' method (it has *two*) parameters.
+
+package spar.testsuite;
+
+public class errbadmain {
+    void main( String argv[], int argc ){
+    }
+}

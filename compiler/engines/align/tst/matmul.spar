@@ -1,0 +1,76 @@
+// Minimal test program.
+
+globalpragmas <$boundscheck=false$>;
+
+package spar.testsuite;
+
+public class matmul
+{
+    static final int N = 3;
+    static final int ITER = 1;
+    static final boolean NAH = true;
+    static double A[*,*] <$dist="[cyclic,collapsed]"$> = new double[N,N] <$dist="[cyclic,collapsed]"$>;
+    static double B[*,*] <$dist="[collapsed,block]"$> = new double[N,N] <$dist="[collapsed,block]"$>;
+    static double C[*,*] <$dist="[collapsed,blockcyclic 2]"$> = new double[N,N] <$dist="[collapsed,blockcyclic 2]"$>;
+    static double TMP[*] <$dist="[replicated]"$> = new double[N] <$dist="[replicated]"$>;
+    static double D[*,*] <$dist="[collapsed,local 0]"$> = new double[N,N] <$dist="[collapsed,local 0]"$>;
+
+    public static void main()
+        {
+            __println(1, "In the air");
+            for (loop:-:ITER) 
+            {
+	    __print(1,"loop:");
+	    __println(1,loop);
+		__println(1,"stage1");
+		foreach (j:-0:N)
+		    foreach (i:-0:N)
+                        A[i,j] = i*2+j;
+		__println(1,"stage2");
+		foreach (i:-:N)
+		    foreach (j:-:N)
+                        B[i,j] = i + j*3;
+		__println(1,"stage3");
+		foreach (i:-:N)
+		    foreach (j:-:N)
+                        C[i,j] = 0;
+		__println(1,"stage4");
+		foreach (i:-:N){
+//		    __println(1,i);
+		    <$ independent $> foreach (k:-:N)
+			TMP[k] = A[i,k];
+		    foreach (k:-:N)
+			<$ independent $> foreach (j:-:N){
+			if (NAH){
+			    __print(1,"[");
+			    __print(1,i);
+			    __print(1,",");
+			    __print(1,k);
+			    __print(1,",");
+			    __print(1,j);
+			    __print(1,"]");
+			}
+			    C[i,j] += (<$resident$>TMP[k])*B[k,j];
+			}
+		}
+		__println(1,"stage5");
+            }
+	    if (NAH){
+	        <$independent$>foreach (i:-:N)
+		    <$independent$>foreach (j:-:N)
+                        D[i,j] = C[i,j];
+	    }
+            __println(1, "Finished");
+	    if (NAH){
+                __println(1, "D:");
+		foreach (i:-:N){
+		    foreach (j:-:N){
+                        __print(1,D[i,j]);
+		        __print(1," ");
+		    }
+		    __println(1,"");
+		}
+	    }
+        }
+}
+

@@ -1,0 +1,108 @@
+package spar.compiler;
+
+final class FullArray(| type t, int rank |)
+  implements spar.lang.ElasticArray(| type t, rank |), Cloneable, java.io.Serializable
+{
+    protected __array(t) elements;
+    private int room;
+    private [int^rank] sizes;
+    private int length;
+
+    public FullArray( final [int^rank] sz ){
+	int rm = 1;
+
+	inline for( i :- 0:rank ){
+	    rm *= sz[i];
+	}
+	elements = (__array(t)) Allocator.allocate( rm, __sizeof( t ) );
+	if( elements == null ){
+	    // This is rather naive, since we cannot be sure that
+	    // there is room to allocate an instance of this exception..
+	    // TODO: be smarter than this.
+	    throw new OutOfMemoryError();
+	}
+	room = rm;
+	length = rm;
+	sizes = sz;
+    }
+
+    private inline int ip( final [int^rank] ix ){
+	int pos = 0;
+	boolean out_of_bounds = false;
+
+	inline for( i :- 0:rank ){
+	    if( ix[i]<0 || ix[i]>=sizes[i] ){
+		out_of_bounds = true;
+	    }
+	    pos = pos*sizes[i]+ix[i]; 
+	}
+	if( out_of_bounds ){
+	    throw new ArrayIndexOutOfBoundsException();
+	}
+	return pos;
+    }
+
+    public inline t getElement( final [int^rank] ix ){
+	return elements[ip( ix )];
+    }
+
+    public inline void setElement( final [int^rank] ix, final t val ){
+	elements[ip( ix )] = val;
+    }
+
+    <$noGC$> public inline int getRoom(){ return room; }
+
+    <$noGC$> public inline [int^rank] getSize(){ return sizes; }
+
+    <$noGC$> public int getSize( final int dim ){
+	if( dim>=rank ){
+	    throw new IndexOutOfBoundsException();
+	}
+	return sizes[dim];
+    }
+
+    public void setSize( final [int^rank] sz ){
+	int newlength = 1;
+	bool reshuffle = false;
+	inline for( i :- 0:rank ){
+	    if( i != rank-1 ){
+		if( sz[i] != sizes[i] ){
+		    reshuffle = true;
+		}
+	    }
+	    newlength *= sz[i];
+	}
+	length = newlength;
+	if( rank<2 || !reshuffle ){
+	    if( newlength>room ){
+		elements = (__array(t)) Allocator.reallocate( (__array(byte)) elements, newlength, __sizeof( t ) );
+		if( elements == null ){
+		    // This is rather naive, since we cannot be sure that
+		    // there is room to allocate an instance of this exception..
+		    // TODO: be smarter than this.
+		    throw new OutOfMemoryError();
+		}
+	    }
+	}
+	else {
+	    __array(t) newarr = (__array(t)) Allocator.allocate( newlength, __sizeof(t) );
+	    if( newarr == null ){
+		// This is rather naive, since we cannot be sure that
+		// there is room to allocate an instance of this exception..
+		// TODO: be smarter than this.
+		throw new OutOfMemoryError();
+	    }
+	    // TODO: in the general case for more-dimensional
+	    // arrays, we must reshuffle elements.
+	    Allocator.elementcopy( newarr, elements, length, __sizeof(t) );
+	    Allocator.free( (__array(byte)) elements );
+	    elements = newarr;
+	}
+	room = newlength;
+    }
+
+    public Object clone() {
+	FullArray(| t, rank |) res = new FullArray(| type t, rank |)( sizes );
+	Allocator.elementcopy( res.elements, elements, length, __sizeof(t) );
+    }
+}

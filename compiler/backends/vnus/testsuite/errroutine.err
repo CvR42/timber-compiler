@@ -1,0 +1,15 @@
+errroutine.v:5: function called with too many parameters
+  declared as min[int,int]
+  invoked as  min[int,int,int]
+errroutine.v:5: function called with too few parameters
+  declared as min[int,int]
+  invoked as  min[int]
+errroutine.v:9: bad parameter: cannot pass a boolean to a int parameter
+  declared as min[int,int]
+  invoked as  min[int,boolean]
+errroutine.v:29: procedure called with too many parameters
+  declared as min4[int,int,int,int]
+  invoked as  min4[int,int,int,int,int]
+errroutine.v:30: procedure called with too few parameters
+  declared as min4[int,int,int,int]
+  invoked as  min4[int,int,int]

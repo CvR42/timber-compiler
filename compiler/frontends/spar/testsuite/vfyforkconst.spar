@@ -1,0 +1,10 @@
+public class vfyforkconst implements spar.lang.Forkable {
+    final int n = 3;
+
+    public void run(){ }
+
+    public static void main()
+    {
+	String s = "";
+    }
+}

@@ -1,0 +1,5 @@
+// Used in okhellocmp.spar, after JLS 3.10.5
+
+package spar.testsuite.subpack;
+
+public class Other { public static String hello = "Hello"; }

@@ -1,0 +1,83 @@
+package spar.testsuite;
+
+class t {
+    static public int u;
+    public int v;
+    static public int w;
+    public int x;
+    static public int y;
+    public int z;
+}
+
+class t1 extends t {
+    static public int w;
+    public int x;
+    public int y;
+    static public int z;
+    static public int a;
+    public int b;
+
+    void set() {
+	u = 1;
+	v = 2;
+	w = 3;
+	x = 4;
+	y = 5;
+	z = 6;
+	a = 7;
+	b = 8;
+    }
+
+    static void static_set() {
+	u = 1;
+	v = 2;		// Static reference to nonstatic variable 
+	w = 3;
+	x = 4;
+	y = 5;
+	z = 6;
+	a = 7;
+	b = 8;
+    }
+}
+
+public class errfields {
+    public static void main(){
+	t1 x = new t1();
+	t y = new t();
+
+	x.static_set();
+	x.set();		// They must be used to be checked.
+	x.u = 1;
+	x.v = 2;
+	x.w = 3;
+	x.x = 4;
+	x.y = 5;
+	x.z = 6;
+	t1.u = 7;
+	t1.v = 8;		// Static reference to nonstatic t.v
+	t1.w = 9;
+	t1.x = 10;	// Static reference to nonstatic t1.x
+	t1.y = 11;	// Static reference to nonstatic t1.y
+	t1.z = 12;
+	t.u = 13;
+	t.v = 14;		// Static reference to nonstatic t.v
+	t.w = 15;
+	t.x = 16;		// Static reference to nonstatic t.x
+	t.y = 17;
+	t.z = 18;		// Static reference to nonstatic t.z
+	y.u = 19;
+	y.v = 20;
+	y.w = 21;
+	y.x = 22;
+	y.y = 23;
+	y.z = 24;
+	x.a = 25;
+	x.b = 26;
+	y.a = 27;		// Not a field: 'a'
+	y.b = 28;		// Not a field: 'b'
+	t.a = 29;		// Not a field: 'a'
+	t.b = 30;		// Not a field: 'b'
+	t1.a = 31;
+	t1.b = 32;	// static reference to nonstatic t1.b
+    }
+}

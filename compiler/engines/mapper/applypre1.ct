@@ -1,0 +1,86 @@
+/* Applypre1.c engine
+
+   Move initialisers for local variables to correctly scoped block.
+   */
+
+.. File: applypre1.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors block
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "applypre1.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+/* Rewrite action for 'block':
+   Move initialisers for local variables to correctly scoped block.
+   */
+static block rewrite_block_action(
+    block elm, global_context gc )
+{
+    if (elm->scope != NULL)
+    {
+        statement_list nsl = new_statement_list();
+        for (unsigned i=0; i<gc->prog->declarations->sz; i++)
+        {
+            if (gc->prog->declarations->arr[i]->tag == TAGDeclLocalVariable)
+            {
+                DeclLocalVariable d = to_DeclLocalVariable(
+                    gc->prog->declarations->arr[i]);
+                if (d->scope == elm->scope &&
+                    d->init->tag == TAGOptExpr &&
+		    d->t->tag != TAGTypeArray)
+                {
+                    SmtAssign ns = new_SmtAssign(
+                        0,
+                        gen_origin(),
+                        new_Pragma_list(),
+                        new_OwnerExpr_list(),
+                        new_LocName(rdup_origsymbol(d->name)),
+                        to_OptExpr(d->init)->x);
+                    fre_optexpression(d->init);
+                    d->init = new_OptExprNone();
+		    d->flags &= ~MOD_FINAL;
+                nsl = append_statement_list(nsl, ns);
+                }
+            }
+        }
+        elm->statements = concat_statement_list(
+            nsl,
+            elm->statements);
+    }
+.call generate_walker_call "    " elm block block
+    return elm;
+}
+
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_pre1(
+    vnusprog elm, global_context gc )
+{
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}
+

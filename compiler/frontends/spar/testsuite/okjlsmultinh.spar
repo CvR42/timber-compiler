@@ -1,0 +1,14 @@
+// After JLS3 8.3.3.3    Example: Multiply Inherited Fields
+
+interface Frob { float v=2.0f; }
+
+class SuperTest { int v = 3; }
+
+public class okjlsmultinh extends SuperTest implements Frob {
+    public static void main(String[] args) {
+        new okjlsmultinh().printV();
+    }
+    void printV() {
+        __println(1,(super.v + Frob.v)/2);
+    }
+}

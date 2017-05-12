@@ -1,0 +1,370 @@
+globalpragmas <$ boundscheck = false $>;
+
+import ClassData;
+import Random;
+import Results;
+import Timer;
+
+public class MG {
+	static char Class          = ClassData.Class;
+	static int N               = ClassData.N;
+	static int M               = N+2; // add ghost edges
+	static int MaxIterations   = ClassData.MaxIterations;
+	static double VerifyValue  = ClassData.VerifyValue;
+
+	static int MaxGridLevel; 
+
+	static double [] S         = ClassData.S;
+	static double [] A         = {-8.0/3.0, 0.0, 1.0/6.0, 1.0/12.0};
+
+
+	static int ILog2(int n) {
+		int l = 0;
+
+		while (n>1) {
+			n >>= 1;
+			l++;
+		}
+
+		return l;
+	}
+																
+	static void MakeZero(<$dist="[cyclic,collapsed,collapsed]"$>double [*,*,*] u) {
+		foreach (i :- :u.getSize())
+			u@i = 0.0;
+	}
+	
+	static tuple [double,double] GiveNorm(<$dist="[cyclic,collapsed,collapsed]"$>double [*,*,*] u) {
+		int M = u.getSize()[0]; // u is M*M*M, M=N+2
+		double norm2, norminf;
+		norm2 = 0.0;
+		norminf = 0.0;
+		foreach (i :- [1,1,1]:[M-1,M-1,M-1]) {
+			norm2 += (u@i) * (u@i);
+			norminf = Math.max(norminf,Math.abs(u@i));
+		}
+		M -= 2;
+		norm2 = Math.sqrt(norm2/((double)M*M*M));
+		return [norm2,norminf];
+	}
+
+	static void InitNonZeros(<$dist="[cyclic,collapsed,collapsed]"$>double [*,*,*] u) {
+__println(1,"entered InitNonZeros");
+		double Seed =  314159265.0;
+		double Mult = 1220703125.0;
+		int N = 10;
+		int M = u.getSize()[0]; // u = M*M*M
+		double [] <$dist="[cyclic]"$>small = new double [N]<$dist="[cyclic]"$>;
+		double [] <$dist="[cyclic]"$>high  = new double [N]<$dist="[cyclic]"$>;
+		tuple int^3 [] <$dist="[cyclic]"$>spos = new tuple int^3 [N]<$dist="[cyclic]"$>;
+		tuple int^3 [] <$dist="[cyclic]"$>hpos = new tuple int^3 [N]<$dist="[cyclic]"$>;
+__println(1,"Calling Random.new");
+		Random random = new Random(Seed,Mult);
+__println(1,"Back from Random.new");
+
+		foreach (i :- :N) {
+__print(1,".");
+			small[i] = 1.0;
+			high[i] = 0.0;
+			spos[i] = [0,0,0];
+			hpos[i] = [0,0,0];
+		}
+__println(1,"Init done");
+
+		// Can't parallise this loop (easy) because of the RandLC()'s
+		for (k :- 1:M-1, j :- 1:M-1, i :- 1:M-1) {
+__print(1,".");
+			double r = random.RandLC();
+			if (r > high[0]) {
+				high[0] = r;
+				hpos[0] = [i,j,k];
+				int s = 0;
+				while (s<N-1 && high[s]>high[s+1]) {
+					[high[s],high[s+1]] = [high[s+1],high[s]];
+					[hpos[s],hpos[s+1]] = [hpos[s+1],hpos[s]];
+					s++;
+				}
+			}
+			if (r < small[0]) {
+				small[0] = r;
+				spos[0] = [i,j,k];
+				int s = 0;
+				while (s<N-1 && small[s]<small[s+1]) {
+					[small[s],small[s+1]] = [small[s+1],small[s]];
+					[spos[s],spos[s+1]] = [spos[s+1],spos[s]];
+					s++;
+				}
+			}
+		}
+		MakeZero(u);
+		foreach (i :- :N) {
+			u@hpos[i] = +1.0;
+			u@spos[i] = -1.0;
+		}
+	}
+
+	static void UpdateBorders(<$dist="[cyclic,collapsed,collapsed]"$>double [*,*,*] u) {
+		// update repeating borders
+		int M = u.getSize()[0]; // u is M*M*M, M=N+2
+		for (i :- 1:M-1) {
+			for (j :- 1:M-1) {
+				u[i,j,0] = u[i,j,M-2];
+				u[i,j,M-1] = u[i,j,1];
+				u[i,0,j] = u[i,M-2,j];
+				u[i,M-1,j] = u[i,1,j];
+				u[0,i,j] = u[M-2,i,j];
+				u[M-1,i,j] = u[1,i,j];
+			}
+			u[i,0,0] = u[i,M-2,M-2];
+			u[i,M-1,0] = u[i,1,M-2];
+			u[i,0,M-1] = u[i,M-2,1];
+			u[i,M-1,M-1] = u[i,1,1];
+			u[0,i,0] = u[M-2,i,M-2];
+			u[M-1,i,0] = u[1,i,M-2];
+			u[0,i,M-1] = u[M-2,i,1];
+			u[M-1,i,M-1] = u[1,i,1];
+			u[0,0,i] = u[M-2,M-2,i];
+			u[M-1,0,i] = u[1,M-2,i];
+			u[0,M-1,i] = u[M-2,1,i];
+			u[M-1,M-1,i] = u[1,1,i];
+		}
+		u[0,0,0] = u[M-2,M-2,M-2];
+		u[0,0,M-1] = u[M-2,M-2,1];
+		u[0,M-1,0] = u[M-2,1,M-2];
+		u[0,M-1,M-1] = u[M-2,1,1];
+		u[M-1,0,0] = u[1,M-2,M-2];
+		u[M-1,0,M-1] = u[1,M-2,1];
+		u[M-1,M-1,0] = u[1,1,M-2];
+		u[M-1,M-1,M-1] = u[1,1,1];
+	}
+
+	static void ApplySmoother(<$dist="[cyclic,collapsed,collapsed]"$>double [*,*,*] u, <$dist="[cyclic,collapsed,collapsed]"$>double [*,*,*] r) {
+		// u = u + S * r
+		int M = u.getSize()[0]; // u and r are M*M*M, M=N+2
+
+		foreach (i :- 1:M-1, j :- 1:M-1) {
+		double [] <$dist="[cyclic]"$>r1 = new double [M]<$dist="[cyclic]"$>; // should be in the loop!
+		double [] <$dist="[cyclic]"$>r2 = new double [M]<$dist="[cyclic]"$>;
+			foreach (k :- :M) {
+				r1[k] = r[i,j-1,k] + r[i,j+1,k] +
+					r[i-1,j,k] + r[i+1,j,k];
+				r2[k] = r[i-1,j-1,k] + r[i-1,j+1,k] +
+					r[i+1,j-1,k] + r[i+1,j+1,k];
+			}
+			foreach (k :- 1:M-1) {
+				u[i,j,k] += S[0] *  r[i,j,k] +
+					S[1] * (r[i,j,k-1] + r[i,j,k+1] + r1[k]) +
+					S[2] * (r2[k] + r1[k-1] + r1[k+1]) +
+					S[3] * (r2[k-1] + r2[k+1]);
+			// S[3] is probably 0, but the compiler should
+			// recognise this and eliminate the S[3] part
+			}
+		// Drastic need for garbage collector
+		__delete(r1);
+		__delete(r2);
+		}
+
+		
+		UpdateBorders(u);
+	}
+
+	static void EvaluateResidual(<$dist="[cyclic,collapsed,collapsed]"$>double [*,*,*] r, <$dist="[cyclic,collapsed,collapsed]"$>double [*,*,*] v, <$dist="[cyclic,collapsed,collapsed]"$>double [*,*,*] u) {
+		// r = v - A * u
+		int M = u.getSize()[0]; // u and r are M*M*M, M=N+2
+
+		foreach (i :- 1:M-1, j :- 1:M-1) {
+		double [] <$dist="[cyclic]"$>u1 = new double [M]<$dist="[cyclic]"$>;
+		double [] <$dist="[cyclic]"$>u2 = new double [M]<$dist="[cyclic]"$>;
+			foreach (k :- :M) {
+				u1[k] = u[i,j-1,k] + u[i,j+1,k] +
+					u[i-1,j,k] + u[i+1,j,k];
+				u2[k] = u[i-1,j-1,k] + u[i-1,j+1,k] +
+					u[i+1,j-1,k] + u[i+1,j+1,k];
+			}
+			foreach (k :- 1:M-1) {
+				r[i,j,k] = v[i,j,k] -
+					(A[0] *  u[i,j,k] +
+					A[1] * (u[i,j,k-1] + u[i,j,k+1] + u1[k]) +
+					A[2] * (u2[k] + u1[k-1] + u1[k+1]) +
+					A[3] * (u2[k-1] + u2[k+1]));
+			// A[1] is probably 0, but the compiler should
+			// recognise this and eliminate the A[1] part
+			}
+		// Drastic need for garbage collector
+		__delete(u1);
+		__delete(u2);
+		}
+
+
+		UpdateBorders(r);
+	}
+	
+	static void RestrictResidual(<$dist="[cyclic,collapsed,collapsed]"$>double [*,*,*] r1, <$dist="[cyclic,collapsed,collapsed]"$>double [*,*,*] r2) {
+		// r_{l-1} = P * r_{l}, r2 = P * r1
+		int M1 = r1.getSize()[0]; // r1 is M1*M1*M1, M1=N1+2
+		int M2 = r2.getSize()[0]; // M2 = N1/2 + 2
+
+		foreach (i :- 1:M2-1, j :- 1:M2-1) {
+		double [] <$dist="[cyclic]"$>x1 = new double [M1]<$dist="[cyclic]"$>;
+		double [] <$dist="[cyclic]"$>x2 = new double [M1]<$dist="[cyclic]"$>;
+			int i1 = i*2;
+			int j1 = j*2;
+			foreach (k1 :- :M1) {
+				x1[k1] = r1[i1,j1-1,k1] + r1[i1,j1+1,k1] +
+					r1[i1-1,j1,k1] + r1[i1+1,j1,k1];
+				x2[k1] = r1[i1-1,j1-1,k1] + r1[i1-1,j1+1,k1] +
+					r1[i1+1,j1-1,k1] + r1[i1+1,j1+1,k1];
+			}
+			foreach (k :- 1:M2-1) {
+				int k1 = k*2;
+				r2[i,j,k] = 0.5 *  r1[i1,j1,k1] +
+					0.25 * (r1[i1,j1,k1-1] + r1[i1,j1,k1+1] + x1[k1]) +
+					0.125 * (x2[k1] + x1[k1-1] + x1[k1+1]) +
+					0.0625 * (x2[k1-1] + x2[k1+1]);
+			}
+		// Drastic need for garbage collector
+		__delete(x1);
+		__delete(x2);
+		}
+
+
+		UpdateBorders(r2);
+	}
+
+	static void Prolongate(<$dist="[cyclic,collapsed,collapsed]"$>double [*,*,*] u1, <$dist="[cyclic,collapsed,collapsed]"$>double [*,*,*] u2) {
+		// u_{l} = Q * u_{l-1}, u2 = Q * u1
+		int M1 = u1.getSize()[0]; // u1 is M1*M1*M1, M1=N1+2
+		int M2 = u2.getSize()[0]; // M2 = N1*2 + 2
+		
+		foreach (i :- :M1-1, j :- :M1-1) {
+		double [] <$dist="[cyclic]"$>x1 = new double [M1]<$dist="[cyclic]"$>;
+		double [] <$dist="[cyclic]"$>x2 = new double [M1]<$dist="[cyclic]"$>;
+		double [] <$dist="[cyclic]"$>x3 = new double [M1]<$dist="[cyclic]"$>;
+			int i2 = i*2;
+			int j2 = j*2;
+			foreach (k :- :M1) {
+				x1[k] = u1[i,j,k] + u1[i+1,j,k];
+				x2[k] = u1[i,j,k] + u1[i,j+1,k];
+				x3[k] = x1[k] + u1[i,j+1,k] + u1[i+1,j+1,k];
+			}
+			foreach (k :- :M1-1) {
+				int k2 = k*2;
+				u2[i2,j2,k2] += u1[i,j,k];
+				u2[i2+1,j2,k2] += 0.5 * x1[k];
+				u2[i2,j2+1,k2] += 0.5 * x2[k];
+				u2[i2,j2,k2+1] += 0.5 * (u1[i,j,k] + u1[i,j,k+1]);
+				u2[i2+1,j2+1,k2] += 0.25 * x3[k];
+				u2[i2+1,j2,k2+1] += 0.25 * (x1[k] + x1[k+1]);
+				u2[i2,j2+1,k2+1] += 0.25 * (x2[k] + x2[k+1]);
+				u2[i2+1,j2+1,k2+1] += 0.125 * (x3[k] + x3[k+1]);
+			}
+		// Drastic need for garbage collector
+		__delete(x1);
+		__delete(x2);
+		__delete(x3);
+		}
+
+	}
+
+	static void RecursiveSolve(double [*,*,*][] u, double [*,*,*][] r, <$dist="[cyclic,collapsed,collapsed]"$>double [*,*,*] v, int K) {
+		int M = u.getSize()[0]; // u = M*M*M, M=N+2
+
+		for (k :- :K-1)
+			RestrictResidual(r[k],r[k+1]);
+
+		MakeZero(u[K-1]);
+		ApplySmoother(u[K-1],r[K-1]);
+		for (int k=K-2;k>0;k--) {
+			MakeZero(u[k]);
+			Prolongate(u[k+1],u[k]);
+			EvaluateResidual(r[k],r[k],u[k]);
+			ApplySmoother(u[k],r[k]);
+		}
+		Prolongate(u[1],u[0]);
+		EvaluateResidual(r[0],v,u[0]);
+		ApplySmoother(u[0],r[0]);
+	}
+
+	static public void main(String [] args) {
+		double GenerationSeed =  271828183.0;
+		double GenerationMult = 1220703125.0;
+		double epsilon = 1.0E-8;
+		double timecounter, mops = 0.0;
+		Timer timer = new Timer();
+		boolean passedVerification;
+		double norm2, norminf;
+		double [*,*,*][] u;
+		double [*,*,*][] r;
+		double [*,*,*] <$dist="[cyclic,collapsed,collapsed]"$>v;
+	
+//		System.out.println("NAS Parallel Benchmarks SPAR version - MG Benchmark\n");
+//		System.out.println(" Size: "+N+"x"+N+"x"+N+"  (class "+Class+")");
+//		System.out.println("  Iterations:   "+MaxIterations);
+		__println(1,"NAS Parallel Benchmarks SPAR version - MG Benchmark\n");
+//		__println(1," Size: "+N+"x"+N+"x"+N+"  (class "+Class+")");
+		__print(1,"  Iterations:   ");
+		__println(1,MaxIterations);
+
+		MaxGridLevel = ILog2(N);
+
+__println(1,"Allocating stuff");
+		u = new double [MaxGridLevel][*,*,*];
+		r = new double [MaxGridLevel][*,*,*];
+		int m = N;
+		for (k :- :MaxGridLevel) {
+			u[k] = new double [m+2,m+2,m+2]<$dist="[cyclic,collapsed,collapsed]"$>;
+			r[k] = new double [m+2,m+2,m+2]<$dist="[cyclic,collapsed,collapsed]"$>;
+			m /= 2;
+		}
+		v = new double [N+2,N+2,N+2]<$dist="[cyclic,collapsed,collapsed]"$>;
+
+__println(1,"MakeZero");
+		MakeZero(u[0]);
+__println(1,"InitNonZeros");
+		InitNonZeros(v);
+		
+__println(1,"timer.clear");
+		timer.Clear();
+
+__println(1,"timer.start");
+		timer.Start();
+
+__println(1,"EvaluateResidual");
+		EvaluateResidual(r[0],v,u[0]);
+		for (i :- :MaxIterations) {
+__print(1,"iteration:");
+__println(1,i);
+			RecursiveSolve(u,r,v,MaxGridLevel);
+			EvaluateResidual(r[0],v,u[0]);
+		}
+
+		[norm2,norminf] = GiveNorm(r[0]);
+
+		timer.Stop();
+
+		timecounter = timer.Read();
+
+
+		passedVerification = (Math.abs(norm2 - VerifyValue)<=epsilon); 
+//		System.out.println();
+//		System.out.println(" L2 Norm = "+norm2);
+//		System.out.println(" Error   = "+(norm2-VerifyValue));
+		__println(1,"");
+		__print(1," L2 Norm = ");
+		__println(2,norm2);
+		__print(1," Error   = ");
+		__println(1,(norm2-VerifyValue));
+		if (timecounter>0)
+			mops = 58.0*MaxIterations*N*N*N/timecounter/1000000.0;
+
+		Results.Print(Class,
+			N,
+			N,
+			N,
+			MaxIterations,
+			timecounter,
+			mops,
+			"floating point",
+			passedVerification);
+	}
+}

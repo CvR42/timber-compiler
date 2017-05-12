@@ -1,0 +1,115 @@
+globalpragmas <$ boundscheck = false $>;
+
+import ClassData;
+import Random;
+import Results;
+import Timer;
+
+public class EP {
+	static final char Class          = ClassData.Class;
+	static final int M               = ClassData.M;
+	static final double [] TestValue = ClassData.TestValue;
+
+	static final int BatchSize = 1024;
+
+	static public void main(String [] args) {
+		final double GenerationSeed =  271828183.0;
+		final double GenerationMult = 1220703125.0;
+		final double epsilon = 1.0E-8;
+		double timecounter, mops;
+		final Timer timer = new Timer();
+		long N;
+		int NBatches;
+		double sx, sy;
+		final int [] count = new int [10];
+		int globcount;
+		boolean passedVerification;
+	
+		N = 1;
+		N <<= M;
+		NBatches = (int) (N/BatchSize);
+
+		__println(1,"NAS Parallel Benchmarks SPAR version - EP Benchmark\n");
+		__println(1," Size:  2 x 2^",M," = ",2*N,"  (class "+Class+")");
+
+		for (i :- :10)
+			count[i] = 0;
+		sx = 0.0;
+		sy = 0.0;
+
+		double []  <$dist="[cyclic]"$>sx2 = new double[BatchSize]<$dist="[cyclic]"$>;
+		double [] <$dist="[cyclic]"$>sy2 = new double[BatchSize]<$dist="[cyclic]"$>;
+		int [*,*] <$dist="[cyclic,collapsed]"$>count2 = new int[BatchSize,10]<$dist="[cyclic,collapsed]"$>;
+		<$independent$>foreach (j :- :BatchSize) {
+			<$independent$>foreach (i :- :10)
+				count2[j,i] = 0;
+			sx2[j] = 0.0;
+			sy2[j] = 0.0;
+		}
+
+		timer.Clear();
+
+		timer.Start();
+
+//		foreach (k :- :NBatches) {
+		<$taskparallel,independent$>foreach (k :- :BatchSize) {
+			Random random = new Random(GenerationSeed,GenerationMult);
+//			random.Skip((double)2*k*BatchSize);
+			random.Skip((double)2*k*NBatches);
+//			for (i :- :BatchSize) {
+			for (i :- :NBatches) {
+				double x = 2 * random.RandLC() - 1;
+				double y = 2 * random.RandLC() - 1;
+				double t = x*x + y*y;
+				if (t <= 1.0) {
+					t = Math.sqrt(-2.0*Math.log(t)/t);
+					x *= t;
+					y *= t;
+					count2[k,(int)Math.max(Math.abs(x),Math.abs(y))]++;
+					sx2[k] += x;
+					sy2[k] += y;
+				}
+			}
+		}
+		foreach (i :- :10) {
+			<$reduction$>foreach (k :- :BatchSize) {
+				count[i] = count[i] + count2[k,i];
+			}
+		}
+		<$reduction$>foreach (k :- :BatchSize) {
+			sx = sx + sx2[k];
+		}
+		<$reduction$>foreach (k :- :BatchSize) {
+			sy = sy + sy2[k];
+		}
+
+		timer.Stop();
+
+		timecounter = timer.Read();
+
+		globcount = 0;
+		for (i :- :10)
+			globcount += count[i];
+		
+		__println(1);
+		__println(1," No. Gaussian Pairs: ",globcount);
+		__println(1," Sums: ",sx," ",sy);
+		__println(1," Counts: ");
+		for (i :- :10)
+			__println(1,"  ",i,"  ",count[i]);
+
+		passedVerification = ((sx-TestValue[0])/sx < epsilon) &&
+			((sy-TestValue[1])/sy < epsilon);
+		mops = Math.pow(2,M+1)/timecounter/1000000.0;
+
+		Results.Print(Class,
+			M+1,
+			0,
+			0,
+			0,
+			timecounter,
+			mops,
+			"Random numbers generated",
+			passedVerification);
+	}
+}

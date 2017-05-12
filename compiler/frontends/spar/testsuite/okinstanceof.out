@@ -1,0 +1,9 @@
+Hello world
+t is instance of tsuper
+t is instance of t
+t is instance of inf
+tsuper is instance of tsuper
+tsub is instance of tsuper
+tsub is instance of t
+tsub is instance of tsub
+tsub is instance of inf

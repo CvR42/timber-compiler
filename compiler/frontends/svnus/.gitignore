@@ -1,0 +1,13 @@
+y.output
+tokens.h
+parser.c
+lexer.c
+tmadmin.h
+tmadmin.c
+svnus
+*.err
+runout
+mangle.c
+extract.c
+check.c
+rewrite.c

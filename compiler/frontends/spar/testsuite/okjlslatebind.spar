@@ -1,0 +1,41 @@
+// After JLS2 15.12.4.8    Example: Overriding
+
+class Point {
+    final int EDGE = 20;
+    int x, y;
+
+    void move( int dx, int dy) {
+	x += dx; y += dy;
+	if( Math.abs(x) >= EDGE || Math.abs(y) >= EDGE )
+	    clear();
+    }
+
+    void clear() {
+	__println( 1, "\tPoint clear" );
+	x = 0; y = 0;
+    }
+}
+
+class ColoredPoint extends Point {
+    int color;
+
+    void clear() {
+	__println( 1, "\tColoredPoint clear" );
+	super.clear();
+	color = 0;
+    }
+}
+
+public class okjlslatebind {
+    public static void main(String[] args) {
+        Point p = new Point();
+        __println(1,"p.move(20,20):");
+        p.move(20, 20);
+        ColoredPoint cp = new ColoredPoint();
+        __println(1,"cp.move(20,20):");
+        cp.move(20, 20);
+        p = new ColoredPoint();
+        __println(1,"p.move(20,20), p colored:");
+        p.move(20, 20);
+    }
+}

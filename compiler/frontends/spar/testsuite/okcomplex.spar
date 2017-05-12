@@ -1,0 +1,26 @@
+
+public class okcomplex {
+    public static void main(){
+	complex c = 12;
+	double d = 0.0;
+	System.out.println( (byte) c );
+	System.out.println( (double) c );
+	System.out.println( c );
+	// The following is just so that we test the binding of all new math
+	// functions. We don't test wether the implementation is sane.
+	c = Complex.sin( c );
+	c = Complex.cos( c );
+	//c = Complex.tan( c );
+	c = Complex.sqrt( c );
+	c = Complex.exp( c );
+	c = Complex.log( c );
+	d = Complex.abs( c );
+	d = Complex.arg( c );
+	d = Complex.norm( c );
+	d = Complex.real( c );
+	d = Complex.imag( c );
+	c = Complex.polar( 1.0, 0.5 );
+	c = Complex.conj( c );
+	c = Complex.pow( c, 2 );
+    }
+}

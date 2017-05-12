@@ -1,0 +1,10 @@
+// After JLS2 6.3.1    Shadowing Declarations
+
+public class okjlshiding {
+    static int x = 1;
+    public static void main(String[] args) {
+        int x = 0;
+        __print(1,"x=" , x);
+        __println(1,", Test.x=" , okjlshiding.x);
+    }
+}

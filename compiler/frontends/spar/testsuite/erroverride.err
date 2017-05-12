@@ -1,0 +1,5 @@
+erroverride.spar:11: Instance method bla1() in t1 cannot be overridden by a static method
+erroverride.spar:12: Static method bla2() in t1 cannot be overridden by an instance method
+erroverride.spar:13: public method bla3() in t1 cannot be overridden by a more private method
+erroverride.spar:14: protected method bla4() in t1 cannot be overridden by a more private method
+erroverride.spar:16: Method bla6() in t1 is final and cannot be overridden

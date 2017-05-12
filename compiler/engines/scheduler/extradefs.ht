@@ -1,0 +1,38 @@
+.. File: extradefs.ht
+.. Create the snew_ shorthand function definitions
+..
+.set extra_groups snew
+.set allowed_snew_root statement block
+..
+.set block_init_list tmsymbolNIL gen_origin() Pragma_listNIL OwnerExpr_listNIL new_statement_list()
+.set statement_init_list origsymbolNIL gen_origin() Pragma_listNIL OwnerExpr_listNIL
+.. Reset all want_extra_<groups> variables
+.foreach g $(extra_groups) stat
+.set want_extra_$g
+.endforeach
+..
+.foreach g $(extra_groups)
+.. Extract all requests starting with $g
+. set want_extra_$g ${filt $g_(*) \1 $(wantextradefs)}
+.endforeach
+..
+.foreach g $(extra_groups)
+.foreach t $(want_extra_$(g))
+.if ${not ${member ${call rootclass $t} $(allowed_$(g)_root)}}
+.error Function $(g) not defined for node $(t)
+.exit 1
+.endif
+.endforeach
+.endforeach
+..
+.. snew_<type> routines
+.foreach t $(want_extra_snew)
+.if ${eq $(t) ${call rootclass $t}}
+#define snew_$t() new_$t(${seplist , $(${call rootclass $t}_init_list)})
+.else
+#define snew_$t(${seplist , ${fields $t}}) new_$t(${seplist , $(${call rootclass $t}_init_list) ${fields $t}})
+.endif
+.endforeach
+..
+/* ---- end of ${tplfilename} ---- */
+/* Code generation required ${processortime} milliseconds. */

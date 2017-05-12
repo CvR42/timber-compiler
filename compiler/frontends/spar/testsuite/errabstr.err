@@ -1,0 +1,1 @@
+errabstr.spar:8: Class errabstr must be declared abstract since it contains an abstract method: 'foo'

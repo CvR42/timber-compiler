@@ -1,0 +1,2 @@
+errouterstaticclass.spar:6: 'static' modifier not allowed for a outer class
+errouterstaticclass.spar:14: 'static' modifier not allowed for a local class

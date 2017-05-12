@@ -1,0 +1,172 @@
+.. File: getscopes.ct
+..
+.. Return the names of all the occuring scopes.
+..
+.. This is used in macro expansion.
+..
+.. Return 'walk' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the datastructure we're walking on, and a type 't', of that variable,
+.. generate a return statement.
+.macro generate_walker_return indent var t
+$(indent)return;
+.endmacro
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+.if ${member ${stemname $t} ${typelist}}
+$(indent)if( $(var) == NULL ){
+$(indent)    return;
+$(indent)}
+.endif
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+static void getscopes_$t_walker( const_$t $(var), tmsymbol_list scopes, tmsymbol_list labels )
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we're walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+static void getscopes_$t_walker( const_$t $(var), tmsymbol_list scopes, tmsymbol_list labels );
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)getscopes_$(type)_action( $(var), scopes, labels );
+.else
+$(indent)getscopes_$(type)_action( to_const_$(type)( $(var) ), scopes, labels );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)getscopes_$(type)_walker( $(var), scopes, labels );
+.else
+$(indent)getscopes_$(type)_walker( to_const_$(type)( $(var) ), scopes, labels );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var', and a type 'type', generate
+.. the body of an empty walker function.
+.macro generate_empty_walker_body indent var type
+$(indent)(void) scopes;
+$(indent)(void) labels;
+.endmacro
+..
+.. For which types are there actions defines?
+.. Currently we're naive, and assume only VariableNames and TypeNames
+.. are affected. No doubt this overlooks something
+.set actors
+.append actors Block
+.append actors WhereExpression
+.append actors LabelName
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "Block" "$(actors)"}
+..
+// ->->-> This is a GENERATED FILE <-<-<-
+
+/* File: getscopes.c
+ *
+ * Replace a return with a goto.
+ */
+
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "getscopes.h"
+#include "service.h"
+
+.foreach t LabelName
+typedef const_${alias $t} const_$t;
+.endforeach
+.foreach t LabelName
+typedef const_${alias $t}_list const_$t_list;
+.endforeach
+
+.call generate_walker_forwards "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+/* -------- actors ---------- */
+
+/* Action for type LabelName. */
+static void getscopes_LabelName_action(
+ const_origsymbol nm,
+ tmsymbol_list scopes,
+ tmsymbol_list labels
+)
+{
+    if( nm == NULL ){
+	return;
+    }
+.call generate_walker_call "    " nm LabelName LabelName
+    labels = add_tmsymbol_list( labels, nm->sym );
+}
+
+/* Action for type Block. */
+static void getscopes_Block_action( const_Block blk, tmsymbol_list scopes, tmsymbol_list labels )
+{
+    if( blk == BlockNIL ){
+	return;
+    }
+.call generate_walker_call "    " blk Block Block
+    if( blk->scope != tmsymbolNIL ){
+	scopes = append_tmsymbol_list( scopes, blk->scope );
+    }
+}
+
+/* Action for type WhereExpression. */
+static void getscopes_WhereExpression_action( const_WhereExpression wx, tmsymbol_list scopes, tmsymbol_list labels )
+{
+    if( wx == WhereExpressionNIL ){
+	return;
+    }
+.call generate_walker_call "    " wx WhereExpression WhereExpression
+    if( wx->scope != tmsymbolNIL ){
+	scopes = append_tmsymbol_list( scopes, wx->scope );
+    }
+}
+
+/* -------- End of action functions ---------- */
+
+.call generate_walker "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+/* Given a type declaration, substitute all given parameters. */
+void getscopes_Block( const_Block blk, tmsymbol_list scopes, tmsymbol_list labels  )
+{
+.call generate_descent_call "    " blk Block Block
+}

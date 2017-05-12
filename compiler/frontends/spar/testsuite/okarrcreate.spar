@@ -1,0 +1,12 @@
+// After JLS2 15.10.2
+
+package spar.testsuite;
+
+public class okarrcreate {
+    public static void main()
+    {
+	int i = 4;
+	int ia[][] = new int[i][i=3];
+	__println( 1, "[", ia.length, ",", ia[0].length, "]" );
+    }
+}

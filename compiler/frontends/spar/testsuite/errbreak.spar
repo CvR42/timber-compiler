@@ -1,0 +1,24 @@
+// Test error messages about breaks in the wrong context.
+
+package spar.testsuite;
+
+public class errbreak {
+    static void main( String args[] ){
+	break;
+	continue;
+	l: {
+	    l: {
+		if( args.length == 1 ){
+		    break l;
+		}
+		else if( args.length == 2 ){
+		    break z;
+		}
+		continue z;
+	    }
+	}
+	l: {
+	    continue l;
+	}
+    }
+}

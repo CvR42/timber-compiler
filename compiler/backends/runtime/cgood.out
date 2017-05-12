@@ -1,0 +1,81 @@
+Testing 0-dimentional access
+Testing 1-dimentional access
+Testing 2-dimentional access
+Testing 3-dimentional access
+IA1[0]=1
+IA1[1]=2
+IA1[2]=3
+Testing ceildiv() and floordiv()...
+Testing ceildiv() and floordiv() completed
+Testing euclid()...
+testing euclid( 3, 14 )
+testing euclid( -3, 14 )
+testing euclid( 3, -14 )
+testing euclid( -3, -14 )
+testing euclid( 4, 2 )
+testing euclid( -4, 2 )
+testing euclid( -4, -2 )
+testing euclid( 4, -2 )
+testing euclid( 200, 7 )
+testing euclid( -200, 7 )
+testing euclid( -200, 1 )
+testing euclid( 200, 1 )
+testing euclid( 0, 1 )
+Testing euclid() completed.
+Testing iterations()...
+Testing iterations() completed.
+Testing vnus_bclus()...
+Testing bclus for a=3, b=0
+Testing bclus for a=3, b=1
+Testing bclus for a=1, b=0
+Testing bclus for a=1, b=1
+Testing bclus for a=1, b=2
+Testing bclus for a=1, b=9
+Testing bclus for a=2, b=1
+Testing bclus for a=4, b=1
+Testing bclus for a=7, b=1
+Testing bclus for a=8, b=1
+Testing bclus for a=14, b=1
+Testing bclus for a=16, b=1
+Testing bclus for a=-1, b=31
+Testing bclus for a=-2, b=61
+Testing bclus for a=-2, b=65
+Testing bclus for a=-4, b=128
+Testing vnus_bclus() completed.
+Testing vnus_blus()...
+Testing blus for a=3, b=0
+Testing blus for a=3, b=1
+Testing blus for a=1, b=0
+Testing blus for a=1, b=1
+Testing blus for a=1, b=2
+Testing blus for a=1, b=9
+Testing blus for a=2, b=1
+Testing blus for a=4, b=1
+Testing blus for a=7, b=1
+Testing blus for a=8, b=1
+Testing blus for a=14, b=1
+Testing blus for a=16, b=1
+Testing blus for a=-1, b=31
+Testing blus for a=-2, b=61
+Testing blus for a=-2, b=65
+Testing blus for a=-4, b=128
+Testing vnus_blus() completed.
+Testing vnus_clus()...
+Testing clus for a=3, b=0
+Testing clus for a=3, b=1
+Testing clus for a=1, b=0
+Testing clus for a=1, b=1
+Testing clus for a=1, b=2
+Testing clus for a=1, b=9
+Testing clus for a=2, b=1
+Testing clus for a=4, b=1
+Testing clus for a=7, b=1
+Testing clus for a=8, b=1
+Testing clus for a=14, b=1
+Testing clus for a=16, b=1
+Testing clus for a=-1, b=31
+Testing clus for a=-2, b=61
+Testing clus for a=-2, b=65
+Testing clus for a=-4, b=128
+Testing clus for a=5, b=1
+Testing vnus_clus() completed.

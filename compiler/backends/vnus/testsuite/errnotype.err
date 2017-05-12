@@ -1,0 +1,3 @@
+errnotype.v(3): type expected, not an identifier
+    externalvariable vnusout blah
+                             ^^^^

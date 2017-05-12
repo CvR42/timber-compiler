@@ -1,0 +1,66 @@
+|| The locally required Tm datastructures
+
+%include "vnus.ds";
+
+|| An entry in the scope information database
+scopeinfo == ( name:scopename, known:bool, locals:[varname] );
+
+|| An node in the tree of record fields, as is used to generate names
+|| for all record types.
+||
+|| The 'name' field contains the name that is generated for this record.
+recordnode == (
+    name:tmsymbol,		|| The name of this record, if it is used.
+    used:int,			|| Is this record used (or only a prefix)
+    t:type,			|| The type of this field
+    children:[recordnode]	|| The records that have this record as prefix
+);
+
+|| A node in the list of known function/procedure types. This list is
+|| maintained so that all function types can be mapped to a typedef-ed name.
+|| In C unnamed function types cannot be expressed in all circumstances.
+functionnode == (
+    name:tmsymbol,
+    retval:type,
+    formals:[type]
+);
+
+|| An AFLAG variable may have the values AF_YES, AF_NO and AF_MAYBE. If
+|| we don't know, the value is AF_MAYBE.
+||
+|| Abstract rerepsentation of a value.
+||
+|| We may also want to maintain a constant value that the expression.
+AbstractValue == (
+    zero:AFLAG,			|| Value is 0/null/false
+    positive:AFLAG,		|| Value is >= 0
+    constant:bool,		|| Value always evaluates to the same.
+    value:expression		|| The constant value of the exrepssion, or null
+);
+
+|| The state of an indivitual variable.
+VarState == (
+    name:tmsymbol,		|| Variable name
+    final:bool,			|| Final variable?
+    aliased:bool,		|| Is someone pointing to this variable?
+    fieldvalues:[FieldVal],	|| Collected facts about fields of records and shapes
+    value:AbstractValue		|| Its abstract value.
+);
+
+|| An single facts about a field or record.
+|| This can be read as: if you encounter <bigval>, it is legal and profitable
+|| to replace it with <fastval>.
+FieldVal == ( dependencies:[tmsymbol], bigval:expression, fastval:expression );
+
+|| An analysis information state descriptor.
+|| For analysis purposes this state descriptor is dragged around the entire
+|| program, and is updated with knowledge gathered from each statement.
+ProgramState == (
+    varStates:[VarState],	|| States of individual variables
+    boundChecked:[expression],	|| These expressions do not cause bounds violat.
+    nullChecked:[expression],	|| These expressions do not null ptr exceptions.
+    iterated:bool,		|| Is this a loop?
+    throws:AFLAG,		|| statement/block throws exception?
+    jumps:AFLAG,		|| ... does a goto
+    returns:AFLAG		|| ... does a return
+);

@@ -1,0 +1,110 @@
+globalpragmas <$ boundscheck = false $>;
+
+public class Poisson {
+	static double [*,*] <$dist="[collapsed,block]"$>phi1;
+	static double [*,*] <$dist="[collapsed,block]"$>phi2;
+	static double [*,*] <$dist="[collapsed,block]"$>diff;
+	static tuple int^2 dim = [70,210];
+	static double precision_goal = 0.0001;
+	static int max_iter = 5000;
+//	static int max_iter = 1874; // for [70,210]
+//	static int max_iter = 1373; // for [70,70]
+	static int no_sources;
+	static tuple int^2 [] source_pos;
+	static double [] source_val;
+
+	public static void main(String [] args) {
+		Setup_Grid();
+		Solve();
+	}
+
+	<$resident$>static void Setup_Grid() {
+		tuple int^2 v;
+
+		phi1 = new double [dim[0],dim[1]]<$dist="[collapsed,block]"$>;
+		phi2 = new double [dim[0],dim[1]]<$dist="[collapsed,block]"$>;
+		diff = new double [dim[0],dim[1]]<$dist="[collapsed,block]"$>;
+		foreach (w :- :dim) {
+			phi1@w = 0.0;
+			phi2@w = 0.0;
+		}
+		source_pos = new tuple int^2 [3];
+		source_val = new double [3];
+		no_sources = 0;
+		v = [(int) ((double)0.35*dim[0]),(int) ((double)0.70*dim[1])];
+		source_pos[no_sources] = v;
+		source_val[no_sources++] = 4.0;
+		v = [(int) ((double)0.625*dim[0]),(int) ((double)0.75*dim[1])];
+		source_pos[no_sources] = v;
+		source_val[no_sources++] = 4.0;
+		v = [(int) ((double)0.375*dim[0]),(int) ((double)0.25*dim[1])];
+		source_pos[no_sources] = v;
+		source_val[no_sources++] = 4.0;
+
+		for (i :- :no_sources) {
+			phi1@(source_pos[i]) = source_val[i];
+			phi2@(source_pos[i]) = source_val[i];
+		}
+	}
+
+	static void Do_Step(int parity, double[*,*] <$dist="[collapsed,block]"$>phi1, double[*,*] <$dist="[collapsed,block]"$>phi2) {
+// Loop 1
+/**/
+		<$independent$>foreach (x :- 1+0:dim[0]-1:2, y :- 1+(1+parity+1)%2:dim[1]-1:2) {
+				phi1[x,y] = (<$resident$>phi2[x,y]);
+			}
+/**/
+// Loop 2
+/**/
+		<$independent$>foreach (x :- 1+1:dim[0]-1:2, y :- 1+(2+parity+1)%2:dim[1]-1:2) {
+				phi1[x,y] = (<$resident$>phi2[x,y]);
+			}
+/**/
+// Loop 3
+/**/
+		<$independent$>foreach (x :- 1+0:dim[0]-1:2, y :- 1+(1+parity+1)%2:dim[1]-1:2) {
+				phi2[x,y] = ((<$resident$>phi1[x+1,y] + phi1[x-1,y])
+					+ phi1[x,y+1] + phi1[x,y+(-1)])
+					* 0.25;
+			}
+/**/
+// Loop 4
+/**/
+		<$independent$>foreach (x :- 1+1:dim[0]-1:2, y :- 1+(2+parity+1)%2:dim[1]-1:2) {
+				phi2[x,y] = ((<$resident$>phi1[x+1,y] + phi1[x-1,y])
+					+ phi1[x,y+1] + phi1[x,y+(-1)])
+					* 0.25;
+			}
+/**/
+// Loop 5
+/**/
+		<$resident$>for (i :- :no_sources)
+			phi2@(source_pos[i]) = source_val[i];
+/**/
+	}
+
+	static void Solve() {
+		int count = 0;
+		double delta;
+		double delta1, delta2;
+
+		delta = 2*precision_goal;
+
+		while (delta > precision_goal && count < max_iter) {
+//		while (count < max_iter) {
+//			__println(1,count);
+			delta = 0.0;
+			Do_Step(0,phi1,phi2); // red
+			Do_Step(1,phi2,phi1); // black
+			foreach (x :- 1:dim[0]-1, y :- 1:dim[1]-1)
+				diff[x,y] = (<$resident$>Math.abs(phi2[x,y]-phi1[x,y]));
+		<$ reduction, neutral_element=0.0 $>
+			foreach (x :- 1:dim[0]-1, y :- 1:dim[1]-1)
+				delta = Math.max(delta,diff[x,y]);
+// bummer, delta is not distributed from P0, grrrrrr......
+			count++;
+		}
+		__println(1,"Number of iterations : ",count);
+//		System.out.println("Number of iterations : " + count);
+	}
+}	

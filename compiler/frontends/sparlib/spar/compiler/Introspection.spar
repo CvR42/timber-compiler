@@ -1,0 +1,23 @@
+// File: Introspection.spar
+//
+// Interfacing to the native introspection classes.
+
+package spar.compiler;
+
+public final class Introspection {
+    private Introspection() { /* this class is not instantiable by the general public */ }    
+
+    <$ noGC $> public static native int getClassId( java.lang.Object obj );
+    public static int ClassIdFromString( String s )
+    {
+	char namebuf[] = s.toCharArray();
+	int res = ClassIdFromString1( __getbuf(namebuf), namebuf.length );
+	__delete( namebuf );
+	return res;
+    }
+    <$ noGC $> public static native int ClassIdFromString1( __array(char) name, int length );
+    <$ noGC $> public static native __string getClassName( int id );
+    <$ noGC $> public static native int getModifiers( int id );
+    <$ noGC $> public static native boolean isInterface( int id );
+    <$ noGC $> public static native boolean isPrimitive( int id );
+}

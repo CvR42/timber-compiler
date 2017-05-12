@@ -1,0 +1,3 @@
+|| Tm datastructures shared by the align engine and the mapper
+
+VariableOwner == (guess:int, best:int, owners:[OwnerExpr], children:[VariableOwner]);

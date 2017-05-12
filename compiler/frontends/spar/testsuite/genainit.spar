@@ -1,0 +1,15 @@
+// Test the binding of methods with the superclass of the expected class
+
+/* **/
+package spar.testsuite;
+
+public class genainit {
+    int b[*,*] = { { 1, 2, 3 }, { 4, 5, 6 } };
+    int c[][] = { { 1, 2, 3 }, { 4, 5, 6 } };
+    int d[*,*] = new int[*,*] { { 1, 2, 3 }, { 4, 5, 6 } };
+    public static void main()
+    {
+	int a[*,*] = { { 1, 2, 3 }, { 4, 5, 6 } };
+	genainit x = new genainit();
+    }
+}

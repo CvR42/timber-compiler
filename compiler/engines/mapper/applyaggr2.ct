@@ -1,0 +1,534 @@
+/* Applyaggr2 engine
+
+   Match loops and sends/recvs and introduce Sydney's communication
+   primitives.
+   */
+
+.. File: applyaggr2.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtForeach
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "search.h"
+#include "applyaggr2.h"
+
+static int sndAggregations = 0;
+static int rcvAggregations = 0;
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Support ----------- */
+/*
+  If the cardinalities are independent, then there is a good chance that the iteration
+  space is rectangular. I think this test is enough...
+  */
+static bool isRectangularCardinality(cardinality_list cl)
+{
+    for (unsigned i=0; i<cl->sz; i++)
+    {
+	for (unsigned j=0; j<cl->sz; j++)
+	{
+	    if (i!=j)
+	    {
+		if (search_cardinality(cl->arr[j], cl->arr[i]->name->sym))
+		    return false;
+		for (unsigned k=0; k<cl->arr[i]->secondaries->sz; k++)
+		    if (search_cardinality(cl->arr[j], cl->arr[i]->secondaries->arr[k]->name->sym))
+			return false;
+	    }
+	}
+    }
+    return true;
+}
+
+static bool fillCardsToIndexMap(
+    int cardsToIndexMap[],
+    cardinality_list cards,
+    expression_list indices)
+{
+	/*
+	  Initialise the map
+	  */
+    int *mapCount = new int[cards->sz];
+    for (unsigned i=0; i<cards->sz; i++)
+    {
+	cardsToIndexMap[i] = -1;
+	mapCount[i] = 0;
+    }
+	/*
+	  Find the last index a cardinality(or secondary is referred in.
+	  Also count the number of indices a cardinality is referred in.
+	  */
+    for (unsigned i=0; i<cards->sz; i++)
+    {
+	for (unsigned j=0; j<indices->sz; j++)
+	{
+	    if (search_expression(indices->arr[j], cards->arr[i]->name->sym))
+	    {
+		cardsToIndexMap[i] = j;
+		mapCount[i]++;
+	    }
+	    for (unsigned k=0; k<cards->arr[i]->secondaries->sz; k++)
+	    {
+		if (search_expression(indices->arr[j], cards->arr[i]->secondaries->arr[k]->name->sym))
+		{
+		    cardsToIndexMap[i] = j;
+		    mapCount[i]++;
+		}
+	    }
+	}
+    }
+	/*
+	  A bit of semantic checking.
+	  */
+    bool res = true;
+    for (unsigned i=0; i<cards->sz; i++)
+    {
+	    /*
+	      A cardinality should be used exactly once.
+	      */
+	if (mapCount[i] != 1)
+	{
+	    fprintf(stderr,"AGGR2:fillmap: card%d used %d times(not 1)\n",i,mapCount[i]);
+	    res = false;
+	}
+	    /*
+	      Cardinalities should not be referred to in the same index.
+	      */
+	for (unsigned j=i+1; j<cards->sz; j++)
+	{
+	    if (cardsToIndexMap[i] == cardsToIndexMap[j])
+	    {
+		fprintf(stderr,"AGGR2:fillmap: card %d and %d used in same index\n",i,j);
+		res = false;
+	    }
+	}
+    }
+    delete [] mapCount;
+    return res;
+}
+
+/*
+  For each cardinality, find out if the index this cardinality is used in
+  can be expressed in the form ai+b.
+  If any of the cardinalities cannot be expressed in this way return false,
+  otherwise return true.
+  */
+static bool fillAandB(
+    cardinality_list cards,
+    expression_list indices,
+    expression A[],
+    expression B[],
+    int cardsToIndexMap[])
+{
+    for (unsigned i=0; i<cards->sz; i++)
+    {
+	extract_lineair(indices->arr[cardsToIndexMap[i]], cards->arr[i], &A[i], &B[i]);
+    }
+    bool res = true;
+    for (unsigned i=0; i<cards->sz; i++)
+    {
+	if (A[i] == expressionNIL)
+	    res = false;
+    }
+    return res;
+}
+
+/*
+  Assume everything went ok, so there is no need for additional checks.
+  */
+static void fillIndextoCardsMap(
+    int cardsToIndexMap[],
+    int indexToCardsMap[],
+    unsigned cardsSize,
+    unsigned indexSize)
+{
+    for (unsigned i=0; i<indexSize; i++)
+    {
+	indexToCardsMap[i] = -1;
+    }
+    for (unsigned i=0; i<cardsSize; i++)
+    {
+	indexToCardsMap[cardsToIndexMap[i]] = i;
+    }
+}
+
+static expression create_offset(
+    cardinality_list cards,
+    expression_list indices,
+    int indexToCardsMap[],
+    expression B[],
+    expression shape)
+{
+    expression res = expressionNIL;
+    for (unsigned i=0; i<indices->sz; i++)
+    {
+	expression elt = expressionNIL;
+	if (indexToCardsMap[i] == -1)
+	{
+		/*
+		  Constant index, simply copy it.
+		  */
+	    elt = rdup_expression(indices->arr[i]);
+	}
+	else
+	{
+		/* Variable index, offset equals the b factor from ai+b
+		   plus the lowerbound of the cardinality used in this index.
+		   */
+	    elt = new_ExprBinop(
+		rdup_expression(B[indexToCardsMap[i]]),
+		BINOP_PLUS,
+		rdup_expression(cards->arr[indexToCardsMap[i]]->lowerbound));
+	}
+	if (res == expressionNIL)
+	{
+	    res = elt;
+	}
+	else
+	{
+		/*
+		  Scale the previously computed offset.
+		  */
+	    res = new_ExprBinop(
+		res,
+		BINOP_TIMES,
+		new_ExprGetSize(
+		    rdup_expression(shape),
+		    new_ExprInt(i)));
+		/*
+		  And add this new offset to it.
+		  */
+	    res = new_ExprBinop(
+		res,
+		BINOP_PLUS,
+		elt);
+	}
+    }
+    return res;
+}
+
+/*
+  Each stride is the product of the lowerbound of the cardinality and
+  the a factor from ai+b.
+  This has to be multiplied by the size of all dimensions that are less
+  significant than the dimension indexed by the cardinality.
+  */
+static expression_list create_strides(
+    cardinality_list cards,
+    expression_list indices,
+    int cardsToIndexMap[],
+    expression A[],
+    expression shape)
+{
+    expression_list res = new_expression_list();
+    for (unsigned i=0; i<cards->sz; i++)
+    {
+	expression stride = new_ExprBinop(
+	    rdup_expression(cards->arr[i]->stride),
+	    BINOP_TIMES,
+	    rdup_expression(A[i]));
+	for (unsigned j=cardsToIndexMap[i]+1; j<indices->sz; j++)
+	{
+	    stride = new_ExprBinop(
+		stride,
+		BINOP_TIMES,
+		new_ExprGetSize(
+		    rdup_expression(shape),
+		    new_ExprInt(j)));
+	}
+	res = append_expression_list(res, stride);
+    }
+    return res;
+}
+
+/*
+  Each stride count is simply the difference between the upperbound and
+  the lowerbound.
+  Whoops: this should also be divided by the stride.
+  Whoops again: the division has to be rounded up!
+  */
+static expression_list create_stridecnts(
+    cardinality_list cards)
+{
+    expression_list res = new_expression_list();
+    for (unsigned i=0; i<cards->sz; i++)
+    {
+	expression count = new_ExprBinop(
+		    rdup_expression(cards->arr[i]->upperbound),
+		    BINOP_MINUS,
+		    rdup_expression(cards->arr[i]->lowerbound));
+	count = new_ExprBinop(
+	    count,
+	    BINOP_PLUS,
+	    new_ExprBinop(
+		rdup_expression(cards->arr[i]->stride),
+		BINOP_MINUS,
+		new_ExprInt(1)));
+	count = new_ExprBinop(
+	    count,
+	    BINOP_DIVIDE,
+	    rdup_expression(cards->arr[i]->stride));
+	res = append_expression_list(
+	    res,
+	    count);
+    }
+    return res;
+}
+
+/* ----------- Actors ----------- */
+
+static statement process_SmtSend(
+    cardinality_list cards, SmtSend orig, global_context /*gc*/)
+{
+	/*
+	  If a cardinality variable is used in the src/dest field of
+	  send/recv, then this can't be aggregated. This means it is
+	  likely we have the processor loop.
+	  */
+    if (orig->dest->tag != TAGExprName)
+	return statementNIL;
+    ExprName dest = to_ExprName(orig->dest);
+    if (search_cardinality_list(cards, dest->name->sym))
+	return statementNIL;
+    fprintf(stderr,"AGGR2:SND:processor is independent\n");
+    if (orig->elm->tag != TAGExprSelection)
+	return statementNIL;
+    fprintf(stderr,"AGGR2:SND:adressing shape\n");
+	/*
+	  The src/dest fields should be shapes with lineair index functions.
+	  First try: just the identity function.(Replaced with ai+b)
+	  First try: just 1-dim shapes.
+	  First try: just 1-dim loop.
+	  */
+    ExprSelection data = to_ExprSelection(orig->elm);
+	/* What we should do here is match each cardinality of the loop to
+	   exactly one dimension of the array. Dimensions of the array that
+	   aren't matched are constant.
+	   Use ExprGetSize function to obtain size of dimension at runtime
+	   as I don't know a sure way to do this at compile time.
+	   */
+    int *cardsToIndexMap = new int[cards->sz];
+    if (!fillCardsToIndexMap(cardsToIndexMap, cards, data->indices))
+    {
+	delete [] cardsToIndexMap;
+	return statementNIL;
+    }
+    fprintf(stderr,"AGGR2:SND:indices orthogonal etc.\n");
+
+#if 0
+    if (cards->sz != 1)
+    {
+	delete [] cardsToIndexMap;
+	return statementNIL;
+    }
+    fprintf(stderr,"AGGR2:SND:1-dim loop\n");
+    if (data->indices->sz != 1)
+    {
+	delete [] cardsToIndexMap;
+	return statementNIL;
+    }
+    fprintf(stderr,"AGGR2:SND:1-dim array\n");
+#endif
+    
+    expression *A = new expression[cards->sz];
+    expression *B = new expression[cards->sz];
+    if (!fillAandB(cards, data->indices, A, B, cardsToIndexMap))
+    {
+	for (unsigned i=0; i<cards->sz; i++)
+	{
+	    rfre_expression(A[i]);
+	    rfre_expression(B[i]);
+	}
+	delete [] A;
+	delete [] B;
+	delete [] cardsToIndexMap;
+	return statementNIL;
+    }
+    fprintf(stderr,"AGGR2:SND:everything okidoki, transforming now\n");
+    
+    int *indexToCardsMap = new int[data->indices->sz];
+    fillIndextoCardsMap(cardsToIndexMap, indexToCardsMap, cards->sz, data->indices->sz);
+    SmtAggrSend res = snew_SmtAggrSend(
+	rdup_expression(dest),
+	rdup_expression(data->shape),
+	create_offset(cards,data->indices,indexToCardsMap,B,data->shape),
+	new_ExprInt(cards->sz),
+	create_strides(cards,data->indices,cardsToIndexMap,A,data->shape),
+	create_stridecnts(cards),
+	new_ExprBoolean(TMFALSE));
+    sndAggregations++;
+
+    for (unsigned i=0; i<cards->sz; i++)
+    {
+	rfre_expression(A[i]);
+	rfre_expression(B[i]);
+    }
+    delete [] A;
+    delete [] B;
+    delete [] cardsToIndexMap;
+    delete [] indexToCardsMap;
+    return res;
+}
+
+static statement process_SmtReceive(
+    cardinality_list cards, SmtReceive orig, global_context /*gc*/)
+{
+	/*
+	  If a cardinality variable is used in the src/dest field of
+	  send/recv, then this can't be aggregated. This means it is
+	  likely we have the processor loop.
+	  */
+    if (orig->src->tag != TAGExprName)
+	return statementNIL;
+    ExprName src = to_ExprName(orig->src);
+    if (search_cardinality_list(cards, src->name->sym))
+	return statementNIL;
+    fprintf(stderr,"AGGR2:RCV:processor is independent\n");
+    if (orig->elm->tag != TAGLocSelection)
+	return statementNIL;
+    fprintf(stderr,"AGGR2:RCV:adressing shape\n");
+	/*
+	  The src/dest fields should be shapes with lineair index functions.
+	  First try: just the identity function.(Replaced with ai+b)
+	  First try: just 1-dim shapes.
+	  First try: just 1-dim loop.
+	  */
+    ExprSelection data = to_ExprSelection(orig->elm);
+	/* What we should do here is match each cardinality of the loop to
+	   exactly one dimension of the array. Dimensions of the array that
+	   aren't matched are constant.
+	   Use ExprGetSize function to obtain size of dimension at runtime
+	   as I don't know a sure way to do this at compile time.
+	   */
+    int *cardsToIndexMap = new int[cards->sz];
+    if (!fillCardsToIndexMap(cardsToIndexMap, cards, data->indices))
+    {
+	delete [] cardsToIndexMap;
+	return statementNIL;
+    }
+    fprintf(stderr,"AGGR2:RCV:indices orthogonal etc.\n");
+
+#if 0
+    if (cards->sz != 1)
+    {
+	delete [] cardsToIndexMap;
+	return statementNIL;
+    }
+    fprintf(stderr,"AGGR2:RCV:1-dim loop\n");
+    if (data->indices->sz != 1)
+    {
+	delete [] cardsToIndexMap;
+	return statementNIL;
+    }
+    fprintf(stderr,"AGGR2:RCV:1-dim array\n");
+#endif
+    
+    expression *A = new expression[cards->sz];
+    expression *B = new expression[cards->sz];
+    if (!fillAandB(cards, data->indices, A, B, cardsToIndexMap))
+    {
+	for (unsigned i=0; i<cards->sz; i++)
+	{
+	    rfre_expression(A[i]);
+	    rfre_expression(B[i]);
+	}
+	delete [] A;
+	delete [] B;
+	delete [] cardsToIndexMap;
+	return statementNIL;
+    }
+    fprintf(stderr,"AGGR2:RCV:everything okidoki, transforming now\n");
+
+    int *indexToCardsMap = new int[data->indices->sz];
+    fillIndextoCardsMap(cardsToIndexMap, indexToCardsMap, cards->sz, data->indices->sz); 
+    SmtAggrReceive res = snew_SmtAggrReceive(
+	rdup_expression(src),
+	rdup_expression(data->shape),
+	create_offset(cards,data->indices,indexToCardsMap,B,data->shape),
+	new_ExprInt(cards->sz),
+	create_strides(cards,data->indices,cardsToIndexMap,A,data->shape),
+	create_stridecnts(cards),
+	new_ExprBoolean(TMFALSE));
+    rcvAggregations++;
+
+    for (unsigned i=0; i<cards->sz; i++)
+    {
+	rfre_expression(A[i]);
+	rfre_expression(B[i]);
+    }
+    delete [] A;
+    delete [] B;
+    delete [] cardsToIndexMap;
+    delete [] indexToCardsMap;
+    return res;
+}
+
+static statement rewrite_SmtForeach_action(
+    SmtForeach e, global_context gc )
+{
+.call generate_walker_call "    " e SmtForeach SmtForeach
+    if (e->body->statements->sz != 1)
+	return e;
+    fprintf(stderr,"AGGR2:got single statement\n");
+    if (!pragma_list_contains_tmsymbol(e->pragmas, add_tmsymbol("independent")))
+	return e;
+    fprintf(stderr,"AGGR2:got independent loop\n");
+
+    if (!isRectangularCardinality(e->cards))
+	return e;
+    fprintf(stderr,"AGGR2:rectangular cardinalities\n");
+
+    statement res = statementNIL;
+    switch (e->body->statements->arr[0]->tag){
+	case TAGSmtSend:
+	    fprintf(stderr,"AGGR2:got send stmt\n");
+	    res = process_SmtSend(e->cards, to_SmtSend(e->body->statements->arr[0]), gc);
+	    break;
+	case TAGSmtReceive:
+	    fprintf(stderr,"AGGR2:got recv stmt\n");
+	    res = process_SmtReceive(e->cards, to_SmtReceive(e->body->statements->arr[0]), gc);
+	    break;
+	default:
+	    break;
+    }
+    if (res == statementNIL)
+    {
+	return e;
+    }
+    else 
+    {
+	rfre_statement(e);
+	return res;
+    }
+}
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_aggr2( vnusprog elm, global_context gc )
+{
+.call generate_descent_call "    " elm vnusprog vnusprog
+    if (sndAggregations != rcvAggregations)
+	internal_error("AGGR: number of send and recv aggregations do not match");
+    return elm;
+}
+

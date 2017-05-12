@@ -1,0 +1,16 @@
+# File: Make.std
+# Standard rules that every makefile should have.
+
+clean:
+	rm -f $(JUNK)
+ifdef SUBDIRS
+	@for i in $(SUBDIRS); do cd $$i; make clean; cd ..; done
+endif
+
+empty:
+	rm -f $(JUNK) $(PRECIOUSJUNK)
+ifdef SUBDIRS
+	@for i in $(SUBDIRS); do cd $$i; make empty; cd ..; done
+endif
+
+.PHONY: empty clean

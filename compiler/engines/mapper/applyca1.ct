@@ -1,0 +1,310 @@
+/*
+   Applyca1 engine
+
+   Do communication aggregation.
+   The first step: find the use of scalar tempos in loops and replace
+   them with array tempos with the extent of the loop.
+   */
+
+.. File: applyca1.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtForeach block
+.append actors ExprWrapper LocWrapper statement RoutineDeclaration
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "applyca1.h"
+#include "replace.h"
+
+..call generate_action_forwards "$(actors)"
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+.call generate_cutoff_pragma_action ExprWrapper resident
+.call generate_cutoff_pragma_action LocWrapper resident
+.call generate_cutoff_pragma_action statement resident
+.call generate_cutoff_pragma_action RoutineDeclaration resident   
+
+static statement rewrite_SmtForeach_action(
+    SmtForeach e, global_context gc )
+{
+.call generate_walker_call "    " e SmtForeach SmtForeach
+/*
+  We want L:U:S as 0:U':1
+  */
+    statement del_smt = statementNIL;
+
+    e->cards = normalise_cardinalities(e->cards,gc);
+//    if (e->cards->sz != 1)
+//        return e;
+    for (unsigned i=0; i<e->cards->sz; i++)
+    {
+// Is lowerbound 0?
+        if (!isIntValue(e->cards->arr[i]->lowerbound, 0))
+        {
+	    if (warning_level >= WARN_DEBUG)
+		fprintf(stderr, "CA1: bummer, L[%d] != 0\n",i);
+            return e;
+        }
+// Is stride 1?
+        if (!isIntValue(e->cards->arr[i]->stride, 1))
+        {
+	    if (warning_level >= WARN_DEBUG)
+		fprintf(stderr, "CA1: bummer, S[%d] != 1\n",i);
+            return e;
+        }
+#if 0
+        if (e->cards->arr[i]->upperbound->tag != TAGExprInt)
+            return e;
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr, "CA1: found constant upperbound[%d]\n",i);
+#endif
+    }
+    if (e->body->scope == tmsymbolNIL)
+    {
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr,"CA1:no local scope, so no tempos to be removed\n");
+	return e;
+    }
+    
+    if (warning_level >= WARN_DEBUG)
+	fprintf(stderr, "CA1: so far so good...\n");
+    statement_list sl = e->body->statements;
+    block nb = blockNIL;
+    SmtBlock nsb = SmtBlockNIL;
+    for (unsigned i=0; i<sl->sz; i++)
+    {
+        if (sl->arr[i]->tag != TAGSmtAssign)
+            continue;
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr, "CA1: found ass.stmt at pos %d\n",i);
+        SmtAssign sa = to_SmtAssign(sl->arr[i]);
+	if (!is2owned(sa))
+            continue;
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr, "CA1: found 2-owned assignment\n");
+	location actual_lhs = pierceLocationWrapper(sa->lhs);
+	OwnerExpr_list lhs_on = OwnerExpr_listNIL;
+	if (lhsHasOwner(sa)) {
+	    lhs_on = to_LocWrapper(sa->lhs)->on;
+	}
+	else
+	{
+	    lhs_on = sa->on;
+	}
+	
+        if (actual_lhs->tag != TAGLocName)
+            continue;
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr, "CA1: found lhs LocName\n");
+        int pos = declaration_list_find_pos(
+            gc->prog->declarations, to_LocName(actual_lhs)->name);
+        if (pos == -1)
+            continue;
+        declaration d = gc->prog->declarations->arr[pos];
+        assert (d != declarationNIL);
+
+	type lhs_type = typeNIL;
+	origsymbol lhs_name = origsymbolNIL;
+	Pragma_list  lhs_pragmas = Pragma_listNIL;
+	if (d->tag != TAGDeclLocalVariable) {
+	    if (warning_level >= WARN_DEBUG)
+		fprintf(stderr,"CA1:non local var, no rewrite\n");
+	    continue;
+	}
+	else {
+	    DeclLocalVariable dlv = to_DeclLocalVariable(d);
+	    if (dlv->scope != e->body->scope)
+	    {
+		if (warning_level >= WARN_DEBUG)
+		    fprintf(stderr,"CA1:var from outer scope, no rewrite\n");
+		continue;
+	    }
+	    lhs_type = dlv->t;
+	    lhs_name = dlv->name;
+	    lhs_pragmas = dlv->pragmas;
+	}
+	
+	if (nb == blockNIL) {
+            nb = new_block(
+                gen_tmsymbol( "__scope_" ),
+                gen_origin(),
+                Pragma_listNIL,
+                OwnerExpr_listNIL,
+                new_statement_list()
+	    );
+            nsb = new_SmtBlock(
+                0,
+                gen_origin(),
+                Pragma_listNIL,
+                OwnerExpr_listNIL,
+                nb
+	    );
+        }
+	
+	TypeShape ts = new_TypeShape( new_size_list(), rdup_type(lhs_type) );
+	type nt = typeNIL;
+	
+        if (pragma_list_contains_tmsymbol(
+            d->pragmas,
+            add_tmsymbol( "isTempo" )))
+	{
+	    if (warning_level >= WARN_DEBUG)
+		fprintf(stderr, "CA1: found tempo declaration\n");
+	    nt = ts;
+	}
+	else 
+	{
+	    if (warning_level >= WARN_DEBUG)
+		fprintf(stderr, "CA1: found non-tempo declaration\n");
+	    nt = ts;
+	}
+	
+        {
+            expression tmpSize = rdup_expression(e->cards->arr[0]->upperbound);
+
+            for (unsigned j=1; j<e->cards->sz; j++) {
+                tmpSize = new_ExprBinop(
+                    tmpSize,
+                    BINOP_TIMES,
+                    rdup_expression(e->cards->arr[j]->upperbound));
+            }
+            ts->sizes = append_size_list(ts->sizes,
+                                         new_SizeExpression(tmpSize));
+        }
+        DeclLocalVariable nd2 = new_DeclLocalVariable(
+            gen_origsymbol( "__tmp_ca1_" ),
+            0,
+            rdup_Pragma_list( lhs_pragmas ),
+            rdup_tmsymbol( nb->scope ),
+            new_TypePointer( nt ),
+            new_OptExpr( new_ExprNulledNew( rdup_type( nt ), NULL ) )
+	);
+	del_smt = new_SmtDelete(
+	    origsymbolNIL,	// label name
+	    gen_origin(),
+	    Pragma_listNIL,
+	    OwnerExpr_listNIL,
+	    new_ExprName( rdup_origsymbol( nd2->name ) )
+	);
+        gc->prog->declarations = append_declaration_list(gc->prog->declarations, nd2);
+	if( warning_level >= WARN_DEBUG ){
+	    fprintf(stderr, "CA1: made new declaration in enclosing scope\n");
+	}
+        tmsymbol findSym = lhs_name->sym;
+        expression shape = new_ExprName(rdup_origsymbol(nd2->name));
+        expression_list indices = new_expression_list();
+            // One index, product of them all, not list!
+            // Do complicated stuff to get ai+b form
+        {
+            expression *factors = new expression[e->cards->sz];
+
+            for (unsigned j=0; j<e->cards->sz; j++) {
+                factors[j] = expressionNIL;
+                for (unsigned k=0; k<j; k++) {
+                    if (factors[k] == expressionNIL) {
+                        factors[k] = rdup_expression(e->cards->arr[j]->upperbound);
+                    }
+                    else {
+                        factors[k] = new_ExprBinop(
+                            factors[k],
+                            BINOP_TIMES,
+                            rdup_expression(e->cards->arr[j]->upperbound));
+                    }
+                }
+            }
+            for (unsigned j=0; j<e->cards->sz; j++) {
+                if (factors[j] == expressionNIL) {
+                    factors[j] = new_ExprName(rdup_origsymbol(e->cards->arr[j]->name));
+                }
+                else {
+                    factors[j] = new_ExprBinop(
+                        factors[j],
+                        BINOP_TIMES,
+                        new_ExprName(rdup_origsymbol(e->cards->arr[j]->name))
+		    );
+                }
+            }
+            expression index = factors[e->cards->sz-1];
+            for (int j=e->cards->sz-2; j>=0; j--) {
+                index = new_ExprBinop( factors[j], BINOP_PLUS, index );
+            }
+            indices = append_expression_list( indices, index );
+            delete [] factors;
+        }
+        expression replaceExpr = new_ExprSelection(
+            new_ExprDeref( shape ),
+            indices
+	);
+        location replaceLoc = new_LocSelection(
+            new_ExprDeref( rdup_expression(shape) ),
+            rdup_expression_list(indices));
+        for (unsigned j=i; j<sl->sz; j++) {
+            sl->arr[j] = replace_statement(sl->arr[j], findSym, replaceExpr, replaceLoc, gc);
+        }
+        rfre_expression( replaceExpr );
+        rfre_location( replaceLoc );
+        mark_declaration_list( gc->prog->declarations, pos );
+    }
+    if( nb != blockNIL ){
+        nb->statements = append_statement_list( nb->statements, e );
+	if( del_smt != statementNIL ){
+	    nb->statements = append_statement_list( nb->statements, del_smt );
+	}
+        return nsb;
+    }
+    else {
+	assert( del_smt == statementNIL );
+        return e;
+    }
+}
+
+/*
+  Save the previous scope and replace with current scope.
+  If current scope has no name and a variable is created, then the scope
+  gets a name and this name has to be set.
+  */
+static block rewrite_block_action(
+  block e, global_context gc )
+{
+    if( e == 0 ){
+        return e;
+    }
+.call generate_cutoff_pragma_stmt resident
+.call push_scope    
+.call generate_walker_call "    " e block block
+// If something was done a scope was created, so scope has to be set.
+.call conditional_set_scope e->scope
+.call pop_scope
+    return e;
+}
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_ca1(
+    vnusprog elm, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+.call init_scope
+.call generate_descent_call "    " elm vnusprog vnusprog
+    gc->prog->declarations = delete_marked_declaration_list(gc->prog->declarations);
+    return elm;
+}

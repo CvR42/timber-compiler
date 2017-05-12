@@ -1,0 +1,28 @@
+// Test the cardinality notation
+
+package spar.testsuite;
+
+public class okfor {
+    public static void main()
+    {
+	for( i:-0:3 ){
+	    __println( 1, i );
+	}
+	__println( 1, "---" );
+	for( i:-:9:3 ){
+	    __println( 1, i );
+	}
+	__println( 1, "---" );
+	for( i:-6:23:3 ){
+	    __println( 1, i );
+	}
+	__println( 1, "---" );
+	for( v:-:[4,4] ){
+	    __println( 1, v[0], ' ', v[1] );
+	}
+	__println( 1, "---" );
+	for( v:-[1,1]:[9,9]:[2,2] ){
+	    __println( 1, v[0], ' ', v[1] );
+	}
+    }
+}

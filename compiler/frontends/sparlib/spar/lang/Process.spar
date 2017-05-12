@@ -1,0 +1,16 @@
+// The process class.
+//
+// Subclasses of this class represent processes with an independent state
+// that can be run on their own processor with their own local memory.
+// For classes that implement interface spar.lang.Spawnable the compiler
+// implements a number of restrictions that ensure that the processes
+// truely have their own state.
+
+package spar.lang;
+
+public class Process implements Forkable {
+
+public Process() {
+}
+
+}

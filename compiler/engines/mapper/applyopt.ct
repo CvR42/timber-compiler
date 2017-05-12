@@ -1,0 +1,87 @@
+/*
+   Applyopt engine
+
+   Replace Owner and IsOwner expressions for variables that are aligned
+   with a shape. Necessary to avoid lots of broadcasts.
+   */
+
+.. File: applyopt.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors ExprOwner ExprIsOwner
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "vnusctl.h"
+#include "applyopt.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+/*
+  Rule opt 2: rewrite Owner expressions
+  If the Owner expression contains a reference to a variable, and
+  that variable has been aligned to a location, replace the variable name
+  with the location.
+  Due to ca1 this can also be a tempo array...
+  */
+static ExprOwner rewrite_ExprOwner_action(
+  ExprOwner e, global_context gc )
+{
+    location l = find_owneron_location(gc->prog->declarations, e->shape);
+    if (l == NULL)
+        return e;
+    fprintf(stderr,"OPT:replacing now,should NOT have happened\n");
+    fprintf(stderr,"OPT:please check ot and ca rulesets\n");
+    rfre_location(e->shape);
+    e->shape = rdup_location(l);
+    return e;
+}
+
+/*
+  Rule opt 3: rewrite IsOwner expressions
+  Same as Owner expressions.
+  */
+static ExprIsOwner rewrite_ExprIsOwner_action(
+  ExprIsOwner e, global_context gc )
+{
+    location l = find_owneron_location(gc->prog->declarations, e->shape);
+    if (l == NULL)
+        return e;
+    fprintf(stderr,"OPT:replacing now,should NOT have happened\n");
+    fprintf(stderr,"OPT:please check ot and ca rulesets\n");
+    rfre_location(e->shape);
+    e->shape = rdup_location(l);
+    return e;
+}
+
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_opt(
+    vnusprog elm, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+    (void) rewrite_ExprOwner_walker;
+    (void) rewrite_ExprIsOwner_walker;
+    
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}

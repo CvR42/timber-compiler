@@ -1,0 +1,11 @@
+// File: Array.spar
+
+package spar.lang;
+
+public interface Array(| type t, int rank |)
+{
+    t getElement( [int^rank] index ) throws IndexOutOfBoundsException;
+    void storeElement( [int^rank] index, t elm )
+	throws IndexOutOfBoundsException, ArrayStoreException;
+    [int^rank] getSize();
+}

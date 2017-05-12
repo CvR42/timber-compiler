@@ -1,0 +1,10 @@
+// Simple file with a syntax error
+// Note the missing ';'
+
+package spar.testsuite;
+
+public class errsyntax {
+    public static void main() {
+	int n = 3
+    }
+}

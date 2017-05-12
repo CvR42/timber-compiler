@@ -1,0 +1,77 @@
+Index: mangle.ct
+===================================================================
+RCS file: /home/rama/timber/CVS/compiler/frontends/spar/mangle.ct,v
+retrieving revision 1.681
+diff -C7 -r1.681 mangle.ct
+*** mangle.ct	2001/07/11 16:26:55	1.681
+--- mangle.ct	2001/07/12 08:30:35
+***************
+*** 982,996 ****
+  	    expressionNIL,
+  	    add_origsymbol( method->name ),
+  	    this_parameters,
+  	    parms,
+  	    0
+  	)
+      );
+!     return res;
+  }
+  
+  // Given an expression that presumably represents a reference, construct
+  // an expression that causes a null pointer exception to be thrown
+  // when necessary.
+  static expression build_notnullassert( mangle_data *ctx, expression x )
+  {
+--- 982,1033 ----
+  	    expressionNIL,
+  	    add_origsymbol( method->name ),
+  	    this_parameters,
+  	    parms,
+  	    0
+  	)
+      );
+!     if( ctx->in_typeof ){
+!         return res;
+!     }
+!     tmsymbol str = gen_tmsymbol( "str" );
+!     FieldDeclaration fd = new_FieldDeclaration(
+! 	rdup_origin( ctx->org ),
+! 	Pragma_listNIL,
+! 	origsymbol_listNIL,
+! 	0,		// flags
+! 	false,		// used?
+! 	new_origsymbol( str, rdup_origin( ctx->org ) ),
+! 	new_ObjectType( add_origsymbol( "java.lang.String" ) ),
+! 	new_OptExprNone()
+!     );
+! .call generate_descent_call "    " fd FieldDeclaration FieldDeclaration
+!     ctx->mangled_pre_spill_smts = append_statement_list(
+! 	ctx->mangled_pre_spill_smts,
+! 	fd
+!     );
+!     AssignStatement smt = new_AssignStatement(
+! 	gen_origin(),
+! 	Pragma_listNIL,
+! 	new_origsymbol_list(),
+! 	ASSIGN,
+! 	new_VariableNameExpression(
+! 	    new_origsymbol( translate_variable( ctx, str ), rdup_origin( ctx->org ) ),
+! 	    VAR_GENERATED|VAR_LOCAL|VAR_FINAL
+! 	),
+! 	res
+!     );
+!     ctx->mangled_pre_spill_smts = append_statement_list(
+! 	ctx->mangled_pre_spill_smts,
+! 	smt
+!     );
+!     return new_VariableNameExpression(
+! 	new_origsymbol( translate_variable( ctx, str ), rdup_origin( ctx->org ) ),
+! 	VAR_GENERATED|VAR_LOCAL|VAR_FINAL
+!     );
+  }
+  
+  // Given an expression that presumably represents a reference, construct
+  // an expression that causes a null pointer exception to be thrown
+  // when necessary.
+  static expression build_notnullassert( mangle_data *ctx, expression x )
+  {

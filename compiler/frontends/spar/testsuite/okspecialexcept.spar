@@ -1,0 +1,56 @@
+import java.io.*;
+
+class t1 {
+    int v;
+}
+
+public class okspecialexcept {
+    public static void f( int i )
+    {
+    }
+    public static void main( String args[] ){
+	int a[] = null;
+	t1 x = null;
+
+	// This is just to confuse the compiler, so that it does
+	// not propagate the null, since that triggers an ICE in
+	// the GCC backend.
+	if( args.length>20 ){
+	    a = new int[10];
+	}
+	try {
+	    int sz;
+	    sz = a.length;
+	}
+	catch( Exception e ){
+	    System.out.println( "Exception: " + e );
+	}
+	try {
+	    int sz;
+	    sz = a.getSize( 0 );
+	}
+	catch( Exception e ){
+	    System.out.println( "Exception: " + e );
+	}
+	try {
+	    [int] sz;
+	    sz = a.getSize();
+	}
+	catch( Exception e ){
+	    System.out.println( "Exception: " + e );
+	}
+	try {
+	    x.v = 1;
+	}
+	catch( Exception e ){
+	    System.out.println( "Exception: " + e );
+	}
+	try {
+	    int n = 3;
+	    x.v = n;
+	}
+	catch( Exception e ){
+	    System.out.println( "Exception: " + e );
+	}
+    }
+}

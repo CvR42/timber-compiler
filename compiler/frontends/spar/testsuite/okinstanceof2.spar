@@ -1,0 +1,32 @@
+
+class tsuper {
+}
+
+public final class okinstanceof2 extends tsuper {
+    static inline void say_yesno( final boolean val ){
+	if( val ){
+	    __println( 1, "Yes" );
+	}
+	else {
+	    __println( 1, "No" );
+	}
+    }
+    public static void main(){
+	final int i = 3;
+	okinstanceof2 x = new okinstanceof2();
+
+	say_yesno( type int instanceof Object );
+	say_yesno( i instanceof Object );
+	say_yesno( type Object instanceof Object );
+	say_yesno( type Object instanceof okinstanceof2 );
+	say_yesno( type okinstanceof2 instanceof Object );
+	say_yesno( type okinstanceof2 instanceof tsub );
+	say_yesno( x instanceof Object );
+	say_yesno( x instanceof tsuper );
+	say_yesno( x instanceof okinstanceof2 );
+	say_yesno( x instanceof tsub );
+    }
+}
+
+class tsub extends okinstanceof2 {
+}

@@ -1,0 +1,13 @@
+// Minimal test program.
+
+package spar.testsuite;
+
+import spar.testsuite.subpack.*;
+
+public class okpckfield {
+    public static void main()
+    {
+	hello.staticfield = 42;
+	hello.announcer.say();
+    }
+}

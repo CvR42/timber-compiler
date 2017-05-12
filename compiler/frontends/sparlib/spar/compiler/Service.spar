@@ -1,0 +1,56 @@
+// File: Service.spar
+//
+// Helper functions
+
+package spar.compiler;
+
+public final class Service {
+    private Service() { /* this class is not instantiable by the general public */ }    
+
+    // Specialized version of arraycopy for char arrays.
+    <$ noGC $> final public static void arraycopy( char src[], int srcOffset, char dst[], int dstOffset, int count ){
+	for [i:-:count] {
+	    dst[dstOffset+i] = src[srcOffset+i];
+	}
+    }
+
+    // Specialized version of arraycopy for byte arrays.
+    <$ noGC $> final public static void arraycopy( byte src[], int srcOffset, byte dst[], int dstOffset, int count ){
+	for [i:-:count] {
+	    dst[dstOffset+i] = src[srcOffset+i];
+	}
+    }
+
+    // Given a file handle 'hnd', a pointer to a byte array 'buf'
+    // an offset 'off' and a length 'len', write these
+    <$ noGC $> final public static native boolean write( int hnd, byte buf[], int off, int len );
+
+    // Given a file handle 'hnd', a pointer to a byte array 'buf'
+    // an offset 'off' and a length 'len', read at most 'len' bytes.
+    // return the number of bytes actually read, or -1 if there was
+    // an error.
+    <$ noGC $> final public static native int read( int hnd, byte buf[], int off, int len );
+
+    // Given a file path, open the file for input, and return the file
+    // handle. If there is an error, return a negative number.
+    final public static native int openInput( char name[] ) ;
+
+    // Given a file path, open the file for output, and return the file
+    // handle. If there is an error, return a negative number.
+    final public static native int openOutput( char name[] ) ;
+
+    // Given a file path, open the file for append, and return the file
+    // handle. If there is an error, return a negative number.
+    final public static native int openAppend( char name[] ) ;
+
+    // Given a file handle, close the file.
+    final public static native boolean close( int hnd );
+
+    // Given a file handle and a number of bytes, skip that many
+    // bytes in the file
+    <$ noGC $> final public static native long skip( int hnd, long n );
+
+    // Given a file handle, return the number of bytes that can be
+    // read from it without blocking.
+    <$ noGC $> final public static native int available( int hnd );
+}

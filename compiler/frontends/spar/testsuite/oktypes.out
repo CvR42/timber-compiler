@@ -1,0 +1,75 @@
+Yep, true is true
+Yep, false is false
+c: (-2,-3)
+c: (-2,-3)
+c: (3,9)
+c: (-93,81)
+c: (-98,69)
+b: TRUE
+c: (2,9)
+i: -42
+n: 16
+x: -462.8
+1
+100
+n: 0
+i = 14
+i = 13
+i = 12
+i = 11
+i = 10
+i = 9
+i = 8
+i = 7
+i = 6
+i = 5
+i = 4
+i = 3
+i = 2
+i = 1
+i = 0, j = 0
+i = 0, j = 1
+i = 0, j = 2
+i = 0, j = 3
+i = 1, j = 0
+i = 1, j = 1
+i = 1, j = 2
+i = 1, j = 3
+i = 2, j = 0
+i = 2, j = 1
+i = 2, j = 2
+i = 2, j = 3
+1=2 no
+1!=2 yes
+1<2 yes
+1<=2 yes
+1>2 no
+1>=2 no
+1=1 yes
+1!=1 no
+1<1 no
+1<=1 yes
+1>1 no
+1>=1 yes
+2=1 no
+2!=1 yes
+2<1 no
+2<=1 no
+2>1 yes
+2>=1 yes
+223=1 no
+223!=1 yes
+223<1 no
+223<=1 no
+223>1 yes
+223>=1 yes
+yes
+12
+left shifts: int:4 byte:4 short:4 long:4
+right shifts: int:13 byte:13 short:13 long:13
+unsigned right shifts: int:13 byte:13 short:13 long:13
+shifts of negative numbers: left:-44 right:-3 unsigned right:1073741821
+bitwise operations: and:16 or:19 xor:3
+boolean operations: and:FALSE or:TRUE xor:TRUE
+bitwise not:-13 143
+boolean not:TRUE FALSE

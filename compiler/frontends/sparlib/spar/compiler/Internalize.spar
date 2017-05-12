@@ -1,0 +1,76 @@
+// File: Internalize.spar
+//
+// String internalization handler
+
+package spar.compiler;
+
+import spar.util.Vector;
+
+public final class Internalize {
+    private Internalize() { /* this class is not instantiable by the general public */ }    
+
+    // Since internalization calls are only generated late in a late
+    // compiler phase, we cannot rely on the standard static initializer
+    // to take care of the correct initialization of the string pool.
+    // Therefore the internalization itself must test whether there
+    // already is a string pool.
+    private static Vector(|type String|) stringpool = null;
+
+
+    // Given an array of characters, return one of the exisiting elements
+    // of the string pool if it has a character array with the same
+    // elements, else return a new String.
+    public static String internalize( char[] arr ){
+	if( stringpool == null ){
+	    stringpool = new Vector(|type String|)( 10 );
+	}
+	for [i :- :stringpool.size()] {
+	    String e = stringpool[i];
+	    if( e.compareTo( arr ) == 0 ){
+		return e;
+	    }
+	}
+	String s = new String( arr );
+	stringpool.addElement( s );
+	return s;
+    }
+
+    // Given an array of characters, return one of the exisiting elements
+    // of the string pool if it has a character array with the same
+    // elements, else return a new String.
+    public static String internalize( __array(char) arr, int length ){
+	if( stringpool == null ){
+	    stringpool = new Vector(|type String|)( 10 );
+	}
+	for [i :- :stringpool.size()] {
+	    String e = stringpool[i];
+	    if( e.compareTo( arr, length ) == 0 ){
+		return e;
+	    }
+	}
+	String s = new String( arr, length );
+	stringpool.addElement( s );
+	return s;
+    }
+
+    // Given a character array 'buf' and a Vnus string 's', fill
+    // 'buf' with the unicode-decoded version of 's'.
+    // The computed length of the array is passed in as 'length'. This
+    // should match with the actually produced length.
+    <$ noGC $> private static native void unicodify( __array(char) buf, int length, __string s );
+
+    // Given a character array 'buf', return the length of the string.
+    // array that is needed to store the unicodified version of this array.
+    private static native int strlen( __string s );
+
+    public static String internalize( __string s ){
+
+	final int length = strlen( s );
+
+	__array(char) buf = (__array(char)) Allocator.allocate( length, __sizeof(char) );
+	unicodify( buf, length, s );
+ 	String res = internalize( buf, length );
+	Allocator.free( (__array(byte)) buf );
+	return res;
+    }
+}

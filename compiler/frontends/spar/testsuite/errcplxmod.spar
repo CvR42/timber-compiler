@@ -1,0 +1,12 @@
+// File: errcplxmod.spar
+//
+// The '%' operator on complex numbers is not defined. Make sure the
+// compiler reports this properly.
+
+public class errcplxmod {
+    public static void main(){
+	complex c = 1;
+
+	__println( 1, c % c );
+    }
+}

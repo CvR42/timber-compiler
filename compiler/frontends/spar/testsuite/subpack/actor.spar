@@ -1,0 +1,8 @@
+package spar.testsuite.subpack;
+
+public class actor {
+    public static void say()
+    {
+	__println( 1, "To be or not to be" );
+    }
+}

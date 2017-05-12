@@ -1,0 +1,24 @@
+// After JLS2 15.7.2    Evaluate Operands before Operation
+//
+// This program differs from the example in JLS2 (divisor is a class
+// variable instead of a local variable, since the compiler has
+// gotten a bit too smart, and now gcc warns about a division by zero
+// if 'divisor' is a local variable.
+
+public class okjlslossbig {
+
+    static volatile int divisor = 0;
+    public static void main(String[] args) {
+        try {
+            int i = 1 / (divisor * loseBig());
+        } catch (Exception e) {
+            System.out.println(e);
+        }
+    }
+
+
+    static int loseBig() throws Exception {
+        throw new Exception("Shuffle off to Buffalo!");
+    }
+
+}

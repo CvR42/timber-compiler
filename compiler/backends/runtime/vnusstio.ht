@@ -1,0 +1,55 @@
+.insert lib.t
+/* vnusstio.h
+ */
+
+#ifndef __VNUSSTIO_H__
+#define __VNUSSTIO_H__
+
+#include "vnustypes.h"
+#include "vnusstd.h"
+#include <stdarg.h>
+
+#define vnusin 0
+#define vnusout 1
+#define vnuserr 2
+
+#define  FALSE  0
+#define  TRUE   1
+
+// These defines are to accommodate Java native method name mangling
+// until the time we go to a real Java runtime library.
+// Very temporary, until we have a proper Vnus package in place
+//
+// NOTE: Disabled in favour of real function stubs that can be overloaded
+// with processor parameter version. -- Leo.
+//#define Java_VnusLib_open(nm,mode) v__open(nm,mode)
+//#define Java_VnusLib_close(f) v__close(f)
+//#define Java_VnusLib_writeLong(f,v) v__writeLong(f,v)
+//#define Java_VnusLib_writeInt(f,v) v__writeInt(f,v)
+//#define Java_VnusLib_writeComplex(f,v) v__writeComplex(f,v)
+//#define Java_VnusLib_writeBoolean(f,v) v__writeBoolean(f,v)
+//#define Java_VnusLib_writeFloat(f,v) v__writeFloat(f,v)
+//#define Java_VnusLib_writeString(f,v) v__writeString(f,v)
+//
+//#define Java_spar_testsuite_VnusLib_open(nm,mode) v__open(nm,mode)
+//#define Java_spar_testsuite_VnusLib_close(f) v__close(f)
+//#define Java_spar_testsuite_VnusLib_writeLong(f,v) v__writeLong(f,v)
+//#define Java_spar_testsuite_VnusLib_writeInt(f,v) v__writeInt(f,v)
+//#define Java_spar_testsuite_VnusLib_writeComplex(f,v) v__writeComplex(f,v)
+//#define Java_spar_testsuite_VnusLib_writeBoolean(f,v) v__writeBoolean(f,v)
+//#define Java_spar_testsuite_VnusLib_writeFloat(f,v) v__writeFloat(f,v)
+//#define Java_spar_testsuite_VnusLib_writeString(f,v) v__writeString(f,v)
+
+.call gen_extern_decls v__
+
+// For backward compatibility
+..call gen_inline_old_stubs v__ v__
+
+
+// For Spar compatibility  -- Leo
+.call gen_inline_spar_stubs Java_VnusLib_ v__
+.call gen_inline_spar_stubs Java_spar_testsuite_VnusLib_ v__
+..call gen_inline_spar_old_stubs Java_VnusLib_ v__
+..call gen_inline_spar_old_stubs Java_spar_testsuite_VnusLib_ v__
+
+#endif

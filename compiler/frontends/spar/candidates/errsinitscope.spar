@@ -1,0 +1,13 @@
+// This should cause a compile-time error, since 'j' is used before
+// it is defined. Currently it doesn't.
+//
+// See JLS 8.5
+
+package spar.testsuite;
+
+public class errsinitscope {
+    static int i = j + 2;
+    static int j = 4;
+    public static void main(){
+    }
+}

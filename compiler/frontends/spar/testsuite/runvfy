@@ -1,0 +1,78 @@
+#!/bin/sh
+#
+# Run a verify test.
+
+TIMBERSRCROOT=../../..
+SPARFLAGS=-g
+
+# Places of executables
+SPAR=$TIMBERSRCROOT/driver/spar
+VERBOSE=0
+FILE=
+SPARPATH=$TIMBERSRCROOT/frontends:$SPARPATH
+export SPARPATH
+
+for f; do
+    case "$f" in
+	-v)
+	    VERBOSE=1;;
+
+	-*)
+	    echo "unknown option '$f'"; exit 2 ;;
+
+	*)
+	    FILE=$f ;;
+    esac
+done
+
+if [ x$FILE = x ]; then
+    echo "No file specified"
+    exit 2
+fi
+BASENAME=`basename $FILE .spar`
+BASENAME=`basename $BASENAME .java`
+ERRFILE=$BASENAME.err
+TESTERRFILE=$BASENAME.testerr
+FLAGSFILE=$BASENAME.flags
+PROFFILE=$BASENAME.gprof
+SPARFLAGS=--verify
+FAIL=0
+if [ ! -e $ERRFILE ]; then
+    echo "Creating default (=empty) error reference file '$ERRFILE'"
+    touch $ERRFILE
+fi
+if [ -e $FLAGSFILE ]; then
+    SPARFLAGS="$SPARFLAGS `cat $FLAGSFILE`"
+fi
+CMD="$SPAR $SPARFLAGS $FILE"
+if [ $VERBOSE = 1 ]; then
+    echo $CMD
+fi
+$CMD 2> $TESTERRFILE
+COMPILESTATUS=$?
+# Put aside any profile that has been created during this run
+if [ -e gmon.out ]; then
+    mv gmon.out $PROFFILE
+fi
+CMD="diff $TESTERRFILE $ERRFILE"
+if [ $VERBOSE = 1 ]; then
+    echo $CMD
+fi
+$CMD
+STATUS=$?
+if [ $STATUS != 0 ]; then
+    echo "Spar compiler error messages differ from reference."
+    echo "If you think the reference is wrong, update with:"
+    echo "    cp $TESTERRFILE $ERRFILE"
+    FAIL=1
+fi
+if [ $COMPILESTATUS != 0 ]; then
+    echo "Compilation failed with status code $COMPILESTATUS"
+    exit 1
+fi
+CMD="rm -f $TESTERRFILE"
+if [ $VERBOSE = 1 ]; then
+    echo $CMD
+fi
+$CMD
+exit 0

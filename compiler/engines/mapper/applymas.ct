@@ -1,0 +1,132 @@
+/*
+   Applymas engine
+
+   Do communication aggregation.
+   Intermediate step.
+   If two consecutive independent foreach's contain single assignment
+   statements annotated with "isAssignToSelf", and these statements
+   operate on the same shape, then these loops can be merged into one loop
+   with extended bounds and just one assignment statement.
+   */
+
+.. File: applymas.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors statement_list
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "applymas.h"
+#include "replace.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+static statement_list rewrite_statement_list_action(
+    statement_list e, global_context gc )
+{
+.call generate_walker_call "    " e statement_list statement_list
+    for (int i=0; i<((int)e->sz-1); i++)
+    {
+	if (e->arr[i]->tag != TAGSmtForeach ||
+	    e->arr[i+1]->tag != TAGSmtForeach)
+	    continue;
+	SmtForeach loop1 = to_SmtForeach(e->arr[i]);
+	SmtForeach loop2 = to_SmtForeach(e->arr[i+1]);
+	if (loop1->body->statements->sz != 1 ||
+	    loop2->body->statements->sz != 1)
+	    continue;
+	if (loop1->body->statements->arr[0]->tag != TAGSmtAssign ||
+	    loop2->body->statements->arr[0]->tag != TAGSmtAssign)
+	    continue;
+	SmtAssign as1 = to_SmtAssign(loop1->body->statements->arr[0]);
+	SmtAssign as2 = to_SmtAssign(loop2->body->statements->arr[0]);
+	if (!pragma_list_contains_tmsymbol(as1->pragmas,
+					   add_tmsymbol("isAssignToSelf")))
+	    continue;
+	if (!pragma_list_contains_tmsymbol(as2->pragmas,
+					   add_tmsymbol("isAssignToSelf")))
+	    continue;
+	assert (as1->lhs->tag == TAGLocWrapper);
+	assert (as2->lhs->tag == TAGLocWrapper);
+	    /*
+	      The Owners of the LHSs should be the same as a consequence
+	      of how "assign to self" statements are generated.
+	      We will therefore not check them for equality.
+	      */
+	LocWrapper lhs1 = to_LocWrapper(as1->lhs);
+	LocWrapper lhs2 = to_LocWrapper(as2->lhs);
+	assert (lhs1->l->tag == TAGLocSelection);
+	assert (lhs2->l->tag == TAGLocSelection);
+	LocSelection realLhs1 = to_LocSelection(lhs1->l);
+	LocSelection realLhs2 = to_LocSelection(lhs2->l);
+	if (loop1->cards->sz != 1 ||
+	    loop2->cards->sz != 1)
+	    continue;
+	if (realLhs1->indices->sz != 1 ||
+	    realLhs2->indices->sz != 1)
+	    continue;
+	if (realLhs1->shape->tag == TAGExprName &&
+	    realLhs2->shape->tag == TAGExprName)
+	{
+	    ExprName en1 = to_ExprName(realLhs1->shape);
+	    ExprName en2 = to_ExprName(realLhs2->shape);
+	    if (en1->name->sym != en2->name->sym)
+		continue;
+	}
+	else if (realLhs1->shape->tag == TAGExprDeref &&
+		 realLhs2->shape->tag == TAGExprDeref &&
+		 to_ExprDeref(realLhs1->shape)->ref->tag == TAGExprName &&
+		 to_ExprDeref(realLhs2->shape)->ref->tag == TAGExprName)
+	{
+	    ExprName en1 = to_ExprName(to_ExprDeref(realLhs1->shape)->ref);
+	    ExprName en2 = to_ExprName(to_ExprDeref(realLhs2->shape)->ref);
+	    if (en1->name->sym != en2->name->sym)
+		continue;
+	}
+	else
+	{
+	    continue;
+	}
+	    /*
+	      At this point we have to look at the L:U:S of both loops.
+	      Stride should be 1, and lower and upperbounds should be merged
+	      using the offsets used in the address expressions.
+	      */
+	if (!isIntValue(loop1->cards->arr[0]->stride, 1) ||
+	    !isIntValue(loop1->cards->arr[0]->stride, 1))
+	    continue;
+	    /*
+	      Look out, there may be secondaries. We should therefore
+	      use the function extract_lineair, not determine_lineair.
+	      */
+	fprintf(stderr,"MAS: possible mergable statements\n");
+    }
+    return e;
+}
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_mas(
+    vnusprog elm, global_context gc )
+{
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}

@@ -1,0 +1,10 @@
+|| File: tmadmin.ds
+||
+|| Wrapper on top of svnus.ds
+||
+|| Internal data structures and subclasses
+
+%include "svnus.ds";
+
+|| A symbol translation in the translation table for use in name mangling.
+translation == ( from:tmsymbol, to:tmsymbol, level:int );

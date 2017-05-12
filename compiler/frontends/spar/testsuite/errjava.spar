@@ -1,0 +1,21 @@
+// Spar language extensions to Java. These should be flagged by the
+// compiler if the --java flag is given.
+
+package spar.testsuite;
+
+
+public class errjava {
+    static complex c = complex (1,0);	// Complex is not supported by Java.
+    static int n[*];			// Not the Java notation of an array.
+    static int m[*,*];			// Multi-dim array.
+    public static void main()
+    {
+	__println( 1, c );
+	for( i <~ :5 ) __println( 1, "huh?" );
+	foreach( i <~ :5 ) __println( 1, "huh?" );
+	each {
+	    __println( 1, "huh?" );
+	    __println( 1, "wot?" );
+	}
+    }
+}

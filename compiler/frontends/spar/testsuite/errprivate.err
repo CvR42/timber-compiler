@@ -1,0 +1,3 @@
+errprivate.spar:10: nosay() only matches inaccessible methods in spar.testsuite.subpack.hello
+errprivate.spar:11: Variable 'nofield' in 'spar.testsuite.subpack.hello' is not accessible from 'spar.testsuite.errprivate'.
+errprivate.spar:12: hello(int) matches an inaccessible constructor in spar.testsuite.subpack.hello

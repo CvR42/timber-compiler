@@ -1,0 +1,19 @@
+// File: oknoconstchain.spar
+//
+// Test wether more complicated expressions are deemed compiletime constants.
+// This one is delibrately not.
+
+class t1 {
+    final public static int X = 1;
+    final public static int Y = X+oknoconstchain.Z;
+    static {
+	__println( 1, "Hello fans" );
+    }
+}
+
+public class oknoconstchain {
+    public static int Z = 1;	// Not a compile-time constant
+    public static void main( String args[] ){
+	__println( 1, t1.Y );
+    }
+}

@@ -1,0 +1,17 @@
+// File: oksubinit.spar
+//
+// The second static initialization example of JLS2 12.4.1
+
+class Super {
+    static int taxi = 1729;
+}
+
+class Sub extends Super {
+    static { __println( 1, "Sub " ); }
+}
+
+public class oksubinit {
+    public static void main(){
+	__println( 1, Sub.taxi );
+    }
+}

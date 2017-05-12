@@ -1,0 +1,373 @@
+/*
+   Applyot2 engine
+
+   Derived from applyot
+   Insert owner tests for statements with 'new' owners
+   Insert send/receives for assignment statements with 'new' owner conflicts
+   */
+
+.. File: applyot2.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors statement_list SmtAssign statement
+.append actors DeclFunction DeclProcedure block
+.append actors RoutineDeclaration
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "vnusctl.h"
+#include "applyot2.h"
+#include "issubset.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+static statement rewrite_statement_action(
+    statement e, global_context gc );
+
+.call generate_admin_prelst_action statement_list
+.call generate_admin_current_parms_action DeclFunction
+.call generate_admin_current_parms_action DeclProcedure
+
+/*
+  Replace a communication statement with conditional
+  send and receive statements.
+  The receive statement is returned while the send statement is put
+  into the prelst.
+  Either the statement or the lhs has an owner.
+  The rhs also should have an owner.
+  */
+static statement rewrite_communication_action(
+  SmtAssign e, global_context gc )
+{
+    if (!isBasicType(e->rhs, gc))
+	internal_error("OT2: can only send basic types");
+    
+    int sendToSelfTest = false;
+    assert(gc->current_parms != 0);
+	//Let's find the owner and remove it from the annotations
+    bool lhsHasOwnerB = lhsHasOwner(e);
+    OwnerExpr lhsOwner = OwnerExprNIL;
+    if (lhsHasOwnerB)
+    {
+	lhsOwner = rdup_OwnerExpr(to_LocWrapper(e->lhs)->on->arr[0]);
+	to_LocWrapper(e->lhs)->on = delete_OwnerExpr_list(to_LocWrapper(e->lhs)->on, 0);
+    }
+    else
+    {
+	assert(e->on != OwnerExpr_listNIL &&
+	       e->on->sz == 1);
+	lhsOwner = rdup_OwnerExpr(e->on->arr[0]);
+	e->on = delete_OwnerExpr_list(e->on, 0);
+    }
+    OwnerExpr rhsOwner = OwnerExprNIL;
+    rhsOwner = rdup_OwnerExpr(to_ExprWrapper(e->rhs)->on->arr[0]);
+    to_ExprWrapper(e->rhs)->on = delete_OwnerExpr_list(to_ExprWrapper(e->rhs)->on, 0);
+
+    if (issubset_owner(lhsOwner,rhsOwner))
+    {
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr,"OT2: lhsOwner subset of rhsOwner, not generating communication\n");
+	rfre_OwnerExpr(lhsOwner);
+	rfre_OwnerExpr(rhsOwner);
+	return e;
+    }
+    
+    expression currentProc = build_currentProcessor_expression(gc);
+
+	// This should contain a test to see if the lhs is replicated or not
+    if (false)
+    {
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr, "OT2: not replicated, YES, do send-to-self-test\n");
+	sendToSelfTest = true;
+    }
+    
+    if (warning_level >= WARN_RULE)
+	fprintf(stderr,"OT2: generating send/recv\n");
+    ExprGetNewMaster SenderRHS = new_ExprGetNewMaster(
+	rhsOwner);
+    OwnerExpr rhsOwner1 = rdup_OwnerExpr(rhsOwner);
+    ExprIsNewMaster IsSenderRHS = new_ExprIsNewMaster(
+	rhsOwner1,
+	build_procList(
+	    rdup_expression(currentProc),
+	    rhsOwner1,
+	    gc));
+    ExprGetNewOwner OwnerLHS = new_ExprGetNewOwner(
+        lhsOwner);
+    OwnerExpr lhsOwner1 = rdup_OwnerExpr(lhsOwner);
+    ExprIsNewOwner IsOwnerLHS = new_ExprIsNewOwner(
+        lhsOwner1,
+	build_procList(
+	    rdup_expression(currentProc),
+	    lhsOwner1,
+	    gc));
+    
+    SmtIf ifsend = snew_SmtIf(
+	IsSenderRHS,
+	snew_block(),
+	snew_block());
+    ifsend->pragmas = new_Pragma_list();
+    SmtSend nssmt = snew_SmtSend(
+        OwnerLHS,
+        rdup_expression(e->rhs));
+    if (!sendToSelfTest)
+    {
+        ifsend->thenbody->statements = append_statement_list(
+            ifsend->thenbody->statements,
+            nssmt);
+    }
+    else
+    {
+        SmtIf ifsendme = snew_SmtIf(
+            new_ExprUnop(
+                UNOP_NEGATE,
+                rdup_expression(IsSenderRHS)),
+            snew_block(),
+            snew_block());
+        ifsend->thenbody->statements = append_statement_list(
+            ifsend->thenbody->statements,
+            ifsendme);
+        ifsendme->thenbody->statements = append_statement_list(
+            ifsendme->thenbody->statements,
+            nssmt);
+    }
+    SmtIf ifrecv = snew_SmtIf(
+        IsOwnerLHS,
+        snew_block(),
+        snew_block());
+    ifrecv->pragmas = new_Pragma_list();
+    SmtReceive nrsmt = snew_SmtReceive(
+        SenderRHS,
+        rdup_location(e->lhs));
+    if (!sendToSelfTest)
+    {
+        ifrecv->thenbody->statements = append_statement_list(
+            ifrecv->thenbody->statements,
+            nrsmt);
+    }
+    else
+    {
+        SmtIf ifrecvme = snew_SmtIf(
+            new_ExprUnop(
+                UNOP_NEGATE,
+                rdup_expression(IsSenderRHS)),
+            snew_block(),
+            snew_block());
+        ifrecvme->thenbody->statements = append_statement_list(
+            ifrecvme->thenbody->statements,
+            nrsmt);
+        ifrecvme->elsebody->statements = append_statement_list(
+            ifrecvme->elsebody->statements,
+            rdup_statement(e));
+        ifrecv->thenbody->statements = append_statement_list(
+            ifrecv->thenbody->statements,
+            ifrecvme);
+    }
+    SmtWaitPending waitpend = snew_SmtWaitPending();
+        
+    FlagPragma nfp = new_FlagPragma(add_origsymbol("communication"));
+    ifsend->pragmas = append_Pragma_list(ifsend->pragmas, nfp);
+    ifrecv->pragmas = append_Pragma_list(ifrecv->pragmas,
+                                         rdup_FlagPragma(nfp));
+    rfre_SmtAssign(e);
+    rfre_expression(currentProc);
+.call conditional_init_prelst
+    gc->prelst = append_statement_list(gc->prelst, ifsend);
+    gc->prelst = append_statement_list(gc->prelst, ifrecv);
+    return waitpend;
+}
+
+/*
+  Put an if(owner) test around a computation asignment.
+  Either the statement or the lhs has an owner.
+  */
+static statement rewrite_computation_action(
+  SmtAssign e, global_context gc )
+{
+    assert(gc->current_parms != 0);
+	//Let's find the owner and remove it from the annotations
+    bool lhsHasOwnerB = lhsHasOwner(e);
+    OwnerExpr lhsOwner = OwnerExprNIL;
+    if (lhsHasOwnerB)
+    {
+	assert(to_LocWrapper(e->lhs)->on->sz == 1);
+	lhsOwner = rdup_OwnerExpr(to_LocWrapper(e->lhs)->on->arr[0]);
+	to_LocWrapper(e->lhs)->on = delete_OwnerExpr_list(to_LocWrapper(e->lhs)->on, 0);
+    }
+    else
+    {
+	assert(e->on != OwnerExpr_listNIL &&
+	       e->on->sz == 1);
+	lhsOwner = rdup_OwnerExpr(e->on->arr[0]);
+	e->on = delete_OwnerExpr_list(e->on, 0);
+    }
+    
+    expression currentProc = build_currentProcessor_expression(gc);
+
+    SmtIf nsi = snew_SmtIf(
+	new_ExprIsNewOwner(
+	    lhsOwner,
+	    build_procList(
+		currentProc,
+		lhsOwner,
+		gc)),
+        snew_block(),
+        snew_block());
+    nsi->thenbody->statements = append_statement_list(
+        nsi->thenbody->statements,
+        e);
+    return nsi;
+}
+
+/*
+  Discern between 'communication' and 'computation' statements
+  */
+static statement rewrite_SmtAssign_action(
+  SmtAssign e, global_context gc )
+{
+    bool stmtHasOwnerB;
+    bool is2ownedB;
+    bool lhsHasOwnerB;
+    bool rhsHasOwnerB;
+
+    stmtHasOwnerB = stmtHasOwner(e);
+    is2ownedB = is2owned(e);
+    lhsHasOwnerB = lhsHasOwner(e);
+    rhsHasOwnerB = rhsHasOwner(e);
+
+//    fprintf(stderr,"s:%d,l:%d,r:%d,2:%d\n",stmtHasOwnerB,lhsHasOwnerB,
+//	    rhsHasOwnerB, is2ownedB);
+    assert (!(!stmtHasOwnerB && rhsHasOwnerB));
+
+    if (stmtHasOwnerB || lhsHasOwnerB)
+    {
+	if (is2ownedB)
+	    return rewrite_communication_action(e, gc);
+	else
+	    return rewrite_computation_action(e, gc);
+    }
+    return e;
+}
+
+/*
+  Cut-off all non-valid descends.
+  */
+static block rewrite_block_action(
+  block e, global_context gc )
+{
+    if (!gc->do_statements)
+        return e;
+
+    bool blockHasOwner;
+
+.call generate_walker_call "    " e block block
+    blockHasOwner = (e->on != OwnerExpr_listNIL &&
+		    e->on->sz != 0);
+    assert(!(blockHasOwner && e->on->sz != 1));
+    if (blockHasOwner)
+    {
+	if (warning_level >= WARN_RULE)
+	    fprintf(stderr,"ot2:block has owner\n");
+	OwnerExpr stmtOwner = rdup_OwnerExpr(e->on->arr[0]);
+	e->on = delete_OwnerExpr_list(e->on, 0);
+	
+	expression currentProc = build_currentProcessor_expression(gc);
+
+	SmtIf nsi = snew_SmtIf(
+	    new_ExprIsNewOwner(
+		stmtOwner,
+		build_procList(
+		    currentProc,
+		    stmtOwner,
+		    gc)),
+	    e,
+	    snew_block());
+	block nb = snew_block();
+	nb->statements = append_statement_list(
+	    nb->statements,
+	    nsi);
+	return nb;
+    }
+    return e;
+}
+
+static statement rewrite_statement_action(
+  statement e, global_context gc )
+{
+    bool stmtHasOwnerB;
+
+.call generate_walker_call "    " e statement statement
+    stmtHasOwnerB = stmtHasOwner(e);
+    assert(!(stmtHasOwnerB && e->on->sz != 1));
+    if (stmtHasOwnerB)
+    {
+	if (warning_level >= WARN_RULE)
+	    fprintf(stderr,"ot2:statement has owner\n");
+	OwnerExpr stmtOwner = rdup_OwnerExpr(e->on->arr[0]);
+	e->on = delete_OwnerExpr_list(e->on, 0);
+	
+	expression currentProc = build_currentProcessor_expression(gc);
+
+	SmtIf nsi = snew_SmtIf(
+	    new_ExprIsNewOwner(
+		stmtOwner,
+		build_procList(
+		    currentProc,
+		    stmtOwner,
+		    gc)),
+	    snew_block(),
+	    snew_block());
+	nsi->thenbody->statements = append_statement_list(
+	    nsi->thenbody->statements,
+	    e);
+	return nsi;
+    }
+    return e;
+}
+
+/*
+  Only descend for Routine bodies.
+  */
+static RoutineDeclaration rewrite_RoutineDeclaration_action(
+  RoutineDeclaration e, global_context gc )
+{
+.call push_do_statements
+    gc->do_statements = true;
+.call generate_walker_call "    " e RoutineDeclaration RoutineDeclaration
+.call pop_do_statements
+    return e;
+}
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_ot2(
+    vnusprog elm, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+    (void) rewrite_statement_list_walker;
+    (void) rewrite_SmtAssign_walker;
+    
+.call init_do_statements
+.call init_current_parms
+.call init_prelst
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}

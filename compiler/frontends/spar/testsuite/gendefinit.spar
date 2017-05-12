@@ -1,0 +1,26 @@
+//package spar.testsuite;
+
+import java.io.*;
+
+public class gendefinit {
+    static byte b;
+    static short s;
+    static int i;
+    static long l;
+    static float f;
+    static double d;
+    static char c;
+    static complex cx;
+    public static void main(){
+
+	__println( 1, "default values:" );
+	__println( 1, "byte: ", b );
+	__println( 1, "short: ", s );
+	__println( 1, "int: ", i );
+	__println( 1, "long: ", l );
+	__println( 1, "float: ", f );
+	__println( 1, "double: ", d );
+	__println( 1, "char: ", c );
+	__println( 1, "complex: ", cx );
+    }
+}

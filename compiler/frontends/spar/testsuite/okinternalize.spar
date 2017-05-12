@@ -1,0 +1,26 @@
+// File: okinternalize.spar
+//
+// Test the handling of string constant internalization.
+
+public class okinternalize {
+    static String wrap( String s ){
+	return s;
+    }
+    public static void main(){
+	String s1 = "A";
+	String s2;
+
+	s2 = "A";
+	String s3 = wrap( "A" );
+
+	if( s1 != s2 ){
+	    __println( 1, "internalization for string 1 or 2 failed" );
+	}
+	if( s2 != s3 ){
+	    __println( 1, "internalization for string 2 or 3 failed" );
+	}
+	if( s1 != s3 ){
+	    __println( 1, "internalization for string 1 or 3 failed" );
+	}
+    }
+}

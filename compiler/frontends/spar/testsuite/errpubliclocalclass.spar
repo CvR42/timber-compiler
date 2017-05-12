@@ -1,0 +1,18 @@
+// File: errpubliclocalclass
+//
+// Verify that Spar rejects local classes to be declared public.
+
+public final class errpubliclocalclass {
+    int n = 3;
+    public class inner {
+	int getn() { return n; }
+    }
+    public static void main( String args[] ){
+	t outer = new t();
+	t.inner i = outer.new inner();
+	public class localclass {
+	    int getn() { return 3; }
+	};
+	System.out.println( i.getn() );
+    }
+}

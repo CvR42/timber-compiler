@@ -1,0 +1,29 @@
+// Minimal test program.
+
+package spar.testsuite;
+
+public class alignbug2
+{
+    static final boolean NAH = true;
+    static final int N = 3000;
+    static double A[*] <$on = (lambda(i) P[(cyclic i)])$> = new double[N];
+    static double C[*] <$on = (lambda(i) P[(blockcyclic i 5)])$> = new double[N];
+    static double D[*] <$on = (lambda(i) P[(local 0)])$> = new double[N];
+
+    public static void main()
+        {
+                <$ independent $> foreach (i:-:N)
+                    <$on = P[(blockcyclic @i 3)]$>A[i] = i * 1.1d;
+                <$ independent $> foreach (i:-:N)
+                    C[i] = A[i];
+                <$ independent $> foreach (i:-:N)
+                    D[i] = C[i];
+	    if (NAH){
+		for (i:-:N){
+		    __print(1,i);
+		    __print(1," ");
+		    __println(1, D[i]);
+		}
+	    }
+        }
+}

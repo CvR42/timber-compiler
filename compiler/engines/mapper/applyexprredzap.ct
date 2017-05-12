@@ -1,0 +1,74 @@
+/* Applyexprredzap engine
+
+   The hoist engine (and others) aren't capable yet of splitting
+   ExprReduction's in two multiple parts with different owners.
+   In other words: ZAP!
+   */
+
+.. File: applyexprred.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors ExprReduction
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "applyexprredzap.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Support ----------- */
+static expression recursive_peel(
+    ExprReduction e )
+{
+    assert (e->operands->sz > 0);
+    expression partial = e->operands->arr[0];
+    e->operands->arr[0] = expressionNIL;
+    e->operands = delete_expression_list(e->operands, 0);
+    if (e->operands->sz != 0)
+    {
+	partial = new_ExprBinop(
+	    partial,
+	    e->optor,
+	    recursive_peel(e));
+    }
+    return partial;
+}
+
+/* ----------- Actors ----------- */
+
+static expression rewrite_ExprReduction_action(
+    ExprReduction e, global_context gc )
+{
+.call generate_walker_call "    " e ExprReduction ExprReduction
+    expression ne = recursive_peel(e);
+    rfre_expression(e);
+    if (warning_level >= WARN_RULE)
+	fprintf(stderr,"ERZ: zapped an expression reduction\n");
+    return ne;
+}
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_expr_red_zap( vnusprog e, global_context gc )
+{
+.call generate_descent_call "    " e vnusprog vnusprog
+    return e;
+}
+

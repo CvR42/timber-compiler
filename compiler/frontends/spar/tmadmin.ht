@@ -1,0 +1,10 @@
+.. file: tmadmin.ht
+/* Template file:      tmadmin.ht
+   datastructure file: ${dsfilename}
+   tm version:         $(tmvers) 
+ */
+
+#include "vnus_types.h"
+
+.insert tmadmin.t
+.include tmc.ht

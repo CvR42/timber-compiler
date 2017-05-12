@@ -1,0 +1,326 @@
+% Written by:
+% * Joachim Trescher
+% * Hans de Vreught
+
+\section{Types}
+
+In \Booster\ a {\em type} is specified by an expression in
+\Language{\NT{Type}} and represents a set of values.  \Booster\ uses
+structural type equivalence: two types are the same if their
+definitions become the same when expanded; i.e.\ when all constant
+expressions are replaced by their values and all type names are
+replaced by their definitions.
+
+Every expression has a statically determined type, which contains
+every value that the expression can produce. The type of a designator
+is the type of the variable it produces. 
+
+{\em Assignability} and {\em type compatibility} are defined in terms
+of a syntactically specified inclusion relation on types. In the
+following we discuss type constructors and type inclusion rules in more
+detail.
+
+\subsection*{Intrinsic Types}
+
+There are six intrinsic types which are denoted by the following
+predeclared identifiers.
+
+\begin{tabular}{ll}
+\hlf
+\T{BOOLEAN} & the enumeration $\{$ {\sf true, false} $\}$\\
+\T{NATURAL} & all natural values represented by the implementation\\
+\T{INTEGER} & all integers represented by the implementation\\
+\T{REAL}    & all real values represented by the implementation\\
+\T{COMPLEX} & all complex values represented by the implementation\\
+\T{STRING}  & the elements of \Language{\TC{StringLiteral}}\\
+\hlf
+\end{tabular}
+
+
+\subsection*{Shape and view types}
+
+A shape type specifies an indexed collection of component variables,
+called the {\em elements} of the shape. A shape type declaration has
+the syntactical form:
+
+\begin{frag}
+TYPE S = SHAPE \{ E \} OF BaseType;
+\end{frag}
+
+\noindent where {\tt E} is a constant expression of type natural and
+{\tt BaseType} is a type specification.
+
+The indices are the natural values in the range {\tt [0..E-1]}, where
+the value of {\tt E} is determined at compile time and is called the
+length of the shape. The elements of a shape all have the same size
+and the same type, called the {\em base type}.
+
+An expression of the syntactical form
+
+\begin{frag}
+SHAPE \{<E$_{\tt 0}$>  \verb'#' <E$_{\tt 1}$>  \verb'#' \ldots \verb'#'
+<E$_{\tt n}$>\} OF <T>; 
+\end{frag}
+
+\noindent is understood as an abbreviation of 
+
+\begin{frag}
+SHAPE \{<E$_{\tt 0}$>\} OF\\
+\> SHAPE \{<E$_{\tt 1}$>\} OF\\
+\>\> \dots\\
+\>\>\> SHAPE \{<E$_{\tt n}$>\} OF <T>;
+\end{frag}
+
+\noindent The form of a shape is the sequence of its lengths in each
+dimension. More precisely, the form of a shape is its length followed
+by the form of its base type. The length of the form of a shape is
+called its {\em rank}.
+
+In the declaration of formal parameters of functions and procedures
+\Booster\ allows to specify the length of a dimension by a
+\texttt{CONST <Id>} declaration. The corresponding
+dimension of such a parameter is arbitrary but does not change during
+the execution of a procedure call. The {\em generic} constant
+\texttt{<Id>} may be used as a constant in the body of the
+corresponding function or procedure. Each function or procedure call
+initializes the generic constant \texttt{<Id>} with the length of the
+corresponding dimension of the actual parameter.
+
+A view type is a ``virtual'' shape type whose rank and (intrinsic)
+base type are determined by a view type specification. Unlike shapes,
+a view type specification may specify the length of one or more
+dimensions to be arbitrary (and possibly changing dynamically) using
+the operator \T{*}. Informally, views may be considered as bounded set
+of references which point to elements (whose type is an intrinsic
+type) of a single variable, thus ``viewing'' the elements of this
+variable through a different indexing scheme. However, the declaration
+of a view will not cause the allocation of computer memory. Therefore,
+during the compilation process views will be eliminated by replacing
+accesses to them by calls to the appropriate access function.
+
+A view type declaration has the syntactical form
+
+\begin{frag}
+TYPE V = VIEW \{<E$_{\tt 0}$>  \verb'#' <E$_{\tt 1}$>  \verb'#'
+\ldots \verb'#'  <E$_{\tt n}$>\} OF IntrinsicType; 
+\end{frag} 
+
+\noindent where the form of \textsf{V} is defined by the expressions
+{\tt <E$_{\tt 0}$>} \ldots {\tt <E$_{\tt n}$>}. And {\tt
+IntrinsicType} is an intrinsic type.
+
+\subsection*{Defined-by and Uses relations}
+
+The type declarations visible in a scope $S$ define two relations on
+type identifiers. The {\em defined-by} relation ``$\succ$'' is used to
+track down type equivalences, and is defined as follows:
+
+A type identifier $Id_2$ is defined by a type identifier $Id_1$, or
+$Id_2 \succ Id_1$, iff
+
+\begin{itemize}
+
+\item there is a type declaration of the form {\tt <Id$_{\tt 2}$> =
+<Id$_{\tt 1}$>}  visible in $S$, or
+
+\item there exists a type identifier $Id_3$ in $S$ such that,
+\(
+Id_2 \succ Id_3 \wedge  Id_3 \succ Id_1
+\)
+\end{itemize}
+
+
+The {\em uses} relation ``$\gg$'' is used to check which type is used
+in the type declaration of an other type identifier. A type identifier
+$Id_1$ uses a type identifier $Id_2$, or $Id_1 \gg Id_2$, iff
+
+\begin{itemize}
+
+\item in $S$ a type declaration of the following form is visible
+
+\begin{frag}
+<Id$_{\tt 1}$> =
+SHAPE <CardList> OF <Id$_{\tt 2}$>;
+\end{frag}
+
+\item there exists a type identifier $Id_3$ such that,
+\(
+Id_1 \gg Id_3 \wedge  Id_3 \gg Id_2
+\)
+\end{itemize}
+
+\noindent The identifiers of a given scope and name space must be
+well-defined. Therefore, we require the ordering induced by the union
+of the relations $\succ$ and $\gg$ to be a strict partial ordering
+(i.e.\ there are no cycles in the defined-by and uses relations). The
+minimal elements of this induced ordering are intrinsic types (i.e.\
+all \Booster\ types are defined in terms of intrinsic types and type
+constructors). Moreover, there is no identifier $Id: Types.tex,v 1.1.1.1 1995/10/17 13:34:01 leo Exp $ such that \(
+\mbox{\em IntrinsicType} \gg Id \; \vee \; \mbox{\em IntrinsicType}
+\succ Id \) for any intrinsic type (i.e.\ intrinsic types may not be
+redefined).
+
+We define the set of all types {\em used} by a variable declaration as
+the set of type identifiers {\small \tt <Id'>} such that
+
+\begin{itemize}
+
+\item the variable declaration has the form {\tt "<IdList> : SHAPE
+<CardList> OF <Id>;" }
+
+\item the variable declaration has the form { \tt "<IdList> : <Id>;" }
+\item there exists an {\small \tt <Id>} such that {\small \tt <Id>}
+$\gg$ {\small \tt <Id'>} and one of the above conditions hold for
+{\small \tt <Id'>}.
+
+\end{itemize}
+
+\subsection*{Relations on types}
+
+\noindent In order to define some relations on types we first
+introduce two functions on \Booster\ types. The function {\em form}
+computes the form of a member of a type and represents it as a
+sequence. In the result of the function \form\ a definite length is
+represented by a natural number, the generic constants in the
+declaration of a formal parameter are represented by a {\em generic
+variable}, and an indefinite dimension of a view type is represented
+by a {\em free variable}. The base type function \bt\ yields the base
+type of a type identifier by first expanding a type (i.e.\ recursively
+replacing all identifiers by their definition) and then returning the
+base type of the expanded type. Thus the result of an application of
+the function \bt\ is always an intrinsic type. More formally:
+
+Let \genvar\ and \freevar\ be infinite sets of generic and free
+variables, respectively, such that $\freevar \cap \genvar =
+\emptyset$. Let $\Forms ~ \widehat{=} ~ \mbox{\bf seq}(\mbox{\tt
+NATURAL} \cup \genvar \cup \freevar)$, and let the operator $\concat$
+denote the concatenation of sequences. In the following definitions
+the identifiers $F$ and $G$ denote a fresh free or generic variable,
+respecitvely, $C$ and $C'$ denote an element of
+$\Language{\NT{CardinalityList}}$, $c$ denotes an element of
+$\Language{\NT{Cardinality}}$, $E$ denotes an element of
+$\Language{\NT{Expressions}}$, and {\em Id} denotes an element of
+$\Language{\TC{Identifier}}$. Given the set \TypeDefSet\ we define:
+
+\[
+\begin{array}{rcl}
+\multicolumn{3}{c}{
+\form: \Language{\NT{Type}} \rightarrow \Forms}\\
+\hlf
+\form(T) & \widehat{=} &
+\left\{\begin{array}{ll}
+\langle \rangle	
+        & \mbox{if } T = \T{STRING} \vee\\
+	& \mbox{if } T = \T{BOOLEAN} \vee\\
+	& \mbox{if } T = \T{NATURAL} \vee\\
+	& \mbox{if } T = \T{INTEGER} \vee\\
+	& \mbox{if } T = \T{REAL} \vee\\
+	& \mbox{if } T = \T{COMPLEX} \vee\\
+\form_c(C)\concat\form(T')
+	& \mbox{if } T = \T{SHAPE}\ \T{\{}\ C\ \T{\}}\ \T{OF}\ T' \\
+\form_c(C)\concat\form(T')
+	& \mbox{if } T = \T{VIEW}\ \T{\{}\ C\ \T{\}}\ \T{OF}\ T' \\
+\form(T')
+        & \mbox{if } T' \in \Language{\NT{Type}}\ \mbox{for some } (T,
+	T') \in \TypeDefSet \\
+\end{array}
+\right.\\
+\end{array}
+\]
+
+\noindent
+The cardinality function $\form_{c}: \Language{\NT{CardinalityList}} 
+\rightarrow \Forms$, auxiliar to \form, is defined as follows:
+
+\[
+\begin{array}{rcl}
+form_{c}(C) & \widehat{=} & \left\{
+\begin{array}{ll}
+\langle v(E)\rangle
+	& \mbox{if } C = Id\ \T{:}\ E \\
+	& \mbox{or } C = E \\
+\langle F \rangle
+	& \mbox{if } C = Id\ \T{*}\\
+\langle G \rangle
+	& \mbox{if } C = \T{CONST}\ Id \\
+\form_c(c)\concat\form_c(C')
+	& \mbox{if } C = c\ \T{\#}\ C' \\
+\end{array}
+\right.\\
+\end{array}
+\]
+
+\noindent where the function $v$ evaluates to a natural value if its
+argument is a constant expression, or returns a free new variable from
+\genvar:
+
+\[
+\begin{array}{rcl}
+\multicolumn{3}{c}{
+v: \Language{\NT{Expression}} \rightarrow \mbox{\tt NATURAL} \cup
+\genvar}\\
+\hlf
+v(E) & \widehat{=} & \left\{
+\begin{array}{ll}
+n 
+  & \mbox{if $E$ is a constant expression that evaluates to } n\\
+G
+  & \mbox{for a fresh free variable $G \in \genvar$ otherwise}
+\end{array}
+\right.
+\end{array}
+\]
+
+\noindent We now define the base type function \bt:
+
+\[
+\begin{array}{rcl}
+\multicolumn{3}{c}{
+\bt: \Language{\NT{Types}} \rightarrow \Language{\NT{Types}}}\\
+\hlf
+\bt(T) = \left\{\begin{array}{ll}
+\bt(T') & \mbox{if } T = \T{SHAPE}\ C\ \T{OF}\ T'\\
+T'      & \mbox{if } T = \T{VIEW}\ C\ \T{OF}\ T'\\
+\bt(T') & \mbox{if } (T,T') \in \TypeDefSet \mathrm{ for\ some } T'\\
+T	& \mbox{otherwise}
+\end{array}
+\right.
+\end{array}
+\]
+
+\noindent Given the following transitive and symmetric {\em inclusion}
+relation on intrinsic types
+
+\begin{quote}
+\(
+\T{COMPLEX} \sqsupseteq \T{REAL} \sqsupseteq
+\T{INTEGER} \sqsupseteq \T{NATURAL}
+\)
+\end{quote}
+
+\noindent we say two types $T_1$ and $T_2$ are {\em compatible}
+$(\approx$) if the base type of $T_1$ includes the base type of $T_2$
+and $\form(T_1)$ and $\form(T_2)$ can be made equal by an appropriate
+substitution of the occuring free and generic variables. A type $T_1$
+{\em includes} $(\sqsupseteq)$ a type $T_2$, if $T_1$ is a
+(multi-dimensional) shape of type $T$ and $T$ is compatible to $T_2$. In
+the following we define the type compatibility and type inclusion
+relations formally.
+
+\[
+\begin{array}{rcl}
+T_1 \approx T_2 & \widehat{=} 
+   & \bt(T_1) \sqsupseteq \bt(T_2) \wedge\\
+ & & \mathrm{Let}\ \form(T_1) = \langle e_1,\ldots,e_m\rangle;
+ \form(T_2) = \langle d_1,\ldots,d_n\rangle\ \mathrm{then} \\
+ & & \tab n = m \wedge \forall i \in \{1,\ldots,n\} \bullet (e_i = d_i \vee\\
+ & & \tab \tab (\{e_i, d_i\} \cap \freevar \cup \genvar \neq \emptyset)\\
+\hlf
+T_1 \sqsupseteq T_2 & \widehat{=} 
+   & \bt(T_1) \sqsupseteq \bt(T_2) \wedge\\
+ & & \mathrm{Let}\ \form(T_1) = \langle e_1,\ldots,e_m\rangle;
+     \form(T_2) = \langle d_1,\ldots,d_n\rangle\ \mathrm{then} \\
+ & & \tab \exists i \in \{1,\ldots,m\} \bullet \langle e_i,\ldots,e_m\rangle
+     = \langle d_1,\ldots,d_n\rangle
+\end{array}
+\]

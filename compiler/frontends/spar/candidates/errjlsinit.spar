@@ -1,0 +1,10 @@
+// After JLS2 8.3.2.2    Initializers for Instance Variables
+
+public class errjlsinit {
+    int i = j;		// compile-time error: incorrect forward ref.
+    int j = 1;
+    public static void main(String args[]){
+	errjlsinit v = new errjlsinit();
+	System.out.println( "i="+v.i );
+    }
+}

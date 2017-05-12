@@ -1,0 +1,46 @@
+# Makefile for the align engine
+
+# The magical stuff
+include ../mapper/Make.vars
+include $(COMPILERSRCROOT)/Makefiles/Make.vars
+MAKEFILE = Make.align
+
+EXE	 = align
+
+# Various categories of source code files.
+TMCSRCC	= 
+TMCSRC	= $(TMCSRCC) \
+	  hoist_on.ct
+TMCXTRA	= 
+TMHXTRA	= 
+TMGXTRA =
+DSEXTRA = ../mapper/varowner.ds
+VSRC	= error.cc
+SRCC	= main.cc global.cc $(VSRC)
+SRC	= $(SRCC) align.cc
+
+GENSRC  = tmadmin.cc $(TMCSRC:%.ct=%-g.cc)
+GENHDR  = tmadmin.h
+
+OBJ	= $(SRC:%.cc=%.o) $(GENSRC:%.cc=%.o) \
+		../mapper/replace-g.o \
+		../mapper/issubset.o \
+		../mapper/service.o \
+		../mapper/search-g.o
+
+EXTRAFLAGS += -g
+EXTRAFLAGS += -I$(VNUSLIB) -I$(TMROOT)/include 
+
+../mapper/replace-g.o:
+	(cd ../mapper && \
+	$(MAKE) symbolic && \
+	$(MAKE) -f Make.initial tmadmin.h && \
+	$(MAKE) -f Make.initial replace-g.o)
+
+../mapper/issubset.o:
+	(cd ../mapper && \
+	$(MAKE) symbolic && \
+	$(MAKE) -f Make.spmd tmadmin.h && \
+	$(MAKE) -f Make.spmd issubset.o)
+
+include ../mapper/Make.rules

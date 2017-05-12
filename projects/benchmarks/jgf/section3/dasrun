@@ -1,0 +1,7 @@
+#!/bin/sh
+export SPAR_MAXMEM=400000000
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home1/reeuwijk/lab/lib
+echo running benchmark $3 SPAR_MAXMEM=$SPAR_MAXMEM
+/usr/bin/time --format %U+%S --output=$3.time ./$3-exe &> $3.result
+echo -n "Completed benchmark $3 in "
+cat $3.time

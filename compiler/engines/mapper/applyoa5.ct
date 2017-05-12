@@ -1,0 +1,1149 @@
+/*
+   Applyoa5 engine
+
+   Find places that might be clussed...
+   TODO:zoek bug met delete_declaration.DONE.
+   TODO:abstraheer al het gemanipuleer met de GC
+   */
+
+.. File: applyoa5.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtForeach statement_list block
+.append actors DeclFunction DeclProcedure
+.append actors ExprWrapper LocWrapper statement RoutineDeclaration
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "vnusctl.h"
+#include "applyoa5.h"
+#include "search.h"
+
+.call generate_action_forwards "$(actors)"
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+.call generate_cutoff_pragma_action ExprWrapper resident
+.call generate_cutoff_pragma_action LocWrapper resident
+.call generate_cutoff_pragma_action statement resident
+.call generate_cutoff_pragma_action RoutineDeclaration resident
+.call generate_admin_prelst_action statement_list
+.call generate_admin_current_parms_action DeclFunction
+.call generate_admin_current_parms_action DeclProcedure
+
+/*
+  Save previous scope and replace with current scope.
+  If current scope was assigned a name then this name has to be set.
+
+  Modified things a bit. Now only the scope of the top block is used.
+  This way inner blocks don't get local variables and are less cluttered.
+  This will help later on when we want to lift clus calls.
+  */
+static block rewrite_block_action(
+  block e, global_context gc )
+{
+    if( e == 0 ){
+        return e;
+    }
+    static int cnt = 0; // Count blocks encountered
+    cnt++;
+.call generate_cutoff_pragma_stmt resident
+    tmsymbol orig_scope = tmsymbolNIL;
+    if (cnt == 1)
+    {
+	orig_scope = gc->scope;
+	gc->scope = e->scope;
+..call push_scope
+    }
+.call generate_walker_call "    " e block block
+    if (cnt == 1)
+    {
+.call conditional_set_scope e->scope
+.call pop_scope
+    }
+    cnt--;
+    return e;
+}
+
+/*
+  The following set of functions has been created so that the rest of the
+  code will be more readable.
+  All functions assume a simple set of default parameters fr the declarations
+  that are being created. Ijn the case of local variables there will be no
+  initialiser.
+  The functions also add the declaration to gc->prog->declarations
+  */
+static inline DeclFormalVariable add_FV_int(global_context gc, tmsymbol scope, const char *name)
+{
+    DeclFormalVariable nd = new_DeclFormalVariable(
+        add_origsymbol(name),
+        0,
+        new_Pragma_list(),
+        rdup_tmsymbol(scope),
+        new_TypeBase(BT_INT));
+    gc->prog->declarations = append_declaration_list(gc->prog->declarations, nd);
+    return nd;
+}
+static inline DeclFormalVariable add_FV_boolean(global_context gc, tmsymbol scope, const char *name)
+{
+    DeclFormalVariable nd = new_DeclFormalVariable(
+        add_origsymbol(name),
+        0,
+        new_Pragma_list(),
+        rdup_tmsymbol(scope),
+        new_TypeBase(BT_BOOLEAN));
+    gc->prog->declarations = append_declaration_list(gc->prog->declarations, nd);
+    return nd;
+}
+static inline DeclFormalVariable add_FV_intp(global_context gc, tmsymbol scope, const char *name)
+{
+    DeclFormalVariable nd = new_DeclFormalVariable(
+        add_origsymbol(name),
+        0,
+        new_Pragma_list(),
+        rdup_tmsymbol(scope),
+        new_TypePointer(
+            new_TypeBase(BT_INT)));
+    gc->prog->declarations = append_declaration_list(gc->prog->declarations, nd);
+    return nd;
+}
+static inline DeclLocalVariable add_LV_int(global_context gc, tmsymbol scope, const char *name)
+{
+    DeclLocalVariable nd = new_DeclLocalVariable(
+        add_origsymbol(name),
+        0,
+        Pragma_listNIL,
+        rdup_tmsymbol(scope),
+        new_TypeBase(BT_INT),
+        new_OptExprNone());
+    gc->prog->declarations = append_declaration_list(gc->prog->declarations, nd);
+    return nd;
+}
+static inline DeclLocalVariable gen_LV_int(global_context gc, tmsymbol scope, const char *name)
+{
+    DeclLocalVariable nd = new_DeclLocalVariable(
+        gen_origsymbol(name),
+        0,
+        Pragma_listNIL,
+        rdup_tmsymbol(scope),
+        new_TypeBase(BT_INT),
+        new_OptExprNone());
+    gc->prog->declarations = append_declaration_list(gc->prog->declarations, nd);
+    return nd;
+}
+static inline DeclCardinalityVariable gen_CV(global_context gc, const char *name)
+{
+    DeclCardinalityVariable nd = new_DeclCardinalityVariable(
+        gen_origsymbol(name),
+        0,
+        Pragma_listNIL);
+    gc->prog->declarations = append_declaration_list(gc->prog->declarations, nd);
+    return nd;
+}
+
+/*
+  Make external declaration for:
+  procedure vnus_blus(
+    int blus_vm,
+    int blus_vdim,
+    int blus_va,
+    int blus_vb,
+    int blus_vni,
+    int *blus_vn_j0,
+    int *blus_vj0_low,
+    int p) // processor number
+  */
+static void add_vnus_blus_declaration(
+    global_context gc)
+{
+    origsymbol name = add_origsymbol("vnus_blus");
+    int pos = declaration_list_find_pos(gc->prog->declarations, name);
+    if (pos != -1)
+    {
+        rfre_origsymbol(name);
+        return;
+    }
+    DeclFormalVariable vm =      add_FV_int(gc,name->sym, "blus_vm");
+    DeclFormalVariable vnp =    add_FV_int(gc,name->sym, "blus_vnp");
+    DeclFormalVariable va =      add_FV_int(gc,name->sym, "blus_va");
+    DeclFormalVariable vb =      add_FV_int(gc,name->sym, "blus_vb");
+    DeclFormalVariable vni =     add_FV_int(gc,name->sym, "blus_vni");
+    DeclFormalVariable vn_j0 =   add_FV_intp(gc,name->sym, "blus_vn_j0");
+    DeclFormalVariable vj0_low = add_FV_intp(gc,name->sym, "blus_vj0_low");
+    DeclFormalVariable p =       add_FV_int(gc,name->sym, "blus_p");
+    origsymbol_list parms = new_origsymbol_list();
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vm->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vnp->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(va->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vb->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vni->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vn_j0->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vj0_low->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(p->name));
+    DeclExternalProcedure vnus_blus = new_DeclExternalProcedure(
+        name,
+        0,
+        new_Pragma_list(),
+        parms);
+    gc->prog->declarations = append_declaration_list(gc->prog->declarations, vnus_blus);
+}
+
+/*
+  Make external declaration for:
+  procedure vnus_clus(
+    int clus_vdim,
+    int clus_va,
+    int clus_vb,
+    int clus_vni,
+    int *clus_vdi,
+    int *clus_vn_u0,
+    int *clus_voffset0,
+    int p) // processor number
+  */
+static void add_vnus_clus_declaration(
+    global_context gc)
+{
+    origsymbol name = add_origsymbol("vnus_clus");
+    int pos = declaration_list_find_pos(gc->prog->declarations, name);
+    if (pos != -1)
+    {
+        rfre_origsymbol(name);
+        return;
+    }
+    DeclFormalVariable vnp =     add_FV_int(gc,name->sym, "clus_vnp");
+    DeclFormalVariable va =       add_FV_int(gc,name->sym, "clus_va");
+    DeclFormalVariable vb =       add_FV_int(gc,name->sym, "clus_vb");
+    DeclFormalVariable vni =      add_FV_int(gc,name->sym, "clus_vni");
+    DeclFormalVariable vdi =      add_FV_intp(gc,name->sym, "clus_vdi");
+    DeclFormalVariable vn_u0 =    add_FV_intp(gc,name->sym, "clus_vn_u0");
+    DeclFormalVariable voffset0 = add_FV_intp(gc,name->sym, "clus_voffset0");
+    DeclFormalVariable p =        add_FV_int(gc,name->sym, "clus_p");
+    origsymbol_list parms = new_origsymbol_list();
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vnp->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(va->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vb->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vni->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vdi->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vn_u0->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(voffset0->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(p->name));
+    DeclExternalProcedure vnus_clus = new_DeclExternalProcedure(
+        name,
+        0,
+        new_Pragma_list(),
+        parms);
+    gc->prog->declarations = append_declaration_list(gc->prog->declarations, vnus_clus);
+}
+
+/*
+  Make external declaration for:
+  procedure vnus_bclus1(
+    int bclus1_vm
+    int bclus1_vdim,
+    int bclus1_va,
+    int bclus1_vb,
+    int *bclus1_vn_u1,
+    int *bclus1_vi0,
+    int *bclus1_vj1_low,
+    int *bclus1_vdi,
+    int p) // processor number
+  */
+static void add_vnus_bclus1_declaration(
+    global_context gc)
+{
+    origsymbol name = add_origsymbol("vnus_bclus1");
+    int pos = declaration_list_find_pos(gc->prog->declarations, name);
+    if (pos != -1)
+    {
+        rfre_origsymbol(name);
+        return;
+    }
+    DeclFormalVariable vm =      add_FV_int(gc,name->sym, "bclus1_vm");
+    DeclFormalVariable vnp =    add_FV_int(gc,name->sym, "bclus1_vnp");
+    DeclFormalVariable va =      add_FV_int(gc,name->sym, "bclus1_va");
+    DeclFormalVariable vb =      add_FV_int(gc,name->sym, "bclus1_vb");
+    DeclFormalVariable vn_u1 =   add_FV_intp(gc,name->sym, "bclus1_vn_u1");
+    DeclFormalVariable vi0 =     add_FV_intp(gc,name->sym, "bclus1_vi0");
+    DeclFormalVariable vj1_low = add_FV_intp(gc,name->sym, "bclus1_vj1_low");
+    DeclFormalVariable vdi =     add_FV_intp(gc,name->sym, "bclus1_vdi");
+    DeclFormalVariable p =       add_FV_int(gc,name->sym, "bclus1_p");
+    origsymbol_list parms = new_origsymbol_list();
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vm->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vnp->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(va->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vb->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vn_u1->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vi0->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vj1_low->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vdi->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(p->name));
+    DeclExternalProcedure vnus_bclus1 = new_DeclExternalProcedure(
+        name,
+        0,
+        new_Pragma_list(),
+        parms);
+    gc->prog->declarations = append_declaration_list(gc->prog->declarations, vnus_bclus1);
+}
+
+/*
+  Make external declaration for:
+  procedure vnus_bclus2(
+    int bclus2_vu1
+    int bclus2_vi0,
+    int bclus2_vj1_low,
+    int bclus2_vni,
+    int bclus2_vdi,
+    int *bclus2_vn_u0,
+    int *bclus2_voffset0,
+    int p) // processor number
+  */
+static void add_vnus_bclus2_declaration(
+    global_context gc)
+{
+    origsymbol name = add_origsymbol("vnus_bclus2");
+    int pos = declaration_list_find_pos(gc->prog->declarations, name);
+    if (pos != -1)
+    {
+        rfre_origsymbol(name);
+        return;
+    }
+    DeclFormalVariable vu1 =      add_FV_int(gc,name->sym, "bclus2_vu1");
+    DeclFormalVariable vi0 =      add_FV_int(gc,name->sym, "bclus2_vi0");
+    DeclFormalVariable vj1_low =  add_FV_int(gc,name->sym, "bclus2_vj1_low");
+    DeclFormalVariable vni =      add_FV_int(gc,name->sym, "bclus2_vni");
+    DeclFormalVariable vdi =      add_FV_int(gc,name->sym, "bclus2_vdi");
+    DeclFormalVariable vn_u0 =    add_FV_intp(gc,name->sym, "bclus2_vn_u0");
+    DeclFormalVariable voffset0 = add_FV_intp(gc,name->sym, "bclus2_voffset0");
+    DeclFormalVariable p =        add_FV_int(gc,name->sym, "bclus2_p");
+    origsymbol_list parms = new_origsymbol_list();
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vu1->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vi0->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vj1_low->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vni->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vdi->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(vn_u0->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(voffset0->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(p->name));
+    DeclExternalProcedure vnus_bclus2 = new_DeclExternalProcedure(
+        name,
+        0,
+        new_Pragma_list(),
+        parms);
+    gc->prog->declarations = append_declaration_list(gc->prog->declarations, vnus_bclus2);
+}
+
+/*
+  Update other secondaries
+  The previous cardinality variable has just turned into a secondary:
+      i:(l:u:s)=(0:U:1) -> (L:_:S)
+  This means that for all other secondaries the following needs to be done:
+      j:(l:u:s)=(Lj:_:Sj) -> (Lj+L*Sj:_:Sj*S)
+  */
+static secondary_list update_secondaries(
+    secondary_list l)
+{
+    for (unsigned i=1; i<l->sz; i++)
+    {
+        l->arr[i]->lowerbound = new_ExprBinop(
+            l->arr[i]->lowerbound,
+            BINOP_PLUS,
+            new_ExprBinop(
+                rdup_expression(l->arr[0]->lowerbound),
+                BINOP_TIMES,
+                rdup_expression(l->arr[i]->stride)));
+        l->arr[i]->stride = new_ExprBinop(
+            l->arr[i]->stride,
+            BINOP_TIMES,
+            rdup_expression(l->arr[0]->stride));
+    }
+    return l;
+}
+
+/*
+  Do the blus transformation.
+  This one follows the pattern as it is done in ...runtime/ctests.cc:
+    for( i=0; i<NI; i++ ){
+	    if( arr.IsOwnerChecked( p, i ) ){
+		    STMTS;
+	    }
+	}
+==>
+	VnusInt n_u0;
+	VnusInt j0_low;
+
+	vnus_blus(
+	    arr.GetBlockSize(0),
+	    np,  // in dim, fill in 0, not needed for blus
+	    a,
+	    b,
+	    NI,
+	    &n_u0,
+	    &j0_low,
+	    p
+	);
+	for( VnusInt u0=0, i=j0_low; u0<n_u0; u0++, i++ ){
+        STMTS;
+	}
+ */
+static SmtForeach gen_blus_code(
+    global_context gc,
+    DistrExpr dist,
+    SmtForeach origLoop,
+    expression exprA,
+    expression exprB,
+    expression procExpr)
+{
+    NewDistBlock actualDist= to_NewDistBlock(dist);
+    cardinality origCard = origLoop->cards->arr[0];
+    block origBody = origLoop->body;
+    origsymbol loopVar = origCard->name;
+    expression upperBound = origCard->upperbound;
+    SmtProcedureCall pcall = SmtProcedureCallNIL;
+    SmtForeach nloop = SmtForeachNIL;
+
+.call conditional_init_scope
+.call conditional_init_prelst
+
+    if (warning_level >= WARN_RULE)
+	fprintf(stderr,"Applyoa5:doing blus\n");
+//    int oldCardPos = declaration_list_find_pos(
+//        gc->prog->declarations,
+//        loopVar);
+//    assert(oldCardPos != -1);
+// The following must be done as the delete messes up the declaration_list...
+//    mark_declaration_list(gc->prog->declarations, oldCardPos);
+//    add_LV_int(gc,gc->scope, loopVar->sym->name);
+    DeclLocalVariable blus_n_u0 = gen_LV_int(gc,gc->scope, "blus_n_u0");
+    DeclLocalVariable blus_j0_low = gen_LV_int(gc,gc->scope, "blus_j0_low");
+    DeclCardinalityVariable u1 = gen_CV(gc,"u1");
+    
+    expression_list parms = new_expression_list();
+    parms = append_expression_list(
+        parms,
+	rdup_expression(actualDist->size));
+    parms = append_expression_list(
+	parms,
+	new_ExprInt(0));// unused extent
+    parms = append_expression_list(
+        parms,
+        rdup_expression(exprA));
+    parms = append_expression_list(
+        parms,
+        rdup_expression(exprB));
+    parms = append_expression_list(
+        parms,
+        rdup_expression(upperBound));
+    parms = append_expression_list(
+        parms,
+        new_ExprAddress(
+            new_LocName(rdup_origsymbol(blus_n_u0->name))));
+    parms = append_expression_list(
+        parms,
+        new_ExprAddress(
+            new_LocName(rdup_origsymbol(blus_j0_low->name))));
+    parms = append_expression_list(
+        parms,
+        rdup_expression(procExpr));
+    
+    pcall = new_SmtProcedureCall(
+        0,
+        gen_origin(),
+        new_Pragma_list(),
+        new_OwnerExpr_list(),
+        new_ExprName(add_origsymbol("vnus_blus")),
+        parms);
+    
+    gc->prelst = append_statement_list(gc->prelst, pcall);
+    
+    cardinality newCard = new_cardinality(
+        rdup_origsymbol(u1->name),
+        new_ExprInt(0),
+        new_ExprName(rdup_origsymbol(blus_n_u0->name)),
+        new_ExprInt(1),
+        rdup_secondary_list(origCard->secondaries));
+    newCard->secondaries = insert_secondary_list(
+        newCard->secondaries,
+        0,
+        new_secondary(
+            rdup_origsymbol(loopVar),
+            new_ExprName(rdup_origsymbol(blus_j0_low->name)),
+            new_ExprInt(1)));
+// Set the other secondaries right again
+    newCard->secondaries = update_secondaries(newCard->secondaries);
+    cardinality_list cardList = new_cardinality_list();
+    cardList = append_cardinality_list(cardList, newCard);
+    nloop = new_SmtForeach(
+        0,
+        gen_origin(),
+        rdup_Pragma_list(origLoop->pragmas),
+        new_OwnerExpr_list(),
+        cardList,
+        new_OwnerExpr_list(),
+        rdup_block(origBody));
+    return nloop;
+}
+
+/*
+  Do the clus transformation.
+  This one follows the pattern as it is done in ...runtime/ctests.cc:
+	for( i=0; i<NI; i++ ){
+	    if( arr.IsOwnerChecked( p, i ) ){
+		    STMTS;
+	    }
+	}
+==>
+	VnusInt u0;
+	VnusInt n_u0;
+	VnusInt offset0;
+	VnusInt di;
+
+	vnus_clus(
+	    np,  // in dim, use extent
+	    a,
+	    b,
+	    NI,
+	    &di,
+	    &n_u0,
+	    &offset0,
+	    p
+	);
+	for( u0=0, i=offset0; u0<n_u0; u0++, i+=di ){
+        STMTS;
+	}
+  */
+static SmtForeach gen_clus_code(
+    global_context gc,
+    DistrExpr dist,
+    SmtForeach origLoop,
+    expression exprA,
+    expression exprB,
+    expression procExpr)
+{
+    NewDistCyclic actualDist= to_NewDistCyclic(dist);
+    cardinality origCard = origLoop->cards->arr[0];
+    block origBody = origLoop->body;
+    origsymbol loopVar = origCard->name;
+    expression upperBound = origCard->upperbound;
+    SmtProcedureCall pcall = SmtProcedureCallNIL;
+    SmtForeach nloop = SmtForeachNIL;
+
+.call conditional_init_scope
+.call conditional_init_prelst
+
+    if (warning_level >= WARN_RULE)
+	fprintf(stderr,"Applyoa5:doing clus\n");
+//    int oldCardPos = declaration_list_find_pos(
+//        gc->prog->declarations,
+//        loopVar);
+//    assert(oldCardPos != -1);
+// The following must be done as the delete messes up the declaration_list...
+//    mark_declaration_list(gc->prog->declarations, oldCardPos);
+//    add_LV_int(gc,gc->scope, loopVar->sym->name);
+    DeclLocalVariable clus_n_u0 = gen_LV_int(gc,gc->scope, "clus_n_u0");
+    DeclLocalVariable clus_offset0 = gen_LV_int(gc,gc->scope, "clus_offset0");
+    DeclLocalVariable clus_di = gen_LV_int(gc,gc->scope, "clus_di");
+    DeclCardinalityVariable u0 = gen_CV(gc,"u0");
+    
+    expression_list parms = new_expression_list();
+    parms = append_expression_list(
+	parms,
+	rdup_expression(actualDist->extent));
+    parms = append_expression_list(
+        parms,
+        rdup_expression(exprA));
+    parms = append_expression_list(
+        parms,
+        rdup_expression(exprB));
+    parms = append_expression_list(
+        parms,
+        rdup_expression(upperBound));
+    parms = append_expression_list(
+        parms,
+        new_ExprAddress(
+            new_LocName(rdup_origsymbol(clus_di->name))));
+    parms = append_expression_list(
+        parms,
+        new_ExprAddress(
+            new_LocName(rdup_origsymbol(clus_n_u0->name))));
+    parms = append_expression_list(
+        parms,
+        new_ExprAddress(
+                new_LocName(rdup_origsymbol(clus_offset0->name))));
+    parms = append_expression_list(
+        parms,
+        rdup_expression(procExpr));
+    
+    pcall = new_SmtProcedureCall(
+        0,
+        gen_origin(),
+        new_Pragma_list(),
+        new_OwnerExpr_list(),
+        new_ExprName(add_origsymbol("vnus_clus")),
+        parms);
+    
+    gc->prelst = append_statement_list(gc->prelst, pcall);
+    
+    cardinality newCard = new_cardinality(
+        rdup_origsymbol(u0->name),
+        new_ExprInt(0),
+        new_ExprName(rdup_origsymbol(clus_n_u0->name)),
+        new_ExprInt(1),
+        rdup_secondary_list(origCard->secondaries));
+    newCard->secondaries = insert_secondary_list(
+        newCard->secondaries,
+        0,
+        new_secondary(
+            rdup_origsymbol(loopVar),
+            new_ExprName(rdup_origsymbol(clus_offset0->name)),
+            new_ExprName(rdup_origsymbol(clus_di->name))));
+// Set the other secondaries right again
+    newCard->secondaries = update_secondaries(newCard->secondaries);
+    cardinality_list cardList = new_cardinality_list();
+    cardList = append_cardinality_list(cardList, newCard);
+    nloop = new_SmtForeach(
+        0,
+        gen_origin(),
+        rdup_Pragma_list(origLoop->pragmas),
+        new_OwnerExpr_list(),
+        cardList,
+        new_OwnerExpr_list(),
+        rdup_block(origBody));
+    return nloop;
+}
+
+/*
+  Do the bclus transformation.
+  This one follows the pattern as it is done in ...runtime/ctests.cc:
+	for( i=0; i<NI; i++ ){
+	    if( arr.IsOwnerChecked( p, i ) ){
+		    STMTS;
+	    }
+	}
+==>
+	VnusInt i0;
+	VnusInt u0;
+	VnusInt u1;
+	VnusInt n_u0;
+	VnusInt n_u1;
+	VnusInt j1_low;
+	VnusInt offset0;
+	VnusInt di;
+
+	vnus_bclus1(
+	    arr.GetBlockSize(0),
+	    np,  // in dim, use extent
+	    a,
+	    b,
+	    &n_u1,
+	    &i0,
+	    &j1_low,
+	    &di,
+	    p
+	);
+	for( u1=0; u1<n_u1; u1++ ){
+	    vnus_bclus2(
+            u1,
+            i0,
+            j1_low,
+            NI,
+            di,
+            &n_u0,
+            &offset0,
+            p
+        );
+	    for( u0=0, i=offset0; u0<n_u0; u0++, i+=di ){
+            STMTS;
+	    }
+	}
+  */
+static SmtForeach gen_bclus_code(
+    global_context gc,
+    DistrExpr dist,
+    SmtForeach origLoop,
+    expression exprA,
+    expression exprB,
+    expression procExpr)
+{
+    NewDistBC actualDist= to_NewDistBC(dist);
+    cardinality origCard = origLoop->cards->arr[0];
+    block origBody = origLoop->body;
+    origsymbol loopVar = origCard->name;
+    expression upperBound = origCard->upperbound;
+    SmtProcedureCall pcall = SmtProcedureCallNIL;
+    SmtForeach nloop = SmtForeachNIL;
+
+.call conditional_init_scope
+.call conditional_init_prelst
+
+    if (warning_level >= WARN_RULE)
+	fprintf(stderr,"Applyoa5:doing bclus\n");
+//    int oldCardPos = declaration_list_find_pos(
+//        gc->prog->declarations,
+//        loopVar);
+//    assert(oldCardPos != -1);
+// The following must be done as the delete messes up the declaration_list...
+//    mark_declaration_list(gc->prog->declarations, oldCardPos);
+//    add_LV_int(gc,gc->scope, loopVar->sym->name);
+    DeclLocalVariable bclus_i0 = gen_LV_int(gc,gc->scope, "bclus_i0");
+    DeclLocalVariable bclus_n_u0 = gen_LV_int(gc,gc->scope, "bclus_n_u0");
+    DeclLocalVariable bclus_n_u1 = gen_LV_int(gc,gc->scope, "bclus_n_u1");
+    DeclLocalVariable bclus_j1_low = gen_LV_int(gc,gc->scope, "bclus_j1_low");
+    DeclLocalVariable bclus_offset0 = gen_LV_int(gc,gc->scope, "bclus_offset0");
+    DeclLocalVariable bclus_di = gen_LV_int(gc,gc->scope, "bclus_di");
+    DeclCardinalityVariable u0 = gen_CV(gc,"u0");
+    DeclCardinalityVariable u1 = gen_CV(gc,"u1");
+    
+    expression_list parms = new_expression_list();
+    parms = append_expression_list(
+        parms,
+	rdup_expression(actualDist->size));
+    parms = append_expression_list(
+	parms,
+	rdup_expression(actualDist->extent));
+    parms = append_expression_list(
+        parms,
+        rdup_expression(exprA));
+    parms = append_expression_list(
+        parms,
+        rdup_expression(exprB));
+    parms = append_expression_list(
+        parms,
+        new_ExprAddress(
+            new_LocName(rdup_origsymbol(bclus_n_u1->name))));
+    parms = append_expression_list(
+        parms,
+        new_ExprAddress(
+            new_LocName(rdup_origsymbol(bclus_i0->name))));
+    parms = append_expression_list(
+        parms,
+        new_ExprAddress(
+            new_LocName(rdup_origsymbol(bclus_j1_low->name))));
+    parms = append_expression_list(
+        parms,
+        new_ExprAddress(
+            new_LocName(rdup_origsymbol(bclus_di->name))));
+    parms = append_expression_list(
+        parms,
+        rdup_expression(procExpr));
+    
+    pcall = new_SmtProcedureCall(
+        0,
+        gen_origin(),
+        new_Pragma_list(),
+        new_OwnerExpr_list(),
+        new_ExprName(add_origsymbol("vnus_bclus1")),
+        parms);
+    
+    gc->prelst = append_statement_list(gc->prelst, pcall);
+// parms and pcall can now be reused...
+        
+    parms = new_expression_list();
+    parms = append_expression_list(
+        parms,
+        new_ExprName(rdup_origsymbol(u1->name)));           
+    parms = append_expression_list(
+        parms,
+        new_ExprName(rdup_origsymbol(bclus_i0->name)));           
+    parms = append_expression_list(
+        parms,
+        new_ExprName(rdup_origsymbol(bclus_j1_low->name)));           
+    parms = append_expression_list(
+        parms,
+        rdup_expression(upperBound));
+    parms = append_expression_list(
+        parms,
+        new_ExprName(rdup_origsymbol(bclus_di->name)));           
+    parms = append_expression_list(
+        parms,
+        new_ExprAddress(
+            new_LocName(rdup_origsymbol(bclus_n_u0->name))));
+    parms = append_expression_list(
+        parms,
+        new_ExprAddress(
+            new_LocName(rdup_origsymbol(bclus_offset0->name))));
+    parms = append_expression_list(
+        parms,
+        rdup_expression(procExpr));
+    
+    pcall = new_SmtProcedureCall(
+        0,
+        gen_origin(),
+        new_Pragma_list(),
+        new_OwnerExpr_list(),
+        new_ExprName(add_origsymbol("vnus_bclus2")),
+        parms);
+        
+    cardinality newCard0 = new_cardinality(
+        rdup_origsymbol(u0->name),
+        new_ExprInt(0),
+        new_ExprName(rdup_origsymbol(bclus_n_u0->name)),
+        new_ExprInt(1),
+        rdup_secondary_list(origCard->secondaries));
+    newCard0->secondaries = insert_secondary_list(
+        newCard0->secondaries,
+        0,
+        new_secondary(
+            rdup_origsymbol(loopVar),
+            new_ExprName(rdup_origsymbol(bclus_offset0->name)),
+            new_ExprName(rdup_origsymbol(bclus_di->name))));
+// Set the other secondaries right again
+    newCard0->secondaries = update_secondaries(newCard0->secondaries);
+    cardinality_list cardList0 = new_cardinality_list();
+    cardList0 = append_cardinality_list(cardList0, newCard0);
+    
+    cardinality newCard1 = new_cardinality(
+        rdup_origsymbol(u1->name),
+        new_ExprInt(0),
+        new_ExprName(rdup_origsymbol(bclus_n_u1->name)),
+        new_ExprInt(1),
+        new_secondary_list());
+    cardinality_list cardList1 = new_cardinality_list();
+    cardList1 = append_cardinality_list(cardList1, newCard1);
+        
+    SmtForeach innerLoop = new_SmtForeach(
+        0,
+        gen_origin(),
+        rdup_Pragma_list(origLoop->pragmas),
+        new_OwnerExpr_list(),
+        cardList0,
+        new_OwnerExpr_list(),
+        rdup_block(origBody));
+    
+    statement_list statList1 = new_statement_list();
+    statList1 = append_statement_list(statList1,pcall);
+    statList1 = append_statement_list(statList1,innerLoop);
+    block newBody1 = new_block(
+        0,
+        gen_origin(),
+        new_Pragma_list(),
+        new_OwnerExpr_list(),
+        statList1);
+    nloop = new_SmtForeach(
+        0,
+        gen_origin(),
+        rdup_Pragma_list(origLoop->pragmas),
+        new_OwnerExpr_list(),
+        cardList1,
+        new_OwnerExpr_list(),
+        newBody1);
+    return nloop;
+}
+
+static int determine_next_distribution_dim(
+    DistrExpr_list distr,
+    int start_dim)
+{
+    for (unsigned i=start_dim; i<distr->sz; i++)
+    {
+        switch (distr->arr[i]->tag)
+        {
+            case TAGNewDistDontCare:
+            case TAGNewDistReplicated:
+            case TAGNewDistLocal:
+            case TAGNewDistAlign:
+                break;
+            case TAGNewDistBlock:
+            case TAGNewDistCyclic:
+            case TAGNewDistBC:
+                return i;
+                break;
+        }
+    }
+    return -1;
+}
+
+
+/*
+  Just see if a foreach statement can be bclussed
+  */
+static SmtForeach rewrite_SmtForeach_action(
+  SmtForeach e, global_context gc )
+{
+/*
+  We want L:U:S as 0:U':1
+  */
+    e->cards = normalise_cardinalities(e->cards,gc);
+/*
+  The first match is to see whether the for-loop has only 1 statement which
+  should be an if-statement. The condition of this if-statement should be
+  an IsOwner or a Sender test.
+  Also, the if-statement should not have an else-body, and the cardinality
+  should have a lowerbound=0 and a stride=1.
+  Finally, for now we only handle 1-dimensional arrays. Still to do are
+  multi-dimensional arrays with a 1-dimensional distribution, and after that
+  also multi-dimensional distributions.
+  */
+    if (warning_level >= WARN_DEBUG)
+	fprintf(stderr,"Applyoa5: checking for possible clus...\n");
+    bool rightForm = (e->cards->sz == 1);
+    
+    if (!rightForm)
+    {
+.call generate_descent_call "    " e->body block block
+    return e;
+    }
+    
+    int depth = 0;
+    SmtForeach loop = e;
+    block body = loop->body;
+    while ((body->statements->sz == 1) &&
+           (body->statements->arr[0]->tag == TAGSmtForeach))
+    {
+        loop = to_SmtForeach(body->statements->arr[0]);
+        body = loop->body;
+        depth++;
+    }
+
+    rightForm = false;
+    SmtIf ifstmt = SmtIfNIL;
+    if ((body->statements->sz == 1) &&
+        (body->statements->arr[0]->tag == TAGSmtIf))
+    {
+        ifstmt = to_SmtIf(body->statements->arr[0]);
+        rightForm = true;
+    }
+    
+    if (!rightForm)
+    {
+.call generate_descent_call "    " e->body block block
+    return e;
+    }
+    
+    if (warning_level >= WARN_DEBUG)
+	fprintf(stderr,"Applyoa5: possible clus at depth %d!!!\n",depth);
+// No else-body?
+    if ((ifstmt->elsebody != blockNIL) &&
+        (ifstmt->elsebody->statements != statement_listNIL) &&
+        (ifstmt->elsebody->statements->sz != 0))
+        rightForm = false;
+    
+    if (!rightForm)
+    {
+.call generate_descent_call "    " e->body block block
+    return e;
+    }
+
+// Assuming all are owner expressions without side effects...
+    ifstmt->cond = normalise_ExprBinop(ifstmt->cond, BINOP_SHORTAND);
+    ExprReduction conditions = split_ExprBinop(ifstmt->cond, BINOP_SHORTAND);
+    assert(conditions->operands != expression_listNIL);
+
+    bool foundMatch = false;
+	// The following 4 vars are pointers into existing data.
+	// Take care with copying and deleting.
+    OwnerExpr on = OwnerExprNIL;
+    expression_list cmpProcExprL = expression_listNIL;
+    expression ownProcExpr = expressionNIL; // Just a name, not relevant yet
+    DistrExpr_list distrL = DistrExpr_listNIL;
+    expression exprA = expressionNIL;
+    expression exprB = expressionNIL;
+    int condNo = -1;
+    int dim = -1;
+//    bool isMultiDimDist = false;
+
+// This is the beginning of the matching part
+    for (unsigned i=0; i<conditions->operands->sz && dim==-1; i++)
+    {
+        condNo = i;
+	if (is_MappingIsExpression(conditions->operands->arr[condNo]))
+	{
+	    on = to_MappingIsExpression(conditions->operands->arr[condNo])->on;
+	    cmpProcExprL = to_MappingIsExpression(conditions->operands->arr[condNo])->proc;
+	}
+	else
+	{
+	    continue;
+	}
+	
+
+	switch (on->tag)
+	{
+	    case TAGNewOwnDontCare:
+	    case TAGNewOwnReplicated:
+	    case TAGNewOwnMap:
+		continue;
+		break;
+	    case TAGNewOwnLocation:
+		distrL = to_NewOwnLocation(on)->distr;
+		ownProcExpr = to_NewOwnLocation(on)->proc;
+		break;
+	}
+	
+// Check distributions
+        if (distrL == DistrExpr_listNIL)
+        {
+            continue;
+        }
+    
+        if (distrL->sz >1)
+	    if (warning_level >= WARN_DEBUG)
+		fprintf(stderr,"Applyoa5: possible multi-dim dist\n");
+        report_distributions(distrL);
+#if 0
+        int noRealDistributions = count_real_distributions(distrL);
+        int noIffyDistributions = count_iffy_distributions(distrL);
+        isMultiDimDist = (noRealDistributions>1);
+        if (isMultiDimDist)
+        {
+	    if (warning_level >= WARN_WARNING)
+		fprintf(stderr,"Applyoa5:multidimensional distributions not yet supported\n");
+            continue;
+        }
+        if (noIffyDistributions != 0)
+        {
+	    if (warning_level >= WARN_WARNING)
+		fprintf(stderr,"Applyoa5:iffy distributions not yet supported\n");
+            continue;
+        }
+#endif
+        dim = -1;
+        while(true)
+        {
+            dim = determine_next_distribution_dim(distrL, dim+1);   
+            if (dim == -1)
+            {
+		if (warning_level >= WARN_DEBUG)
+		    fprintf(stderr,"Applyoa5:didn't find usable distribution\n");
+                break;
+            }
+
+	    expression index = expressionNIL;
+	    switch (distrL->arr[dim]->tag)
+	    {
+		case TAGNewDistBlock:
+		    index = to_NewDistBlock(distrL->arr[dim])->index;
+		    break;
+		case TAGNewDistCyclic:
+		    index = to_NewDistCyclic(distrL->arr[dim])->index;
+		    break;
+		case TAGNewDistBC:
+		    index = to_NewDistBC(distrL->arr[dim])->index;
+		    break;
+		default:
+		    internal_error("OA5:unexpected distr when doing lineair test");
+		    break;
+	    }
+            extract_lineair(index,e->cards->arr[0], &exprA, &exprB);            
+            if (exprA == expressionNIL)
+            {
+                continue;
+            }
+            foundMatch = true;
+            break;
+        }
+    }
+// This is the end of the matching part
+
+    if (!foundMatch)
+    {
+        rfre_ExprReduction(conditions);
+.call generate_descent_call "    " e->body block block
+        return e;
+    }
+    
+    if (warning_level >= WARN_DEBUG)
+    {
+	fprintf(stderr, "OA5: matched condition %d out of %d conditions\n", condNo, conditions->operands->sz);
+	fprintf(stderr, "OA5: matched owner %d out of %d owners\n", dim, distrL->sz);
+    }
+
+	/*
+	  In the case of multidimensional distributions we do not absorb the whole
+	  condition, but only the specific distribution in 1 dim that was matched.
+	  The proc expression that is to be matched is handled similarly.
+	  */
+    DistrExpr distrLift = rdup_DistrExpr(distrL->arr[dim]);
+    expression cmpProcExprLift = rdup_expression(cmpProcExprL->arr[dim]);
+
+    distrL = delete_DistrExpr_list(distrL, dim);
+    to_NewOwnLocation(on)->distr = distrL;
+	// Alias, but just to be sure.
+    cmpProcExprL = delete_expression_list(cmpProcExprL, dim);
+    to_MappingIsExpression(conditions->operands->arr[condNo])->proc = cmpProcExprL;
+	// Alias, but just to be sure.
+    
+    if (distrL->sz == 0)
+	conditions->operands = delete_expression_list(conditions->operands, condNo);
+
+    rfre_expression(ifstmt->cond);
+    if (conditions->operands->sz == 0)
+        ifstmt->cond = new_ExprBoolean(new_tmstring("TRUE"));
+    else
+        ifstmt->cond = form_ExprBinop(conditions);
+    rfre_ExprReduction(conditions);
+    SmtForeach old = e;
+/*
+  Yup, we got a distribution, now we only have to do the appropriate thing
+  depending on it being block, cyclic or blockcyclic.
+  */
+    switch (distrLift->tag)
+    {
+        case TAGNewDistBlock:
+        {
+            e = gen_blus_code(gc,distrLift,e,exprA,exprB,cmpProcExprLift);
+            add_vnus_blus_declaration(gc);
+            break;
+        }
+        case TAGNewDistCyclic:
+        {
+            e = gen_clus_code(gc,distrLift,e,exprA,exprB,cmpProcExprLift);
+            add_vnus_clus_declaration(gc);
+            break;
+        }
+        case TAGNewDistBC:
+        {
+            e = gen_bclus_code(gc,distrLift,e,exprA,exprB,cmpProcExprLift);
+            add_vnus_bclus1_declaration(gc);
+            add_vnus_bclus2_declaration(gc);
+            break;
+        }
+        default:
+	    if (warning_level >= WARN_ERROR)
+		fprintf(stderr,"Applyoa5:whoops, should not have come here\n");
+            assert(true);
+            break;
+    }
+    rfre_SmtForeach(old);
+    rfre_expression(exprA);
+    rfre_expression(exprB);
+    rfre_DistrExpr(distrLift);
+    rfre_expression(cmpProcExprLift);
+
+.call generate_descent_call "    " e SmtForeach SmtForeach
+    return e;
+}
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_oa5(
+    vnusprog elm, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+    (void) rewrite_statement_list_walker;
+    (void) rewrite_SmtForeach_walker;
+    
+.call init_current_parms
+.call init_scope
+.call init_prelst
+.call generate_descent_call "    " elm vnusprog vnusprog
+// We used marks, so now we have to remove them...
+    gc->prog->declarations = delete_marked_declaration_list(gc->prog->declarations);
+    return elm;
+}

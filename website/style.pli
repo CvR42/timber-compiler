@@ -1,0 +1,544 @@
+# File: style.pli
+#
+# Definition of the layout macros for html pages.
+
+require 'constants.pli';
+require 'structure.pli';
+use Image::Size;
+
+# Given the page we're in and the page we want to refer to, generate
+# a relative URL.
+sub generate_relative_url($$)
+{
+    my ($from,$to) = @_;
+    my @from_parts = split "/", $from;
+    my @to_parts = split "/", $to;
+    my $i;
+
+    # Zap parts of the directory path that are common.
+    while( $#from_parts>0 && $#to_parts>0 && $from_parts[0] eq $to_parts[0] ){
+	shift @from_parts;
+	shift @to_parts;
+    }
+    # Prefix the 'to' with '..' to get to the common directory first.
+    # E.g. if we are now in webpage finders/art.html, and
+    # we want to point to software/Tm/index.html, we must prepend '../'
+    for( $i=0; $i<$#from_parts; $i++ ){
+	unshift @to_parts, '..';
+    }
+    return join "/", @to_parts;
+}
+
+sub generate_img($$$)
+{
+    my ($from,$name,$alt) = @_;
+    if( !-e $name ){
+	die "No such image: '$name', stopped";
+    }
+    if( !defined $alt ){
+	die "No img alternative provided, stopped";
+    }
+    my ($w,$h) = imgsize( $name );
+    my $url = &generate_relative_url($from,$name);
+    print "<img class=\"noborder\" src=\"$url\" alt=\"$alt\" width=\"$w\" height=\"$h\" />";
+}
+
+# Given the current webpage, the local location of the image to click
+# on, the local location of the link associated with the image, and the
+# alternative title of the image, generate a clickable image.
+sub generate_clickable_img($$$$)
+{
+    my ($from,$name,$link,$alt) = @_;
+    my $clickurl = &generate_relative_url($from,$link);
+    print "<a href=\"$clickurl\">";
+    &generate_img( $from, $name, $alt );
+    print "</a>";
+}
+
+sub generate_enlarging_img($$$$)
+{
+    my ($from,$name, $largename,$alt) = @_;
+    my ($w,$h) = imgsize( $name );
+    my $url = &generate_relative_url($from,$name);
+    my $largeurl = &generate_relative_url($from,$largename);
+    print "<a href=\"$largeurl\"><img src=\"$url\" alt=\"$alt\" width=\"$w\" height=\"$h\"></a>";
+}
+
+sub generate_navigator_bar($)
+{
+    my ($name) = @_;
+    my $parent = $parents{$name};
+    my $page;
+
+    if( $parent eq "-" ){
+	return;
+    }
+    my $childref = $webtree{$parent};
+    my @pages = @$childref;
+    print "<table class=\"navigation\">\n<tr>\n";
+    my @parents = &get_parents( $name );
+    foreach $page (@parents){
+	my $url = &generate_relative_url( $name, $page );
+	print "<td class=\"parent\"><a href=\"$url.html\">$pagename{$page}</a></td>\n";
+    }
+    foreach $page (@pages){
+	if( $page eq $name ){
+	    print "<td class=\"brother\">$pagename{$page}</td>\n";
+	}
+	else {
+	    my $url = &generate_relative_url( $name, $page );
+	    print "<td class=\"brother\"><a href=\"$url.html\">$pagename{$page}</a></td>\n";
+	}
+    }
+    print "\n</tr>\n</table>\n";
+}
+
+sub generate_next_button($)
+{
+    my ($name) = @_;
+    my $parent = $parents{$name};
+    my $page;
+
+    if( $parent eq "-" ){
+	return;
+    }
+    my $childref = $webtree{$parent};
+    my @pages = @$childref;
+    my $istheone = 0;
+    foreach $page (@pages){
+	if( $page eq $name ){
+	    $istheone = 1;
+	}
+	else {
+	    if( $istheone ){
+		my $url = &generate_relative_url( $name, $page );
+		print "<p>\n<a href=\"$url.html\">next: $pagename{$page}</a>\n</p>\n";
+		$istheone = 0;
+	    }
+	}
+    }
+}
+
+# Given the name of a webpage, generate buttons for the previous
+# and next page (if any).
+sub generate_prev_next($)
+{
+    my ($name) = @_;
+    my $parent = $parents{$name};
+    my $page;
+    my $prev;
+    my $next;
+
+    if( $parent eq "-" ){
+	return;
+    }
+    my $childref = $webtree{$parent};
+    my @pages = @$childref;
+    print "<table class=\"navigation\"><tr>\n";
+    my $done = 0;
+    foreach $page (@pages){
+	if( $done ){
+	    $next = $page;
+	    last;
+	}
+	if( $page eq $name ){
+	    $done = 1;
+	}
+	else {
+	    $prev = $page;
+	}
+    }
+    if( defined $prev ){
+	my $url = &generate_relative_url( $name, $prev );
+	print "<td><a href=\"$url.html\">$pagename{$prev}</a></td>";
+	&generate_img( $name, "pictures/prev.gif", "" );
+    }
+    if( defined $next ){
+	my $url = &generate_relative_url( $name, $next );
+	print "<td>";
+	&generate_img( $name, "pictures/also.gif", "" );
+	print "<a href=\"$url.html\">$pagename{$next}</a></td>";
+    }
+    print "\n</table>\n";
+}
+
+# Given the name of a webpage, generate a button bar to select all
+# the children of this webpage.
+sub generate_child_selector($)
+{
+    my ($name) = @_;
+    my $page;
+
+    my $childref = $webtree{$name};
+    if( !defined $childref ){
+	die "Structure of '$name' unknown, stopped";
+    }
+    my @pages = @$childref;
+    print "<p>";
+    print "| ";
+    foreach $page (@pages){
+	if( $page eq $name ){
+	    print "<strong>$pagename{$page}</strong> |";
+	}
+	else {
+	    my $url = &generate_relative_url( $name, $page );
+	    print "<a href=\"$url.html\">$pagename{$page}</a> |";
+	}
+    }
+    print "\n</p>\n";
+}
+
+# Given a title, generate the header of a html page.
+sub generateHeader($$)
+{
+    my ($name,$title, $noh1 ) = @_;
+    my $css_url = &generate_relative_url($name, $stylesheet );
+    print <<EOF;
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML r1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+<title>$title</title>
+<link rev="made" href="mailto:$myEmailAddress" />
+<meta name="generator" content="Perl" />
+<link rel="stylesheet" href="$css_url" type="text/css" />
+</head>
+<body>
+EOF
+    &generate_navigator_bar( $name );
+    if( !defined $noh1 ){
+	print "<h1>$title</h1>\n";
+    }
+}
+
+
+# Given a title, and a url to warp to, generate a referal page
+sub generate_referal_page($$$)
+{
+    my ($name,$title, $url ) = @_;
+    my $abs_url = &generate_relative_url($name,$url);
+    my $css_url = &generate_relative_url($name, $stylesheet );
+
+    print <<EOF;
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML r1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
+<head>
+<title>$title</title>
+<link rev="made" href="mailto:$myEmailAddress" />
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+<meta http-equiv="refresh" content="$warp_time;URL=$abs_url" />
+<link rel="stylesheet" href="$css_url" type="text/css" />
+<meta name="generator" content="Perl" />
+</head>
+<body>
+EOF
+    if( !-e $name ){
+	$name = "$name.pl";
+    }
+    my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,$atime,$mtime,$ctime,$blksize,$blocks) = stat( $name );
+    my $dt = gmtime( $mtime );
+    print<<EOF;
+<p>
+This page is obsolete, please update your link. In $warp_time seconds
+the <a href="$abs_url">new page</a> will loaded.  You can also go to
+the page immediately by <a href="$abs_url">clicking</a>.
+</p>
+<hr class="empty" />
+<p style="font-size: 70%;">
+Last modified $dt UT by
+<a href="mailto:$myEmailAddress">$maintainer</a>.
+</p>
+</body>
+</html>
+EOF
+}
+
+
+# Generate the footer of a html page.
+sub generateFooter($)
+{
+    my ($fnm) = @_;
+
+    if( !-e $fnm ){
+	$fnm = "$fnm.pl";
+    }
+    my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,$atime,$mtime,$ctime,$blksize,$blocks) = stat( $fnm );
+    my $dt = gmtime( $mtime );
+    print<<EOF;
+<hr class="empty" />
+<p style="font-size: 70%;">
+Last modified $dt UT by
+<a href="mailto:$myEmailAddress">$maintainer</a>.
+</p>
+</body>
+</html>
+EOF
+}
+
+# Generate an image and text to warn that this page is under construction.
+sub generate_under_construction($)
+{
+    my ($page) = @_;
+    &generate_img( $page, "pictures/constr-ani.gif", "under construction" );
+    print "<p>\n";
+    print <<EOF;
+This page is under construction.
+</p>
+EOF
+}
+
+# Given a filename, return its size.
+sub filesize($)
+{
+    my ($fnm) = @_;
+    my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,$atime,$mtime,$ctime,$blksize,$blocks) = stat( $fnm );
+    return $size;
+}
+
+# Given a size, express it in bytes, K, M, or G, depending on size.
+sub generate_rounded_size($)
+{
+    my ($n) = @_;
+    my $v;
+    if( $n<1000 ){
+	return $n;
+    }
+    if( $n<1000000 ){
+	$v = ($n+500)/1000;
+	return (int $v) . "K";
+    }
+    if( $n<1000000000 ){
+	$v = ($n+500000)/1000000;
+	return (int $v) . "M";
+    }
+    $v = ($n+500000000)/1000000000;
+    return (int $v) . "G";
+}
+
+# Given a filename (possibly including a path), return just the filename
+sub generate_filename($)
+{
+    my ($file) = @_;
+    my @parts = split "/", $file;
+    return $parts[$#parts];
+}
+
+# Given the webpage we're talking from, the path and name of
+# a file to download, and a description of the file type, generate a download
+# item.
+sub generate_download($$$)
+{
+    my ($page,$file,$desc) = @_;
+    my $url = &generate_relative_url($page,$file);
+    my $sz = &generate_rounded_size( -s $file );
+    my $fnm = &generate_filename( $file );
+    print "<blockquote>\n<p>\n";
+    &generate_img( $page, "pictures/download.gif", "" );
+    print "\n<a href=\"$url\">$fnm</a>, $desc ($sz)\n</p>\n</blockquote>\n";
+}
+
+# Given the webpage we're talking from and the path and basename of
+# the files to download, generate a list of download variants.
+sub generate_downloads($$)
+{
+    my ($page,$file) = @_;
+    my $found = 0;
+
+    if( -e "$file.pdf" ){
+	&generate_download( $page, "$file.pdf", "Acrobat document" );
+	$found = 1;
+    }
+    if( -e "$file.ppt" ){
+	&generate_download( $page, "$file.ppt", "PowerPoint presentation" );
+	$found = 1;
+    }
+    if( -e "$file.ppt.gz" ){
+	&generate_download( $page, "$file.ppt.gz", "gzip compressed PowerPoint presentation" );
+	$found = 1;
+    }
+    if( -e "$file.zip" ){
+	&generate_download( $page, "$file.zip", "zip file" );
+	$found = 1;
+    }
+    if( -e "$file.exe" ){
+	&generate_download( $page, "$file.exe", "Self-extracting archive" );
+	$found = 1;
+    }
+    if( -e "$file.tar" ){
+	&generate_download( $page, "$file.tar", "tar file" );
+	$found = 1;
+    }
+    if( -e "$file.tar.gz" ){
+	&generate_download( $page, "$file.tar.gz", "gzip compressed tar file" );
+	$found = 1;
+    }
+    if( -e "$file.dvi" ){
+	&generate_download( $page, "$file.dvi", "DVI" );
+	$found = 1;
+    }
+    if( -e "$file.dvi.gz" ){
+	&generate_download( $page, "$file.dvi.gz", "gzip compressed DVI" );
+	$found = 1;
+    }
+    if( -e "$file.ps" ){
+	&generate_download( $page, "$file.ps", "PostScript" );
+	$found = 1;
+    }
+    if( -e "$file.ps.gz" ){
+	&generate_download( $page, "$file.ps.gz", "gzip compressed PostScript" );
+	$found = 1;
+    }
+    if( !$found ){
+	die "No downloads for '$file', stopped";
+    }
+}
+
+# Given the webpage we're talking from, a url, and a title, generate a link
+# in the same style as of generate_download.
+sub generate_url_download($$$)
+{
+    my ($page,$url,$desc) = @_;
+    if( ! $url =~ /^(ftp|http):\/\// ){
+	$url = &generate_relative_url($page,$url);
+    }
+    print "<blockquote>\n<p>\n";
+    &generate_img( $page, "pictures/download.gif", "$desc" );
+    print "\n<a href=\"$url\">$desc</a>\n</p>\n</blockquote>\n";
+}
+
+# Given some info, generate a formatted publication.
+sub generate_conferencepaper_reference($$$$$$$$)
+{
+    my($from,$author,$title,$proceedings,$pages,$location,$date,$url) = @_;
+    print "<p>\n";
+    print "<strong>Conference paper</strong>:\n";
+    if( $author eq "" ){
+	die "A conference paper must have an author";
+    }
+    print "$author,\n";
+    if( $title eq "" ){
+	die "A conference paper must have a title";
+    }
+    if( defined $url ){
+	if( ! $url =~ /^(ftp|http):\/\// ){
+	    $url = &generate_relative_url($from,$url);
+	}
+	print "<a href=\"$url\">$title</a>";
+    }
+    else {
+	print "<em>$title</em>";
+    }
+    if( defined $proceedings && !$proceedings eq "" ){
+	print ",\nin: $proceedings";
+    }
+    if( defined $pages && !$pages eq "" ){
+	print ",\npp. $pages";
+    }
+    if( defined $location && !$location eq "" ){
+	print ",\n$location";
+    }
+    if( defined $date && !$date eq "" ){
+	print ",\n$date";
+    }
+    print ".\n</p>\n\n";
+}
+
+# Given some info, generate a formatted publication.
+sub generate_article_reference($$$$$$$$)
+{
+    my($from,$author,$title,$journal,$number,$pages,$date,$url) = @_;
+    print "<p>\n";
+    print "<strong>Journal article</strong>:\n";
+    if( $author eq "" ){
+	die "A journal article must have an author";
+    }
+    print "$author,\n";
+    if( $title eq "" ){
+	die "A journal article must have a title";
+    }
+    if( defined $url ){
+	if( ! $url =~ /^(ftp|http):\/\// ){
+	    $url = &generate_relative_url($from,$url);
+	}
+	print "<a href=\"$url\">$title</a>";
+    }
+    else {
+	print "<em>$title</em>";
+    }
+    if( $journal eq "" ){
+	die "A journal article must have a journal name";
+    }
+    print ",\nin: $journal";
+    if( defined $number && !$number eq "" ){
+	print " $number";
+    }
+    if( defined $pages && !$pages eq "" ){
+	print ",\npp. $pages";
+    }
+    if( defined $date && !$date eq "" ){
+	print ",\n$date";
+    }
+    print ".\n</p>\n\n";
+}
+
+# Given some info, generate a formatted publication.
+sub generate_report_reference($$$$$$$$)
+{
+    my($from,$author,$title,$series,$number,$publisher,$date,$url) = @_;
+    print "<p>\n";
+    print "<strong>Technical report</strong>:\n";
+    if( $author eq "" ){
+	die "A technical report must have an author";
+    }
+    print "$author,\n";
+    if( $title eq "" ){
+	die "A technical report must have a title";
+    }
+    if( defined $url ){
+	if( ! $url =~ /^(ftp|http):\/\// ){
+	    $url = &generate_relative_url($from,$url);
+	}
+	print "<a href=\"$url\">$title</a>";
+    }
+    else {
+	print "<em>$title</em>";
+    }
+    if( $series eq "" ){
+	die "A technical report must belong to a series";
+    }
+    if( $number eq "" ){
+	die "A technical report must have a serial number";
+    }
+    print ",\n$series $number";
+    if( defined $publisher && !$publisher eq "" ){
+	print ",\n$publisher";
+    }
+    if( defined $date && !$date eq "" ){
+	print ",\n$date";
+    }
+    print ".\n</p>\n\n";
+}
+
+# Given a web page, a date and a text, generate a news item.
+sub generate_news_item($$$)
+{
+    my($from,$date,$text) = @_;
+
+    print "<p>\n<strong>$date</strong>:\n$text\n</p>\n";
+}
+
+# Given a the web page we come from and the file to list, generate
+# HTML to list the file.
+sub list_file($$)
+{
+    my($from,$file) = @_;
+    print( "<hr class=\"empty\" />\n<pre>\n" );
+    open( F, $file );
+    while( <F> ){
+	s/</&lt;/g;
+	s/>/&gt;/g;
+	print;
+    }
+    close(F);
+    print( "</pre>\n<hr class=\"empty\" />\n" );
+}

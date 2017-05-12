@@ -1,0 +1,55 @@
+// fac.sv -- The Factorial Function.
+
+package spar.testsuite;
+
+public class genfac
+{
+  static int vnusout = 1;
+  
+  
+  // Iterative factorial function.
+    public static long Fac (long n)
+      {
+        long m = 1;
+        while (n > 1) 
+          {
+            m = m*n;
+            n = n-1;
+          }
+        return m;
+      }
+
+  // Recursive factorial function.
+    public static long FacRec (long n) 
+      {
+        if( n == 0 ){
+            return 1;
+          }
+        else {
+            return n * FacRec(n-1);
+          }
+      }
+  
+  public static void testFac(long x)
+    {
+      __println( vnusout, "Iterative:\t", x, "! = ", Fac(x) );
+      __println( vnusout, "Recursive:\t", x, "! = ", FacRec(x) );
+      __println( vnusout );
+    }
+
+  public static void main()
+    {
+      testFac(0);
+      testFac(1);
+      testFac(2);
+      testFac(3);
+      testFac(4);
+      testFac(5);
+      testFac(6);
+      testFac(7);
+      testFac(8);
+      testFac(9);
+      testFac(10);
+      testFac(20);
+    }
+}

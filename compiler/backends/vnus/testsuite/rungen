@@ -1,0 +1,92 @@
+#!/bin/sh
+#
+# Run a test that is supposed to succeed and generate certain Vnus code.
+
+TIMBERSRCROOT=../../..
+VNUSFLAGS=
+
+# Places of executables
+FRONT=$TIMBERSRCROOT/backends/vnus/vnus
+VERBOSE=0
+FORCEV=0
+FILE=
+
+for f; do
+    case "$f" in
+	-v)
+	    VERBOSE=1;;
+
+	-f)
+	    FORCEV=1;;
+
+	-*)
+	    echo "unknown option '$f'"; exit 2 ;;
+
+	*)
+	    FILE=$f ;;
+    esac
+done
+
+if [ x$FILE = x ]; then
+    echo "No file specified"
+    exit 2
+fi
+BASENAME=`basename $FILE .v`
+OUTFILE=$BASENAME.c
+ERRFILE=$BASENAME.err
+TESTOUTFILE=$BASENAME.tc
+TESTERRFILE=$BASENAME.testerr
+FLAGSFILE=$BASENAME.flags
+PROFFILE=$BASENAME.gprof
+if [ ! -e $ERRFILE ]; then
+    echo "Creating default (=empty) error reference file '$ERRFILE'"
+    touch $ERRFILE
+fi
+if [ ! -e $OUTFILE ]; then
+    echo "Creating default (=empty) reference file '$OUTFILE'"
+    touch $OUTFILE
+fi
+if [ -e $FLAGSFILE ]; then
+    VNUSFLAGS="$VNUSFLAGS `cat $FLAGSFILE`"
+fi
+if [ $VERBOSE = 1 ]; then
+    echo vnus $VNUSFLAGS $FILE
+fi
+$FRONT $VNUSFLAGS $FILE -o $TESTOUTFILE 2> $TESTERRFILE
+COMPILESTATUS=$?
+# Put aside any profile that has been created during this run
+if [ -e gmon.out ]; then
+    mv gmon.out $PROFFILE
+fi
+CMD="diff $TESTERRFILE $ERRFILE"
+if [ $VERBOSE = 1 ]; then
+    echo $CMD
+fi
+$CMD
+STATUS=$?
+if [ $STATUS != 0 ]; then
+    echo "To update do: cp $TESTERRFILE $ERRFILE"
+    exit 1
+fi
+CMD="diff $TESTOUTFILE $OUTFILE"
+if [ $VERBOSE = 1 ]; then
+    echo $CMD
+fi
+$CMD
+STATUS=$?
+if [ $STATUS != 0 ]; then
+    if [ $FORCEV = 1 ]; then
+	cp $TESTOUTFILE $OUTFILE
+	echo "File $OUTFILE has been updated"
+    else
+	echo "Output differs from reference"
+	echo "to update do: cp $TESTOUTFILE $OUTFILE"
+	exit 1
+    fi
+fi
+if [ $COMPILESTATUS != 0 ]; then
+    echo "Compilation failed with status code $COMPILESTATUS"
+    exit 1
+fi
+rm -f $TESTOUTFILE $TESTERRFILE
+exit 0

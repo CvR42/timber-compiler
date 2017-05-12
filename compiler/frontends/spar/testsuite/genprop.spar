@@ -1,0 +1,15 @@
+// This once make the compiler barf, but with the new implementation
+// there should be no way the same could happen again.
+
+import java.util.*;
+
+class Properties {
+    public Properties() { this( null ); }
+    public Properties( Properties defaults ){}
+}
+
+public class genprop {
+    public static void main(){
+	new Properties();
+    }
+}

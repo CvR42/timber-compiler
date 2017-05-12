@@ -1,0 +1,12 @@
+// Minimal test program.
+
+package spar.testsuite;
+
+import spar.testsuite.subpack.*;
+
+public class okpckhello {
+    public static void main()
+    {
+	hello.say();
+    }
+}

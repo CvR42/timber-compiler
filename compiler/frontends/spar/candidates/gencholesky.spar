@@ -1,0 +1,66 @@
+// A larger example, after the 'didactic' Cholesky Decomposition
+// in the Jama package, see http://math.nist.gov/javanumerics/jama/
+
+package spar.testsuite;
+
+public class gencholesky implements java.io.Serializable {
+
+/* ------------------------
+   Class variables
+ * ------------------------ */
+
+    /** Array for internal storage of decomposition.
+    @serial internal array storage.
+    */
+    private double[*,*] L;
+
+    /** Row and column dimension (square matrix).
+    @serial matrix dimension.
+    */
+    private int n;
+
+    /** Symmetric and positive definite flag.
+    @serial is symmetric and positive definite flag.
+    */
+    private boolean isspd;
+
+    public gencholesky (double[*,*] A) {
+	// Initialize.
+	n = getsize( A, 0 );
+	L = new double[n,n];
+	isspd = ( getsize( A, 1 ) == n);
+	// Main loop.
+	for [j:n] {
+	    double d = 0.0;
+	    for [k:j] {
+		double s = 0.0;
+		for [i:k] {
+		    s += L[i,k]*L[i,j];
+		}
+		L[j,k] = s = (A[j,k] - s)/L[k,k];
+		d = d + s*s;
+		isspd = isspd & (A[k,j] == A[j,k]); 
+	    }
+	    d = A[j,j] - d;
+	    isspd = isspd & (d > 0.0);
+	    L[j,j] = Math.sqrt(Math.max(d,0.0));
+	    for (int k = j+1; k < n; k++) {
+		L[j,k] = 0.0;
+	    }
+	}
+    }
+
+    public boolean isSPD () {
+	return isspd;
+    }
+
+    public double[*,*] getL () {
+	return L;
+    }
+
+    static public void main(){
+	double A[*,*] = { { 1,2,3}, {2,7,6}, {3,6,9} };
+	double B[*,*] = { { 7,2,8 } };
+	gencholesky CA = new gencholesky( A );
+    }
+}

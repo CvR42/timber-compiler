@@ -1,0 +1,34 @@
+|| Tm datastructures shared by the scheduler and the mapper
+
+TaskId = { name:origsymbol, cost:MPoptexpression }
+    ;
+
+Arc =
+    BasicArc:{ task:origsymbol, indices:[MPexpression], 
+		cost:MPoptexpression, data:MPoptexpression } |
+    ConditionalArc: { cond:MPexpression, thenarc:Arc, elsearc:Arc } |
+    IterationArc: { name:varname, upperbound:MPexpression, arc:Arc }
+    ;
+
+MPoptexpression =
+    MPOptExprNone: {} |
+    MPOptExpr:{ x:MPexpression }
+    ;
+
+MPexpression ~= {};
+
+MPLiteralExpression = MPexpression +
+    MPExprInt: { v:vnus_int } |
+    MPExprDouble: { v:vnus_double } |
+    MPExprBoolean: { b:vnus_boolean }
+    ;
+
+MPAccessExpression = MPexpression +
+    MPExprName: { name:varname } |
+    MPExprExternalName: { name:varname } |
+    MPExprSelection: { shape:MPexpression, indices:[MPexpression] }
+    ;
+
+MPOperatorExpression = MPexpression +
+    MPExprBinop: { left:MPexpression, optor:BINOP, right:MPexpression }
+    ;

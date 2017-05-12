@@ -1,0 +1,12 @@
+// Spar language extensions to Java. These should be flagged by the
+// compiler if the --nodelete flag is given.
+
+package spar.testsuite;
+
+public class errnodelete {
+    public static void main()
+    {
+	int a[] = new int[3];
+	delete a;
+    }
+}

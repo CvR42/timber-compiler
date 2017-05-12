@@ -1,0 +1,996 @@
+/*
+   Applyca3 engine
+
+   Do communication aggregation.
+   The third step: find an 'independent' foreach statement with one
+   'communication' statement and transform it into a block transfer
+   statement. Do it the 'easy' way and let the owner-absorbtion later
+   on handle the complicated stuff. the communication statement should
+   already be using a tempo array.
+
+   This scheme generates WaitPending directly after every receive,
+   plus an extra one at the end, just to be sure...
+
+   If the lhs and rhs owners have the same block distribution(with an
+   offset) we assume a stencil operation. Instead of creating a loop
+   that spans all processors, a loop is created that contains just the
+   'current processor' and its neighbours.
+   This is just a 1-dimensional loop. Multi-dimensional has yet to be done.
+   */
+
+.. File: applyca3.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtForeach
+.append actors DeclFunction DeclProcedure
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "applyca3.h"
+#include "vnusctl.h"
+#include "replace.h"
+#include "search.h"
+#include "parsepragmas.h"
+//#define CA_SEND_SIZE
+#define ENABLE_SEND_TO_SELF
+#define ENABLE_GLOBAL_BUFFER
+#define ENABLE_STENCIL
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Support ----------- */
+
+#ifdef ENABLE_STENCIL
+static bool check_offset(
+    OwnerExpr owner, int *blocksize, ExprName *name, int *offset,
+    global_context /*gc*/)
+{
+    if (owner->tag != TAGNewOwnLocation) return false;
+    DistrExpr_list DL = to_NewOwnLocation(owner)->distr;
+    if (DL == DistrExpr_listNIL || DL->sz != 1) return false;
+    if (DL->arr[0]->tag != TAGNewDistBlock) return false;
+    NewDistBlock B = to_NewDistBlock(DL->arr[0]);
+    if (B->size->tag == TAGExprInt)
+    {
+	*blocksize = to_ExprInt(B->size)->v;
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr,"CA3:offset: bs:%d\n", *blocksize);
+    }
+    else
+    {
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr,"CA3:offset: not integer blocksize\n");
+	return false;
+    }
+    switch (B->index->tag)
+    {
+	case TAGExprName:
+	    *name = to_ExprName(B->index);
+	    break;
+	case TAGExprBinop:
+	{
+	    ExprBinop eb = to_ExprBinop(B->index);
+	    switch (eb->left->tag)
+	    {
+		case TAGExprName:
+		    *name = to_ExprName(eb->left);
+		    break;
+		default:
+		    return false;
+	    }
+	    switch (eb->right->tag)
+	    {
+		case TAGExprInt:
+		    *offset = to_ExprInt(eb->right)->v;
+		    break;
+		default:
+		    return false;
+	    }
+	    switch (eb->optor)
+	    {
+		case BINOP_PLUS:
+		    break;
+		case BINOP_MINUS:
+		    *offset = -(*offset);
+		    break;
+		default:
+		    return false;
+	    }
+	    break;
+	}
+	default:
+	    return false;
+    }
+    if (warning_level >= WARN_DEBUG)
+	fprintf(stderr,"CA3:offset:%d\n", *offset);
+    return true;
+}
+
+static bool check_stencil(
+    OwnerExpr lhsOwner, OwnerExpr rhsOwner, cardinality_list cards,
+    global_context gc)
+{
+    assert (lhsOwner != OwnerExprNIL);
+    assert (rhsOwner != OwnerExprNIL);
+    assert (cards != cardinality_listNIL && cards->sz != 0);
+    int lhsBlocksize = 0;
+    int rhsBlocksize = 0;
+    ExprName lhsName = ExprNameNIL;
+    ExprName rhsName = ExprNameNIL;
+    int lhsOffset = 0;
+    int rhsOffset = 0;
+    bool lhsOk = check_offset(lhsOwner, &lhsBlocksize, &lhsName, &lhsOffset, gc);
+    bool rhsOk = check_offset(rhsOwner, &rhsBlocksize, &rhsName, &rhsOffset, gc);
+
+    if (!(lhsOk && rhsOk)) return false;
+    if (warning_level >= WARN_DEBUG)
+	fprintf(stderr,"CA3:could be stencil...\n");
+	/*
+	  Now we have to check that the block sizes are the same, but that the
+	  index expressions differ only by an offset.
+
+	  For now the houtjetouwtje approach.
+	  */
+    if (lhsBlocksize != rhsBlocksize)
+    {
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr,"CA3:stencil: unequal blocksizes\n");
+	return false;
+    }
+    if (lhsName->name->sym != rhsName->name->sym)
+    {
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr,"CA3:stencil: unequal iterators\n");
+	return false;
+    }
+    bool found = false;
+    for (unsigned i=0; i<cards->sz && !found; i++)
+    {
+	if (lhsName->name->sym == cards->arr[i]->name->sym)
+	{
+	    if (warning_level >= WARN_DEBUG)
+		fprintf(stderr,"CA3:stencil: match primary %d\n", i);
+	    found = true;
+	}
+	if (!found && cards->arr[i]->secondaries != secondary_listNIL)
+	{
+	    for (unsigned j=0; j<cards->arr[i]->secondaries->sz && !found; j++)
+	    {
+		if (lhsName->name->sym == cards->arr[i]->secondaries->arr[j]->name->sym)
+		{
+		    if (warning_level >= WARN_DEBUG)
+			fprintf(stderr,"CA3:stencil: match secondary %d.%d\n", i, j);
+		    found = true;
+		}
+	    }
+	}
+    }
+    if (!found)
+    {
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr,"CA3:stencil: iterator not used in distr\n");
+	return false;
+    }
+    if (warning_level >= WARN_DEBUG)
+	fprintf(stderr,"CA3:stencil: offsets:%d,%d\n", lhsOffset, rhsOffset);
+    return ((abs(lhsOffset)<=lhsBlocksize) &&
+	    (abs(rhsOffset)<=rhsBlocksize));
+}
+#endif
+
+/*
+  The following 3 build functions only generate correct code if the
+  'left' and 'right' expressions do not contain side effects.
+  */
+static expression build_reduction_expression(
+    BINOP optor, expression left, expression right)
+{
+    return new_ExprIf(
+	new_ExprBinop(
+	    rdup_expression(left),
+	    optor,
+	    rdup_expression(right)),
+	left,
+	right);
+}
+
+static expression build_min_expression(
+    expression left, expression right)
+{
+    return build_reduction_expression(BINOP_LESS, left, right);
+}
+
+static expression build_max_expression(
+    expression left, expression right)
+{
+    return build_reduction_expression(BINOP_GREATER, left, right);
+}
+
+static void add_vnus_new_declaration(
+    global_context gc)
+{
+    origsymbol name = add_origsymbol("vnus_new");
+    int pos = declaration_list_find_pos(gc->prog->declarations, name);
+    if (pos != -1)
+    {
+        rfre_origsymbol(name);
+        return;
+    }
+    DeclFormalVariable nelm = new_DeclFormalVariable(
+	add_origsymbol("new_nelm"),
+        0,
+        Pragma_listNIL,
+	rdup_tmsymbol(name->sym),
+	new_TypeBase(BT_INT));
+    DeclFormalVariable elmsz = new_DeclFormalVariable(
+	add_origsymbol("new_elmsz"),
+        0,
+        Pragma_listNIL,
+	rdup_tmsymbol(name->sym),
+	new_TypeBase(BT_INT));
+    
+    origsymbol_list parms = new_origsymbol_list();
+    parms = append_origsymbol_list(parms, rdup_origsymbol(nelm->name));
+    parms = append_origsymbol_list(parms, rdup_origsymbol(elmsz->name));
+    DeclExternalFunction vnus_new = new_DeclExternalFunction(
+        name,
+        0,
+        Pragma_listNIL,
+        parms,
+	new_TypeUnsizedArray(
+	    new_TypeBase(BT_BYTE)));
+    gc->prog->declarations = append_declaration_list(gc->prog->declarations, vnus_new);
+    gc->prog->declarations = append_declaration_list(gc->prog->declarations, nelm);
+    gc->prog->declarations = append_declaration_list(gc->prog->declarations, elmsz);
+}
+
+static void add_vnus_delete_declaration(
+    global_context gc)
+{
+    origsymbol name = add_origsymbol("vnus_delete");
+    int pos = declaration_list_find_pos(gc->prog->declarations, name);
+    if (pos != -1)
+    {
+        rfre_origsymbol(name);
+        return;
+    }
+    DeclFormalVariable ptr = new_DeclFormalVariable(
+	add_origsymbol("delete_ptr"),
+        0,
+        Pragma_listNIL,
+	rdup_tmsymbol(name->sym),
+	new_TypeUnsizedArray(
+	    new_TypeBase(BT_BYTE)));
+    
+    origsymbol_list parms = new_origsymbol_list();
+    parms = append_origsymbol_list(parms, rdup_origsymbol(ptr->name));
+    DeclExternalProcedure vnus_delete = new_DeclExternalProcedure(
+        name,
+        0,
+        Pragma_listNIL,
+        parms);
+    gc->prog->declarations = append_declaration_list(gc->prog->declarations, vnus_delete);
+    gc->prog->declarations = append_declaration_list(gc->prog->declarations, ptr);
+}
+
+
+/* ----------- Actors ----------- */
+
+.call generate_admin_current_parms_action DeclFunction
+.call generate_admin_current_parms_action DeclProcedure
+
+
+/*
+  If foreach statement is independent and has one 'communication statement
+  transform it into a block transfer scheme.
+  */
+static statement rewrite_SmtForeach_action(
+    SmtForeach e, global_context gc )
+{
+.call generate_walker_call "    " e SmtForeach SmtForeach
+    int sendToSelfTest = false;
+    int isAssignToSelf = false;
+    if (pragma_list_contains_tmsymbol(
+        e->pragmas,
+        add_tmsymbol("usesArrayTempo")))
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr, "CA3: found usesArrayTempo foreach\n");
+    
+    if (!pragma_list_contains_tmsymbol(
+        e->pragmas,
+        add_tmsymbol("independent")))
+        return e;
+    if (warning_level >= WARN_DEBUG)
+	fprintf(stderr, "CA3: found independent foreach\n");
+
+//    if (e->cards->sz != 1)
+//        return e;
+//    fprintf(stderr, "CA3: found 1-dim foreach\n");
+//    assert (e->cards->arr[0]->secondaries->sz == 0);
+    
+    statement_list sl = e->body->statements;
+    if (sl->sz != 1)
+        return e;    
+    if (sl->arr[0]->tag != TAGSmtAssign)
+        return e;
+    if (warning_level >= WARN_DEBUG)
+	fprintf(stderr, "CA3: found ass.stmt\n");
+
+    SmtAssign as = to_SmtAssign(sl->arr[0]);
+    if (!is2owned(as))
+	return e;
+    if (warning_level >= WARN_DEBUG)
+	fprintf(stderr, "CA3: found 2-owned statement\n");
+
+    assert (gc->current_parms != 0);
+    location strippedLHS = pierceLocationWrapper(as->lhs);
+    if (strippedLHS->tag != TAGLocSelection)
+        return e;
+    
+    if (!isBasicType(as->rhs, gc))
+	internal_error("CA3: can only send basic types");
+    
+    assert (as->rhs->tag == TAGExprWrapper);
+    assert (to_ExprWrapper(as->rhs)->on != OwnerExpr_listNIL);
+    assert (to_ExprWrapper(as->rhs)->on->sz == 1);
+    OwnerExpr rhsOwner = rdup_OwnerExpr(to_ExprWrapper(as->rhs)->on->arr[0]);
+    rfre_OwnerExpr_list(to_ExprWrapper(as->rhs)->on);
+    to_ExprWrapper(as->rhs)->on = OwnerExpr_listNIL;
+    
+    assert (as->on != OwnerExpr_listNIL);
+    assert (as->on->sz == 1);
+    OwnerExpr lhsOwner = rdup_OwnerExpr(as->on->arr[0]);
+    rfre_OwnerExpr_list(as->on);
+    as->on = OwnerExpr_listNIL;
+    
+    LocSelection lhs = to_LocSelection(strippedLHS);
+    expression strippedRHS = pierceExprWrapper(as->rhs);
+	// We don't need an array as rhs. I think...
+//    assert (strippedRHS->tag == TAGExprSelection);
+    ExprSelection rhs = to_ExprSelection(strippedRHS);
+    
+    if (warning_level >= WARN_DEBUG)
+	fprintf(stderr, "CA3: array access\n");
+#ifdef ENABLE_SEND_TO_SELF
+    if (!containsReplicated(lhsOwner))
+    {
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr, "CA3: not replicated, YES do send-to-self-test\n");
+	sendToSelfTest = true;
+    }
+#endif
+    isAssignToSelf = pragma_list_contains_tmsymbol(
+	as->pragmas,
+	add_tmsymbol("isAssignToSelf"));
+    if (isAssignToSelf)
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr,"CA3: yup: assign to self thingy\n");
+    bool check_stencilB = false;
+    bool has_stencil_pragma = false;
+#ifdef ENABLE_STENCIL
+    check_stencilB = check_stencil(lhsOwner, rhsOwner, e->cards, gc);
+    if (check_stencilB)
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr,"CA3: stencil test succeeded\n");
+    has_stencil_pragma = pragma_list_contains_tmsymbol(
+	as->pragmas,
+	add_tmsymbol("isStencil"));
+    if (has_stencil_pragma)
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr,"CA3: yup: stencil thingy\n");
+#endif
+    bool do_stencil = check_stencilB && has_stencil_pragma;
+    if (do_stencil)
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr,"CA3: will do stencil variant\n");
+    if (warning_level >= WARN_RULE)
+	fprintf(stderr,"CA3: doing transform\n");
+
+    add_vnus_new_declaration(gc);
+    add_vnus_delete_declaration(gc);
+// Maybe a bit too much testing...
+//     wait_pending();
+    SmtWaitPending waitpend = snew_SmtWaitPending();
+    type t = derive_type_expression(
+        gc->prog->declarations,
+        0, /*origin*/
+        as->rhs);
+    expression currentProc = build_currentProcessor_expression(gc);
+    SmtBlock nb = snew_SmtBlock(
+        snew_block());
+    nb->body->scope = gen_tmsymbol("__scope_");
+#ifdef ENABLE_GLOBAL_BUFFER
+    DeclGlobalVariable buf = new_DeclGlobalVariable(
+        gen_origsymbol("__ca3_buf_"),
+        0,
+        new_Pragma_list(),
+        new_TypeUnsizedArray(
+            rdup_type(t)),
+	optexpressionNIL);
+    buf->init = new_OptExpr(
+	new_ExprCast(
+	    rdup_type(buf->t),
+	    new_ExprNull()));
+
+	// Variable to keep size of buf
+    DeclGlobalVariable bufSize = new_DeclGlobalVariable(
+	gen_origsymbol("__ca3_buf_sz_"),
+	0,
+	Pragma_listNIL,
+	new_TypeBase(BT_INT),
+	new_OptExpr(
+	    new_ExprInt(0)));
+    gc->prog->declarations = append_declaration_list(gc->prog->declarations, bufSize);
+    
+    expression tmpSize = rdup_expression(e->cards->arr[0]->upperbound);
+    for (unsigned i=1; i<e->cards->sz; i++)
+    {
+        tmpSize = new_ExprBinop(
+            tmpSize,
+            BINOP_TIMES,
+            rdup_expression(e->cards->arr[i]->upperbound));
+    }
+    
+    bool foundDependency = false;
+    for (unsigned i=0; i<e->cards->sz; i++)
+    {
+	if (search_expression(tmpSize, e->cards->arr[i]->name->sym))
+	    foundDependency = true;
+	if (e->cards->arr[i]->secondaries != secondary_listNIL)
+	{
+	    for (unsigned j=0; j<e->cards->arr[i]->secondaries->sz; j++)
+	    {
+		if (search_expression(tmpSize, e->cards->arr[i]->secondaries->arr[j]->name->sym))
+		    foundDependency = true;
+	    }
+	}
+    }
+    if (foundDependency)
+    {
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr,"CA3: found buffer size dependency, trying to find upperbound pragma\n");
+	int pos = pragma_list_find_index_tmsymbol(e->pragmas, add_tmsymbol("upperbound"));
+	if (pos == -1)
+	{
+	    internal_error("CA3: didn't find upperbound pragma");
+	}
+	else
+	{
+	    assert (e->pragmas->arr[pos]->tag == TAGValuePragma);
+	    ValuePragma vp = to_ValuePragma(e->pragmas->arr[pos]);
+	    rfre_expression(tmpSize);
+	    tmpSize = parse_expression(vp->x);
+	}
+    }
+    
+	// call to allocator
+    SmtIf setBufSizeConditional = snew_SmtIf(
+	new_ExprBinop(
+	    new_ExprName(rdup_origsymbol(bufSize->name)),
+	    BINOP_LESS,
+	    tmpSize),
+	snew_block(),
+	snew_block());
+    setBufSizeConditional->thenbody->scope = gen_tmsymbol("__scope_");
+    setBufSizeConditional->elsebody->scope = gen_tmsymbol("__scope_");
+
+    expression_list free_parlist = new_expression_list();
+    free_parlist = append_expression_list(
+	free_parlist,
+	new_ExprCast(
+	    new_TypeUnsizedArray(
+		new_TypeBase(BT_BYTE)),
+	    new_ExprName(rdup_origsymbol(buf->name))));
+    SmtProcedureCall free_old_buf = snew_SmtProcedureCall(
+	new_ExprName(add_origsymbol("vnus_delete")),
+	free_parlist);
+    SmtAssign set_new_size = snew_SmtAssign(
+	new_LocName(rdup_origsymbol(bufSize->name)),
+	rdup_expression(tmpSize));
+    expression_list alloc_parlist = new_expression_list();
+    alloc_parlist = append_expression_list(
+	alloc_parlist,
+	new_ExprName(rdup_origsymbol(bufSize->name)));
+    alloc_parlist = append_expression_list(
+	alloc_parlist,
+	new_ExprSizeof(rdup_type(t)));
+    SmtAssign alloc_new_buf = snew_SmtAssign(
+	new_LocName(rdup_origsymbol(buf->name)),
+	new_ExprCast(
+	    rdup_type(buf->t),
+	    new_ExprFunctionCall(
+		new_ExprName(add_origsymbol("vnus_new")),
+		alloc_parlist)));
+    
+    setBufSizeConditional->thenbody->statements = append_statement_list(
+	setBufSizeConditional->thenbody->statements,
+	free_old_buf);
+    setBufSizeConditional->thenbody->statements = append_statement_list(
+	setBufSizeConditional->thenbody->statements,
+	set_new_size);
+    setBufSizeConditional->thenbody->statements = append_statement_list(
+	setBufSizeConditional->thenbody->statements,
+	alloc_new_buf);
+    nb->body->statements = append_statement_list(
+        nb->body->statements, setBufSizeConditional);
+#else
+    DeclLocalVariable buf = new_DeclLocalVariable(
+        gen_origsymbol("__ca3_buf_"),
+        0,
+        new_Pragma_list(),
+        rdup_tmsymbol(nb->body->scope),
+        new_TypeUnsizedArray(
+            rdup_type(t)),
+	optexpressionNIL);
+    expression tmpSize = rdup_expression(e->cards->arr[0]->upperbound);
+    for (unsigned i=1; i<e->cards->sz; i++)
+    {
+        tmpSize = new_ExprBinop(
+            tmpSize,
+            BINOP_TIMES,
+            rdup_expression(e->cards->arr[i]->upperbound));
+    }
+    expression_list alloc_parlist = new_expression_list();
+    alloc_parlist = append_expression_list(
+	alloc_parlist,
+	tmpSize);
+    alloc_parlist = append_expression_list(
+	alloc_parlist,
+	new_ExprSizeof(rdup_type(t)));
+    buf->init = new_OptExpr(
+	new_ExprCast(
+	    rdup_type(buf->t),
+	    new_ExprFunctionCall(
+		new_ExprName(add_origsymbol("vnus_new")),
+		alloc_parlist)));
+    
+    expression_list free_parlist = new_expression_list();
+    free_parlist = append_expression_list(
+	free_parlist,
+	new_ExprCast(
+	    new_TypeUnsizedArray(
+		new_TypeBase(BT_BYTE)),
+	    new_ExprName(rdup_origsymbol(buf->name))));
+    SmtProcedureCall free_buf = snew_SmtProcedureCall(
+	new_ExprName(add_origsymbol("vnus_delete")),
+	free_parlist);
+#endif
+
+    DeclCardinalityVariable cv1 = new_DeclCardinalityVariable(
+        gen_origsymbol("__ca3_cv_"),
+        0,
+        new_Pragma_list());
+    SmtForeach outerSendLoop = snew_SmtForeach(
+        new_cardinality_list(),
+        new_OwnerExpr_list(),
+        snew_block());
+    outerSendLoop->body->scope = gen_tmsymbol("__scope_");
+    {
+	expression L = new_ExprInt(0);
+	expression U = build_numberOfProcessors_expression(gc);
+	if (do_stencil)
+	{
+	    L = build_max_expression(
+		L,
+		new_ExprBinop(
+		    rdup_expression(currentProc),
+		    BINOP_MINUS,
+		    new_ExprInt(1)));
+	    U = build_min_expression(
+		U,
+		new_ExprBinop(
+		    rdup_expression(currentProc),
+		    BINOP_PLUS,
+		    new_ExprInt(2)));
+	}
+	outerSendLoop->cards = append_cardinality_list(
+	    outerSendLoop->cards,
+	    new_cardinality(
+		rdup_origsymbol(cv1->name),
+		L,
+		U,
+		new_ExprInt(1),
+		new_secondary_list()));
+    }
+    
+    nb->body->statements = append_statement_list(
+        nb->body->statements, outerSendLoop);
+    DeclLocalVariable no1 = new_DeclLocalVariable(
+        gen_origsymbol("__ca3_no1_"),
+        0,
+        new_Pragma_list(),
+        rdup_tmsymbol(outerSendLoop->body->scope),
+        new_TypeBase(BT_INT),
+        new_OptExpr(new_ExprInt(0)));
+    
+    SmtForeach innerSendLoop = snew_SmtForeach(
+        unique_rdup_cardinality_list(gc, e->cards),
+        new_OwnerExpr_list(),
+        snew_block());
+    outerSendLoop->body->statements = append_statement_list(
+        outerSendLoop->body->statements, innerSendLoop);
+
+    OwnerExpr lhsOwner1 = rdup_OwnerExpr(lhsOwner);
+    OwnerExpr rhsOwner1 = rdup_OwnerExpr(rhsOwner);
+    expression rhs1 = rdup_expression(rhs);
+    lhsOwner1 = replace_OwnerExpr_indices(gc, lhsOwner1, e->cards, innerSendLoop->cards);
+    rhsOwner1 = replace_OwnerExpr_indices(gc, rhsOwner1, e->cards, innerSendLoop->cards);
+    rhs1 = replace_expression_indices(gc, rhs1, e->cards, innerSendLoop->cards);
+    SmtIf ifpack = snew_SmtIf(
+        new_ExprBinop(
+            new_ExprIsNewOwner(
+                lhsOwner1,
+		build_procList(
+		    new_ExprName(rdup_origsymbol(cv1->name)),
+		    lhsOwner1,
+		    gc)),
+            BINOP_SHORTAND,
+	    new_ExprIsNewMaster(
+		rhsOwner1,
+		build_procList(
+		    rdup_expression(currentProc),
+		    rhsOwner1,
+		    gc))),
+        snew_block(),
+        snew_block());
+    innerSendLoop->body->statements = append_statement_list(
+        innerSendLoop->body->statements, ifpack);
+
+    expression_list aspackSelectors = new_expression_list();
+    aspackSelectors = append_expression_list(
+        aspackSelectors, new_ExprName(rdup_origsymbol(no1->name)));
+    SmtAssign aspack = snew_SmtAssign(
+        new_LocSelection(
+            new_ExprName(rdup_origsymbol(buf->name)),
+            aspackSelectors),
+        rhs1);
+    SmtAssign incno1 = snew_SmtAssign(
+        new_LocName(rdup_origsymbol(no1->name)),
+        new_ExprBinop(
+            new_ExprName(rdup_origsymbol(no1->name)),
+            BINOP_PLUS,
+            new_ExprInt(1)));
+    ifpack->thenbody->statements = append_statement_list(
+        ifpack->thenbody->statements, aspack);
+    ifpack->thenbody->statements = append_statement_list(
+        ifpack->thenbody->statements, incno1);    
+
+#ifdef CA_SEND_SIZE
+    SmtSend sendno = snew_SmtSend(
+	new_ExprName(rdup_origsymbol(cv1->name)),
+        new_ExprName(rdup_origsymbol(no1->name)));
+    outerSendLoop->body->statements = append_statement_list(
+        outerSendLoop->body->statements, sendno);
+//    outerSendLoop->body->statements = append_statement_list(
+//        outerSendLoop->body->statements, rdup_statement(waitpend));
+#endif
+
+    SmtIf ifsend = snew_SmtIf(
+        new_ExprBinop(
+            new_ExprName(rdup_origsymbol(no1->name)),
+            BINOP_NOTEQUAL,
+            new_ExprInt(0)),
+        snew_block(),
+        snew_block());
+    outerSendLoop->body->statements = append_statement_list(
+        outerSendLoop->body->statements, ifsend);
+
+    SmtBlocksend bufsend = snew_SmtBlocksend(
+        new_ExprName(rdup_origsymbol(cv1->name)),
+        new_ExprName(rdup_origsymbol(buf->name)),
+        new_ExprName(rdup_origsymbol(no1->name)));
+    ifsend->thenbody->statements = append_statement_list(
+        ifsend->thenbody->statements, bufsend);
+//    ifsend->thenbody->statements = append_statement_list(
+//        ifsend->thenbody->statements, rdup_statement(waitpend));
+    if (sendToSelfTest)
+    {
+        SmtIf ifsendme = snew_SmtIf(
+            new_ExprBinop(
+                new_ExprName(rdup_origsymbol(cv1->name)),
+                BINOP_NOTEQUAL,
+                rdup_expression(currentProc)),
+            outerSendLoop->body,
+            snew_block());
+	block nosb = snew_block();
+	nosb->statements = append_statement_list(nosb->statements, ifsendme);
+	outerSendLoop->body = nosb;
+    }
+    
+    DeclCardinalityVariable cv2 = new_DeclCardinalityVariable(
+        gen_origsymbol("__ca3_cv_"),
+        0,
+        new_Pragma_list());
+    SmtForeach outerRecvLoop = snew_SmtForeach(
+        new_cardinality_list(),
+        new_OwnerExpr_list(),
+        snew_block());
+    outerRecvLoop->body->scope = gen_tmsymbol("__scope_");
+    {
+	expression L = new_ExprInt(0);
+	expression U = build_numberOfProcessors_expression(gc);
+	if (do_stencil)
+	{
+	    L = build_max_expression(
+		L,
+		new_ExprBinop(
+		    rdup_expression(currentProc),
+		    BINOP_MINUS,
+		    new_ExprInt(1)));
+	    U = build_min_expression(
+		U,
+		new_ExprBinop(
+		    rdup_expression(currentProc),
+		    BINOP_PLUS,
+		    new_ExprInt(2)));
+	}
+	outerRecvLoop->cards = append_cardinality_list(
+	    outerRecvLoop->cards,
+	    new_cardinality(
+		rdup_origsymbol(cv2->name),
+		L,
+		U,
+		new_ExprInt(1),
+		new_secondary_list()));
+    }
+    nb->body->statements = append_statement_list(
+        nb->body->statements, outerRecvLoop);
+    DeclLocalVariable no2 = new_DeclLocalVariable(
+        gen_origsymbol("__ca3_no2_"),
+        0,
+        new_Pragma_list(),
+        rdup_tmsymbol(outerRecvLoop->body->scope),
+        new_TypeBase(BT_INT),
+        new_OptExpr(new_ExprInt(0)));
+    DeclLocalVariable noRcvd = new_DeclLocalVariable(
+        gen_origsymbol("__ca3_noRcvd_"),
+        0,
+        new_Pragma_list(),
+        rdup_tmsymbol(outerRecvLoop->body->scope),
+        new_TypeBase(BT_INT),
+        new_OptExpr(new_ExprInt(0)));
+
+#ifdef CA_SEND_SIZE
+    SmtReceive recvno = snew_SmtReceive(
+        new_ExprName(rdup_origsymbol(cv2->name)),
+        new_LocName(rdup_origsymbol(noRcvd->name)));
+    outerRecvLoop->body->statements = append_statement_list(
+        outerRecvLoop->body->statements, recvno);
+    outerRecvLoop->body->statements = append_statement_list(
+        outerRecvLoop->body->statements, rdup_statement(waitpend));
+#else
+    SmtForeach innerCountLoop = snew_SmtForeach(
+        unique_rdup_cardinality_list(gc, e->cards),
+        new_OwnerExpr_list(),
+        snew_block());
+    outerRecvLoop->body->statements = append_statement_list(
+        outerRecvLoop->body->statements, innerCountLoop);
+
+    OwnerExpr lhsOwner3 = rdup_OwnerExpr(lhsOwner);
+    OwnerExpr rhsOwner3 = rdup_OwnerExpr(rhsOwner);
+    lhsOwner3 = replace_OwnerExpr_indices(gc, lhsOwner3, e->cards, innerCountLoop->cards);
+    rhsOwner3 = replace_OwnerExpr_indices(gc, rhsOwner3, e->cards, innerCountLoop->cards);
+    SmtIf ifcount = snew_SmtIf(
+        new_ExprBinop(
+            new_ExprIsNewOwner(
+                lhsOwner3,
+		build_procList(
+		    rdup_expression(currentProc),
+		    lhsOwner3,
+		    gc)),
+            BINOP_SHORTAND,
+	    new_ExprIsNewMaster(
+		rhsOwner3,
+		build_procList(
+		    new_ExprName(rdup_origsymbol(cv2->name)),
+		    rhsOwner3,
+		    gc))),
+        snew_block(),
+        snew_block());
+    innerCountLoop->body->statements = append_statement_list(
+        innerCountLoop->body->statements, ifcount);
+
+    SmtAssign incnoRcvd = snew_SmtAssign(
+        new_LocName(rdup_origsymbol(noRcvd->name)),
+        new_ExprBinop(
+            new_ExprName(rdup_origsymbol(noRcvd->name)),
+            BINOP_PLUS,
+            new_ExprInt(1)));
+    ifcount->thenbody->statements = append_statement_list(
+        ifcount->thenbody->statements, incnoRcvd);    
+#endif
+    
+
+    SmtIf ifrecv = snew_SmtIf(
+        new_ExprBinop(
+            new_ExprName(rdup_origsymbol(noRcvd->name)),
+            BINOP_NOTEQUAL,
+            new_ExprInt(0)),
+        snew_block(),
+        snew_block());
+    outerRecvLoop->body->statements = append_statement_list(
+        outerRecvLoop->body->statements, ifrecv);
+    
+    SmtBlockreceive bufrecv = snew_SmtBlockreceive(
+        new_ExprName(rdup_origsymbol(cv2->name)),
+        new_ExprName(rdup_origsymbol(buf->name)),
+        new_ExprName(rdup_origsymbol(noRcvd->name)));
+    ifrecv->thenbody->statements = append_statement_list(
+        ifrecv->thenbody->statements, bufrecv);
+    ifrecv->thenbody->statements = append_statement_list(
+        ifrecv->thenbody->statements, rdup_statement(waitpend));
+
+    
+    SmtForeach innerRecvLoop = snew_SmtForeach(
+        unique_rdup_cardinality_list(gc, e->cards),
+        new_OwnerExpr_list(),
+        snew_block());
+    ifrecv->thenbody->statements = append_statement_list(
+        ifrecv->thenbody->statements, innerRecvLoop);
+
+    OwnerExpr lhsOwner2 = rdup_OwnerExpr(lhsOwner);
+    OwnerExpr rhsOwner2 = rdup_OwnerExpr(rhsOwner);
+    location lhs2l = rdup_location(lhs);
+    lhsOwner2 = replace_OwnerExpr_indices(gc, lhsOwner2, e->cards, innerRecvLoop->cards);
+    rhsOwner2 = replace_OwnerExpr_indices(gc, rhsOwner2, e->cards, innerRecvLoop->cards);
+    lhs2l = replace_location_indices(gc, lhs2l, e->cards, innerRecvLoop->cards);
+    SmtIf ifunpack = snew_SmtIf(
+        new_ExprBinop(
+            new_ExprIsNewOwner(
+                lhsOwner2,
+		build_procList(
+		    rdup_expression(currentProc),
+		    lhsOwner2,
+		    gc)),
+            BINOP_SHORTAND,
+	    new_ExprIsNewMaster(
+		rhsOwner2,
+		build_procList(
+		    new_ExprName(rdup_origsymbol(cv2->name)),
+		    rhsOwner2,
+		    gc))),
+        snew_block(),
+        snew_block());
+    innerRecvLoop->body->statements = append_statement_list(
+        innerRecvLoop->body->statements, ifunpack);
+
+    expression_list asunpackSelectors = new_expression_list();
+    asunpackSelectors = append_expression_list(
+        asunpackSelectors, new_ExprName(rdup_origsymbol(no2->name)));
+    SmtAssign asunpack = snew_SmtAssign(
+        lhs2l,
+        new_ExprSelection(
+            new_ExprName(rdup_origsymbol(buf->name)),
+            asunpackSelectors));
+    SmtAssign incno2 = snew_SmtAssign(
+        new_LocName(rdup_origsymbol(no2->name)),
+        new_ExprBinop(
+            new_ExprName(rdup_origsymbol(no2->name)),
+            BINOP_PLUS,
+            new_ExprInt(1)));
+    ifunpack->thenbody->statements = append_statement_list(
+        ifunpack->thenbody->statements, asunpack);
+    ifunpack->thenbody->statements = append_statement_list(
+        ifunpack->thenbody->statements, incno2);
+    
+    gc->prog->declarations = append_declaration_list(gc->prog->declarations, buf);
+    gc->prog->declarations = append_declaration_list(gc->prog->declarations, cv1);
+    add_cardinality_declarations(gc, innerSendLoop->cards);
+    gc->prog->declarations = append_declaration_list(gc->prog->declarations, cv2);
+#ifndef CA_SEND_SIZE
+    add_cardinality_declarations(gc, innerCountLoop->cards);
+#endif
+    add_cardinality_declarations(gc, innerRecvLoop->cards);
+    gc->prog->declarations = append_declaration_list(gc->prog->declarations, no1);
+    gc->prog->declarations = append_declaration_list(gc->prog->declarations, no2);
+    gc->prog->declarations = append_declaration_list(gc->prog->declarations, noRcvd);
+    
+//Start of send-to-self test    
+    if (sendToSelfTest)
+    {
+        SmtIf ifrecvme = snew_SmtIf(
+            new_ExprBinop(
+                new_ExprName(rdup_origsymbol(cv2->name)),
+                BINOP_NOTEQUAL,
+                rdup_expression(currentProc)),
+            outerRecvLoop->body,
+            snew_block());
+	block norb = snew_block();
+	norb->statements = append_statement_list(norb->statements, ifrecvme);
+	outerRecvLoop->body = norb;
+	
+	if (!isAssignToSelf)
+	{
+	    if (warning_level >= WARN_DEBUG)
+		fprintf(stderr,"CA3: generating local copy code\n");
+	    SmtForeach innerCopyLoop = snew_SmtForeach(
+		unique_rdup_cardinality_list(gc, e->cards),
+		new_OwnerExpr_list(),
+		snew_block());
+	    ifrecvme->elsebody->statements = append_statement_list(
+		ifrecvme->elsebody->statements,
+		innerCopyLoop);
+	    
+	    OwnerExpr lhsOwner4 = rdup_OwnerExpr(lhsOwner);
+	    OwnerExpr rhsOwner4 = rdup_OwnerExpr(rhsOwner);
+	    expression rhs4 = rdup_expression(rhs);
+	    location lhs4l = rdup_location(lhs);
+	    lhsOwner4 = replace_OwnerExpr_indices(gc, lhsOwner4, e->cards, innerCopyLoop->cards);
+	    rhsOwner4 = replace_OwnerExpr_indices(gc, rhsOwner4, e->cards, innerCopyLoop->cards);
+	    lhs4l = replace_location_indices(gc, lhs4l, e->cards, innerCopyLoop->cards);
+	    rhs4 = replace_expression_indices(gc, rhs4, e->cards, innerCopyLoop->cards);
+	    SmtIf ifcopy = snew_SmtIf(
+		new_ExprBinop(
+		    new_ExprIsNewOwner(
+			lhsOwner4,
+			build_procList(
+			    new_ExprName(rdup_origsymbol(cv2->name)),
+			    lhsOwner4,
+			    gc)),
+		    BINOP_SHORTAND,
+		    new_ExprIsNewMaster(
+			rhsOwner4,
+			build_procList(
+			    rdup_expression(currentProc),
+			    rhsOwner4,
+			    gc))),
+		snew_block(),
+		snew_block());
+	    innerCopyLoop->body->statements = append_statement_list(
+		innerCopyLoop->body->statements, ifcopy);
+	    
+	    SmtAssign ascopy = snew_SmtAssign(
+		lhs4l,
+		rhs4);
+	    ifcopy->thenbody->statements = append_statement_list(
+		ifcopy->thenbody->statements, ascopy);
+	    
+	    add_cardinality_declarations(gc, innerCopyLoop->cards);
+	}
+    }
+// End of send-to-self test    
+
+// Just to be sure...
+    nb->body->statements = append_statement_list(
+        nb->body->statements, rdup_statement(waitpend));
+
+#ifndef ENABLE_GLOBAL_BUFFER
+    nb->body->statements = append_statement_list(
+        nb->body->statements, free_buf);
+#endif
+    
+    rfre_type(t);
+    rfre_OwnerExpr(lhsOwner);
+    rfre_OwnerExpr(rhsOwner);
+    rfre_expression(currentProc);
+    rfre_SmtForeach(e);
+    rfre_statement(waitpend);
+    return nb;
+}
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_ca3(
+    vnusprog elm, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+.call init_current_parms
+.call generate_descent_call "    " elm vnusprog vnusprog
+    gc->prog->declarations = delete_marked_declaration_list(gc->prog->declarations);
+    return elm;
+}

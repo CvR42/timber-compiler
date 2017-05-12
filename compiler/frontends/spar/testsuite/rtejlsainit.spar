@@ -1,0 +1,16 @@
+// After JLS2 10.6    Arrays Initializers
+//
+// This should print:
+// 1
+// 2
+//
+// And then throw a NullPointerException
+
+public class rtejlsainit {
+    public static void main() {
+        int ia[][] = { {1, 2}, null };
+        for (int i = 0; i < 2; i++)
+            for (int j = 0; j < 2; j++)
+                System.out.println(ia[i][j]);
+    }
+}

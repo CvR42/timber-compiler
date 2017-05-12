@@ -1,0 +1,76 @@
+#!/bin/sh
+CFLAGS="-O6 -funroll-loops -fomit-frame-pointer"
+JAVACFLAGS="-O"
+RESULTFILE=log$$
+HISTORYFILE=fulllog
+TIME="/usr/bin/time -a -o$RESULTFILE"
+
+echo -n "-------------------- Date: " > $RESULTFILE
+date >> $RESULTFILE
+echo Spar compilation
+spar $CFLAGS MatMulSpar.spar -o MatMulSpar
+echo spar $CFLAGS MatMulSpar.spar -o MatMulSpar >> $RESULTFILE
+echo -n Running large ...
+$TIME MatMulSpar large
+echo 
+echo Spar --nonotnullassert compilation
+echo spar $CFLAGS --nonotnullassert MatMulSpar.spar -o MatMulSpar >> $RESULTFILE
+spar --nonotnullassert $CFLAGS MatMulSpar.spar -o MatMulSpar
+echo -n Running large ...
+$TIME MatMulSpar large
+echo 
+echo Spar --noboundscheck compilation
+echo spar --noboundscheck $CFLAGS MatMulSpar.spar -o MatMulSpar >> $RESULTFILE
+spar --noboundscheck $CFLAGS MatMulSpar.spar -o MatMulSpar
+echo -n Running large ...
+$TIME MatMulSpar large
+echo 
+echo Spar --nonotnullassert --noboundscheck compilation
+echo spar --nonotnullassert --noboundscheck $CFLAGS MatMulSpar.spar -o MatMulSpar >> $RESULTFILE
+spar --nonotnullassert --noboundscheck $CFLAGS MatMulSpar.spar -o MatMulSpar
+echo -n Running large ...
+$TIME MatMulSpar large
+echo 
+rm -f MatMulSpar
+echo Java compilation
+spar $CFLAGS MatMulJava.java -o MatMulJava
+echo spar $CFLAGS MatMulJava.java -o MatMulJava >> $RESULTFILE
+echo -n Running large ...
+$TIME MatMulJava large
+echo 
+echo Java --nonotnullassert compilation
+echo spar $CFLAGS --nonotnullassert MatMulJava.java -o MatMulJava >> $RESULTFILE
+spar --nonotnullassert $CFLAGS MatMulJava.java -o MatMulJava
+echo -n Running large ...
+$TIME MatMulJava large
+echo 
+echo Java --noboundscheck compilation
+echo spar --noboundscheck $CFLAGS MatMulJava.java -o MatMulJava >> $RESULTFILE
+spar --noboundscheck $CFLAGS MatMulJava.java -o MatMulJava
+echo -n Running large ...
+$TIME MatMulJava large
+echo 
+echo Java --nonotnullassert --noboundscheck compilation
+echo spar --nonotnullassert --noboundscheck $CFLAGS MatMulJava.java -o MatMulJava >> $RESULTFILE
+spar --nonotnullassert --noboundscheck $CFLAGS MatMulJava.java -o MatMulJava
+echo -n Running large ...
+$TIME MatMulJava large
+echo 
+rm -f MatMulJava
+echo javac compilation
+echo javac $JAVACFLAGS MatMulJava.java
+javac $JAVACFLAGS MatMulJava.java
+echo -n Running large ...
+$TIME java MatMulJava large
+echo
+rm -f MatMulJava.class
+#echo GCC compilation
+#echo gcc $CFLAGS sor.c -o sor >> $RESULTFILE
+#gcc $CFLAGS sor.c -o sor
+#echo -n Running...
+#$TIME sor
+echo 
+
+cat $RESULTFILE
+cat $RESULTFILE >> $HISTORYFILE
+rm -f $RESULTFILE

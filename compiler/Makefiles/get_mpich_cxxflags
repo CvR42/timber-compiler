@@ -1,0 +1,20 @@
+#!/bin/csh -f
+# Extract compilation info from the 'mpiCC -compile_info' output
+set sedf = ./x$$.sed
+cat << 'EOF' > $sedf
+s/$/ /
+s/^[gc]++//
+s/^gcc//
+s/ -DUSE_STDARG=[0-9]* / /
+s/ -DUSE_STDARG / /
+s/ -DHAVE_[A-Z_]*=[01]/ /g
+s/ -DHAVE_[A-Z_]*/ /g
+s/ -DMALLOC_[A-Z_]*=[01]/ /g
+s/ -c / /g
+s/   */ /g
+s/ $//
+s/^ //
+'EOF'
+mpiCC -compile_info | sed -f $sedf
+
+rm -f $sedf

@@ -1,0 +1,167 @@
+ifeq ($(HAVE_PANDA), yes)
+LIB_PC	= $(LIB_P)
+else
+LIB_PC	=
+endif
+
+ifeq ($(HAVE_MPI), yes)
+LIB_MC	= $(LIB_M)
+else
+LIB_MC	=
+endif
+
+ifeq ($(HAVE_PVM), yes)
+LIB_DC	= $(LIB_D)
+else
+LIB_DC	=
+endif
+
+ifeq ($(HAVE_PTHREADS), yes)
+LIB_TC	= $(LIB_T)
+else
+LIB_TC	=
+endif
+
+ifeq ($(HAVE_TRIMEDIA), yes)
+LIB_TSC		= $(LIB_TS)
+LIB_TEC		= $(LIB_TE)
+LIB_EC		= $(LIB_E)
+else
+LIB_TSC		=
+LIB_TEC		=
+LIB_EC		=
+endif
+
+$(LIB_S):	$(OBJ_S:%.o=$(LIB_S)(%.o))
+	$(RANLIB) $@
+	rm -f $(OBJ_S)
+
+$(LIB_T):	$(OBJ_T:%.o=$(LIB_T)(%.o))
+	$(RANLIB) $@
+	rm -f $(OBJ_T)
+
+$(LIB_D):	$(OBJ_D:%.o=$(LIB_D)(%.o))
+	$(RANLIB) $@
+	rm -f $(OBJ_D)
+
+$(LIB_M):	$(OBJ_M:%.o=$(LIB_M)(%.o))
+	$(RANLIB) $@
+	rm -f $(OBJ_M)
+
+$(LIB_P):	$(OBJ_P:%.o=$(LIB_P)(%.o))
+	$(RANLIB) $@
+	rm -f $(OBJ_P)
+
+$(LIB_TS):	$(OBJ_TS:%.o=$(LIB_TS)(%.o))
+	rm -f $(OBJ_TS)
+
+$(LIB_TE):	$(OBJ_TE:%.o=$(LIB_TE)(%.o))
+	rm -f $(OBJ_TE)
+
+$(LIB_E):	$(OBJ_E:%.o=$(LIB_E)(%.o))
+	rm -f $(OBJ_E)
+
+$(LIB_S)(%-s.o):	%.cc
+	$(CXX) $(CXXSFLAGS) -c $< -o $%
+	$(AR) $(ARFLAGS) $(LIB_S) $%
+
+$(LIB_T)(%-t.o):	%.cc
+	$(CXX) $(CXXTFLAGS) -c $< -o $%
+	$(AR) $(ARFLAGS) $(LIB_T) $%
+
+$(LIB_D)(%-d.o):	%.cc
+	$(CXX) $(CXXDFLAGS) -c $< -o $%
+	$(AR) $(ARFLAGS) $(LIB_D) $%
+
+$(LIB_M)(%-m.o):	%.cc
+	$(CXX) $(CXXMFLAGS) -c $< -o $%
+	$(AR) $(ARFLAGS) $(LIB_M) $%
+
+$(LIB_P)(%-p.o):	%.cc
+	$(CXX) $(CXXPFLAGS) -c $< -o $%
+	$(AR) $(ARFLAGS) $(LIB_P) $%
+
+$(LIB_TS)(%-ts.o):	%.cc
+	$(TMCXX) $(TMCXXSFLAGS) -c $< -o $%
+	$(TMAR) $(TMARFLAGS) $(LIB_TS) $%
+
+$(LIB_TE)(%-te.o):	%.cc
+	$(TMCXX) $(TMCXXEFLAGS) -c $< -o $%
+	$(TMAR) $(TMARFLAGS) $(LIB_TE) $%
+
+$(LIB_E)(%-e.o):	%.cc
+	$(CXX) $(CXXEFLAGS) -c $< -o $%
+	$(AR) $(ARFLAGS) $(LIB_E) $%
+
+ifdef SRC_S
+DEPENDSRC += $(SRC_S)
+endif
+ifeq ($(HAVE_PTHREADS), yes)
+ifdef SRC_T
+DEPENDSRC += $(SRC_T)  
+endif
+endif
+ifeq ($(HAVE_PVM), yes)
+ifdef SRC_D
+DEPENDSRC += $(SRC_D)  
+endif
+endif
+ifeq ($(HAVE_MPIF), yes)
+ifdef SRC_M
+DEPENDSRC += $(SRC_M) 
+endif
+endif
+ifeq ($(HAVE_PANDA), yes)
+ifdef SRC_P
+DEPENDSRC += $(SRC_P)  
+endif
+endif
+ifeq ($(HAVE_TRIMEDIA), yes)
+ifdef SRC_TS
+DEPENDSRC += $(SRC_TS) 
+endif
+ifdef SRC_TE
+DEPENDSRC += $(SRC_TE)
+endif
+ifdef SRC_E
+DEPENDSRC += $(SRC_E)
+endif
+endif
+
+$(DEPENDFILE): $(DEPENDSRC)
+	rm -f $(DEPENDFILE)
+	touch $(DEPENDFILE)
+ifdef SRC_S
+	$(BUILDDEPENDS) $(CXXSFLAGS)  $(SRC_S)  | sed "s#\(.*\)\.o#$(LIB_S)(\1-s\.o)#g"   >>  $(DEPENDFILE)
+endif
+ifeq ($(HAVE_PTHREADS), yes)
+ifdef SRC_T
+	$(BUILDDEPENDS) $(CXXTFLAGS)  $(SRC_T)  | sed "s#\(.*\)\.o#$(LIB_T)(\1-t\.o)#g"   >> $(DEPENDFILE)
+endif
+endif
+ifeq ($(HAVE_PVM), yes)
+ifdef SRC_D
+	$(BUILDDEPENDS) $(CXXDFLAGS)  $(SRC_D)  | sed "s#\(.*\)\.o#$(LIB_D)(\1-d\.o)#g"   >> $(DEPENDFILE)
+endif
+endif
+ifeq ($(HAVE_MPIF), yes)
+ifdef SRC_M
+	$(BUILDDEPENDS) $(CXXMFLAGS)  $(SRC_M)  | sed "s#\(.*\)\.o#$(LIB_M)(\1-m\.o)#g"   >> $(DEPENDFILE)
+endif
+endif
+ifeq ($(HAVE_PANDA), yes)
+ifdef SRC_P
+	$(BUILDDEPENDS) $(CXXPFLAGS)  $(SRC_P)  | sed "s#\(.*\)\.o#$(LIB_P)(\1-p\.o)#g"   >> $(DEPENDFILE)
+endif
+endif
+ifeq ($(HAVE_TRIMEDIA), yes)
+ifdef SRC_TS
+	$(BUILDDEPENDS) $(TMCXXSFLAGS) $(SRC_TS) | sed "s#\(.*\)\.o#$(LIB_TS)(\1-ts\.o)#g" >> $(DEPENDFILE)
+endif
+ifdef SRC_TE
+	$(BUILDDEPENDS) $(TMCXXEFLAGS)  $(SRC_TE)  | sed "s#\(.*\)\.o#$(LIB_TE)(\1-te\.o)#g"   >> $(DEPENDFILE)
+endif
+ifdef SRC_E
+	$(BUILDDEPENDS) $(CXXEFLAGS)  $(SRC_E)  | sed "s#\(.*\)\.o#$(LIB_E)(\1-e\.o)#g"   >> $(DEPENDFILE)
+endif
+endif

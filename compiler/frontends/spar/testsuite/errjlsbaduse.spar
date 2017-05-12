@@ -1,0 +1,9 @@
+// After JLS2 14.4.2    Scope of Local Variable Declarations
+
+
+public class errjlsbaduse {
+    static int x;
+    public static void main() {
+        int x = x;	// init error, since 'x' declaration is in scope
+    }
+}

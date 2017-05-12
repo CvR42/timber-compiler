@@ -1,0 +1,21 @@
+- Document SPARPATH. Default SPARPATH is ".".
+
+- Explain that as an extension to Java, Spar allows global
+  variables and methods in each package. They are implicitly
+  static. This package is an outer class to each class in the
+  package. Their qualified name is the obvious. This does not
+  clash with Java naming conventions.
+
+- Explain the restrictions that can be enforced through the
+  command line:
+  - No complex numbers.
+  - No multidim & elastic arrays.
+  - No pragmas.
+  - No delete.
+  - No parallel constructs.
+  - No macros.
+  - No print statements.
+  - No cardinality lists.
+
+Most of them are implemented by selectively ignoring certain
+keywords and tokens.

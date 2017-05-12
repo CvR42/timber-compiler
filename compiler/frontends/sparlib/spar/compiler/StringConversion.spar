@@ -1,0 +1,765 @@
+// File: StringConversion.spar
+//
+// Helper functions for string conversion.
+//
+// This class contains a series of of overloaded methods `convert' that
+// get a reference type (i.e. an Object subclass, including arrays) instance.
+//
+// These methods implement the string conversion described in JLS2 15.18.1.1:
+// if the reference is null, return the string "null", else invoke the
+// toString() method of the class. If that returns null, return the
+// string "null", else return the result of the toString() invocation.
+//
+// All 'normal' classes are handled by convert( Object ), remainder of
+// the methods are used to handle string conversion of arrays.
+// The array methods do not invoke the appropriate toString() method, but
+// directly implement what that method would have returned.
+
+package spar.compiler;
+
+public final class StringConversion {
+    private StringConversion() { /* this class is not instantiable by the general public */ }    
+
+    // String conversion function for type char[*^0]
+    <$ nullvalue=false $> public static String convert( final char arr[*^0] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[0C@" + arr.hashCode();
+    }
+
+    // String conversion function for type char[*^1]
+    <$ nullvalue=false $> public static String convert( final char arr[*^1] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[C@" + arr.hashCode();
+    }
+
+    // String conversion function for type char[*^2]
+    <$ nullvalue=false $> public static String convert( final char arr[*^2] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[2C@" + arr.hashCode();
+    }
+
+    // String conversion function for type char[*^3]
+    <$ nullvalue=false $> public static String convert( final char arr[*^3] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[3C@" + arr.hashCode();
+    }
+
+    // String conversion function for type char[*^4]
+    <$ nullvalue=false $> public static String convert( final char arr[*^4] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[4C@" + arr.hashCode();
+    }
+
+    // String conversion function for type char[*^5]
+    <$ nullvalue=false $> public static String convert( final char arr[*^5] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[5C@" + arr.hashCode();
+    }
+
+    // String conversion function for type char[*^6]
+    <$ nullvalue=false $> public static String convert( final char arr[*^6] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[6C@" + arr.hashCode();
+    }
+
+    // String conversion function for type char[*^7]
+    <$ nullvalue=false $> public static String convert( final char arr[*^7] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[7C@" + arr.hashCode();
+    }
+
+    // String conversion function for type char[*^8]
+    <$ nullvalue=false $> public static String convert( final char arr[*^8] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[8C@" + arr.hashCode();
+    }
+
+    // String conversion function for type byte[*^0]
+    <$ nullvalue=false $> public static String convert( final byte arr[*^0] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[0C@" + arr.hashCode();
+    }
+
+    // String conversion function for type byte[*^1]
+    <$ nullvalue=false $> public static String convert( final byte arr[*^1] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[C@" + arr.hashCode();
+    }
+
+    // String conversion function for type byte[*^2]
+    <$ nullvalue=false $> public static String convert( final byte arr[*^2] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[2C@" + arr.hashCode();
+    }
+
+    // String conversion function for type byte[*^3]
+    <$ nullvalue=false $> public static String convert( final byte arr[*^3] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[3C@" + arr.hashCode();
+    }
+
+    // String conversion function for type byte[*^4]
+    <$ nullvalue=false $> public static String convert( final byte arr[*^4] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[4C@" + arr.hashCode();
+    }
+
+    // String conversion function for type byte[*^5]
+    <$ nullvalue=false $> public static String convert( final byte arr[*^5] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[5C@" + arr.hashCode();
+    }
+
+    // String conversion function for type byte[*^6]
+    <$ nullvalue=false $> public static String convert( final byte arr[*^6] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[6C@" + arr.hashCode();
+    }
+
+    // String conversion function for type byte[*^7]
+    <$ nullvalue=false $> public static String convert( final byte arr[*^7] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[7C@" + arr.hashCode();
+    }
+
+    // String conversion function for type byte[*^8]
+    <$ nullvalue=false $> public static String convert( final byte arr[*^8] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[8C@" + arr.hashCode();
+    }
+
+    // String conversion function for type boolean[*^0]
+    <$ nullvalue=false $> public static String convert( final boolean arr[*^0] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[0C@" + arr.hashCode();
+    }
+
+    // String conversion function for type boolean[*^1]
+    <$ nullvalue=false $> public static String convert( final boolean arr[*^1] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[C@" + arr.hashCode();
+    }
+
+    // String conversion function for type boolean[*^2]
+    <$ nullvalue=false $> public static String convert( final boolean arr[*^2] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[2C@" + arr.hashCode();
+    }
+
+    // String conversion function for type boolean[*^3]
+    <$ nullvalue=false $> public static String convert( final boolean arr[*^3] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[3C@" + arr.hashCode();
+    }
+
+    // String conversion function for type boolean[*^4]
+    <$ nullvalue=false $> public static String convert( final boolean arr[*^4] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[4C@" + arr.hashCode();
+    }
+
+    // String conversion function for type boolean[*^5]
+    <$ nullvalue=false $> public static String convert( final boolean arr[*^5] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[5C@" + arr.hashCode();
+    }
+
+    // String conversion function for type boolean[*^6]
+    <$ nullvalue=false $> public static String convert( final boolean arr[*^6] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[6C@" + arr.hashCode();
+    }
+
+    // String conversion function for type boolean[*^7]
+    <$ nullvalue=false $> public static String convert( final boolean arr[*^7] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[7C@" + arr.hashCode();
+    }
+
+    // String conversion function for type boolean[*^8]
+    <$ nullvalue=false $> public static String convert( final boolean arr[*^8] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[8C@" + arr.hashCode();
+    }
+
+    // String conversion function for type int[*^0]
+    <$ nullvalue=false $> public static String convert( final int arr[*^0] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[0C@" + arr.hashCode();
+    }
+
+    // String conversion function for type int[*^1]
+    <$ nullvalue=false $> public static String convert( final int arr[*^1] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[C@" + arr.hashCode();
+    }
+
+    // String conversion function for type int[*^2]
+    <$ nullvalue=false $> public static String convert( final int arr[*^2] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[2C@" + arr.hashCode();
+    }
+
+    // String conversion function for type int[*^3]
+    <$ nullvalue=false $> public static String convert( final int arr[*^3] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[3C@" + arr.hashCode();
+    }
+
+    // String conversion function for type int[*^4]
+    <$ nullvalue=false $> public static String convert( final int arr[*^4] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[4C@" + arr.hashCode();
+    }
+
+    // String conversion function for type int[*^5]
+    <$ nullvalue=false $> public static String convert( final int arr[*^5] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[5C@" + arr.hashCode();
+    }
+
+    // String conversion function for type int[*^6]
+    <$ nullvalue=false $> public static String convert( final int arr[*^6] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[6C@" + arr.hashCode();
+    }
+
+    // String conversion function for type int[*^7]
+    <$ nullvalue=false $> public static String convert( final int arr[*^7] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[7C@" + arr.hashCode();
+    }
+
+    // String conversion function for type int[*^8]
+    <$ nullvalue=false $> public static String convert( final int arr[*^8] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[8C@" + arr.hashCode();
+    }
+
+    // String conversion function for type long[*^0]
+    <$ nullvalue=false $> public static String convert( final long arr[*^0] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[0C@" + arr.hashCode();
+    }
+
+    // String conversion function for type long[*^1]
+    <$ nullvalue=false $> public static String convert( final long arr[*^1] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[C@" + arr.hashCode();
+    }
+
+    // String conversion function for type long[*^2]
+    <$ nullvalue=false $> public static String convert( final long arr[*^2] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[2C@" + arr.hashCode();
+    }
+
+    // String conversion function for type long[*^3]
+    <$ nullvalue=false $> public static String convert( final long arr[*^3] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[3C@" + arr.hashCode();
+    }
+
+    // String conversion function for type long[*^4]
+    <$ nullvalue=false $> public static String convert( final long arr[*^4] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[4C@" + arr.hashCode();
+    }
+
+    // String conversion function for type long[*^5]
+    <$ nullvalue=false $> public static String convert( final long arr[*^5] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[5C@" + arr.hashCode();
+    }
+
+    // String conversion function for type long[*^6]
+    <$ nullvalue=false $> public static String convert( final long arr[*^6] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[6C@" + arr.hashCode();
+    }
+
+    // String conversion function for type long[*^7]
+    <$ nullvalue=false $> public static String convert( final long arr[*^7] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[7C@" + arr.hashCode();
+    }
+
+    // String conversion function for type long[*^8]
+    <$ nullvalue=false $> public static String convert( final long arr[*^8] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[8C@" + arr.hashCode();
+    }
+
+    // String conversion function for type float[*^0]
+    <$ nullvalue=false $> public static String convert( final float arr[*^0] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[0C@" + arr.hashCode();
+    }
+
+    // String conversion function for type float[*^1]
+    <$ nullvalue=false $> public static String convert( final float arr[*^1] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[C@" + arr.hashCode();
+    }
+
+    // String conversion function for type float[*^2]
+    <$ nullvalue=false $> public static String convert( final float arr[*^2] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[2C@" + arr.hashCode();
+    }
+
+    // String conversion function for type float[*^3]
+    <$ nullvalue=false $> public static String convert( final float arr[*^3] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[3C@" + arr.hashCode();
+    }
+
+    // String conversion function for type float[*^4]
+    <$ nullvalue=false $> public static String convert( final float arr[*^4] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[4C@" + arr.hashCode();
+    }
+
+    // String conversion function for type float[*^5]
+    <$ nullvalue=false $> public static String convert( final float arr[*^5] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[5C@" + arr.hashCode();
+    }
+
+    // String conversion function for type float[*^6]
+    <$ nullvalue=false $> public static String convert( final float arr[*^6] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[6C@" + arr.hashCode();
+    }
+
+    // String conversion function for type float[*^7]
+    <$ nullvalue=false $> public static String convert( final float arr[*^7] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[7C@" + arr.hashCode();
+    }
+
+    // String conversion function for type float[*^8]
+    <$ nullvalue=false $> public static String convert( final float arr[*^8] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[8C@" + arr.hashCode();
+    }
+
+    // String conversion function for type double[*^0]
+    <$ nullvalue=false $> public static String convert( final double arr[*^0] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[0C@" + arr.hashCode();
+    }
+
+    // String conversion function for type double[*^1]
+    <$ nullvalue=false $> public static String convert( final double arr[*^1] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[C@" + arr.hashCode();
+    }
+
+    // String conversion function for type double[*^2]
+    <$ nullvalue=false $> public static String convert( final double arr[*^2] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[2C@" + arr.hashCode();
+    }
+
+    // String conversion function for type double[*^3]
+    <$ nullvalue=false $> public static String convert( final double arr[*^3] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[3C@" + arr.hashCode();
+    }
+
+    // String conversion function for type double[*^4]
+    <$ nullvalue=false $> public static String convert( final double arr[*^4] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[4C@" + arr.hashCode();
+    }
+
+    // String conversion function for type double[*^5]
+    <$ nullvalue=false $> public static String convert( final double arr[*^5] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[5C@" + arr.hashCode();
+    }
+
+    // String conversion function for type double[*^6]
+    <$ nullvalue=false $> public static String convert( final double arr[*^6] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[6C@" + arr.hashCode();
+    }
+
+    // String conversion function for type double[*^7]
+    <$ nullvalue=false $> public static String convert( final double arr[*^7] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[7C@" + arr.hashCode();
+    }
+
+    // String conversion function for type double[*^8]
+    <$ nullvalue=false $> public static String convert( final double arr[*^8] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[8C@" + arr.hashCode();
+    }
+
+    // String conversion function for type complex[*^0]
+    <$ nullvalue=false $> public static String convert( final complex arr[*^0] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[0C@" + arr.hashCode();
+    }
+
+    // String conversion function for type complex[*^1]
+    <$ nullvalue=false $> public static String convert( final complex arr[*^1] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[C@" + arr.hashCode();
+    }
+
+    // String conversion function for type complex[*^2]
+    <$ nullvalue=false $> public static String convert( final complex arr[*^2] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[2C@" + arr.hashCode();
+    }
+
+    // String conversion function for type complex[*^3]
+    <$ nullvalue=false $> public static String convert( final complex arr[*^3] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[3C@" + arr.hashCode();
+    }
+
+    // String conversion function for type complex[*^4]
+    <$ nullvalue=false $> public static String convert( final complex arr[*^4] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[4C@" + arr.hashCode();
+    }
+
+    // String conversion function for type complex[*^5]
+    <$ nullvalue=false $> public static String convert( final complex arr[*^5] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[5C@" + arr.hashCode();
+    }
+
+    // String conversion function for type complex[*^6]
+    <$ nullvalue=false $> public static String convert( final complex arr[*^6] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[6C@" + arr.hashCode();
+    }
+
+    // String conversion function for type complex[*^7]
+    <$ nullvalue=false $> public static String convert( final complex arr[*^7] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[7C@" + arr.hashCode();
+    }
+
+    // String conversion function for type complex[*^8]
+    <$ nullvalue=false $> public static String convert( final complex arr[*^8] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[8C@" + arr.hashCode();
+    }
+
+    // String conversion function for Object[*^0]
+    <$ nullvalue=false $> public static String convert( final Object arr[*^0] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[0C@" + arr.hashCode();
+    }
+
+    // String conversion function for Object[*^1]
+    <$ nullvalue=false $> public static String convert( final Object arr[*^1] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[C@" + arr.hashCode();
+    }
+
+    // String conversion function for Object[*^2]
+    <$ nullvalue=false $> public static String convert( final Object arr[*^2] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[2C@" + arr.hashCode();
+    }
+
+    // String conversion function for Object[*^3]
+    <$ nullvalue=false $> public static String convert( final Object arr[*^3] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[3C@" + arr.hashCode();
+    }
+
+    // String conversion function for Object[*^4]
+    <$ nullvalue=false $> public static String convert( final Object arr[*^4] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[4C@" + arr.hashCode();
+    }
+
+    // String conversion function for Object[*^5]
+    <$ nullvalue=false $> public static String convert( final Object arr[*^5] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[5C@" + arr.hashCode();
+    }
+
+    // String conversion function for Object[*^6]
+    <$ nullvalue=false $> public static String convert( final Object arr[*^6] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[6C@" + arr.hashCode();
+    }
+
+    // String conversion function for Object[*^7]
+    <$ nullvalue=false $> public static String convert( final Object arr[*^7] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[7C@" + arr.hashCode();
+    }
+
+    // String conversion function for Object[*^8]
+    <$ nullvalue=false $> public static String convert( final Object arr[*^8] )
+    {
+        if( arr == null ){
+	    return "null";
+	}
+	return "[8C@" + arr.hashCode();
+    }
+
+    // String conversion function for Object
+    <$ nullvalue=false $> public static String convert( final Object obj )
+    {
+        if( obj == null ){
+	    return "null";
+	}
+	String res = obj.toString();
+	if( res == null ){
+	    return "null";
+	}
+	return res;
+    }
+
+}

@@ -1,0 +1,12 @@
+// After JLS2 8.3.3.3    Example: Multiply Inherited Fields
+
+interface Color { int RED=0, GREEN=1, BLUE=2; }
+
+interface TrafficLight { int RED=0, YELLOW=1, GREEN=2; }
+
+public class errjlsgreen implements Color, TrafficLight {
+    public static void main(String[] args) {
+        __println(1,GREEN);                   // compile-time error
+        __println(1,RED);                     // compile-time error
+    }
+}

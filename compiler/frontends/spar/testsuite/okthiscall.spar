@@ -1,0 +1,9 @@
+package spar.testsuite;
+
+public class okthiscall {
+    okthiscall( int n ) { __println( 1, "okthiscall(int) invoked: ", n ); }
+    okthiscall() { this( 3 ); __println( 1, "okthiscall() invoked" ); }
+    public static void main(){
+	new okthiscall();
+    }
+}

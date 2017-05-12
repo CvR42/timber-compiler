@@ -1,0 +1,7 @@
+These patches represent modifications that are as-is not good enough
+to incorporate in the compiler, but nevertheless suggest a possible
+improvement.
+
+concat-breakout Thu Jul 12 11:28:47 CEST 2001
+    Break out '+' expressions that are converted to string concat
+    operations.

@@ -1,0 +1,10 @@
+import java.util.Hashtable;
+
+public final class okHashtable {
+    public static void main( String args[] ){
+	Hashtable h = new Hashtable();
+
+	h.put( "test", "val" );
+	System.out.println( h.get( "test" ) );
+    }
+}

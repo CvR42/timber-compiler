@@ -1,0 +1,135 @@
+/*
+ * Java core library component.
+ *
+ * Copyright (c) 1997, 1998
+ *      Transvirtual Technologies, Inc.  All rights reserved.
+ *
+ * See the file "license.terms" for information on usage and redistribution
+ * of this file.
+ */
+
+package java.lang;
+
+public final class Complex extends Number {
+
+  public static final Class TYPE = Class.getPrimitiveClass("complex");
+
+  // CvR: this is just a minor change from the serial number of Double
+  private static final long serialVersionUID = -9172774392245257469L;
+
+  private final complex value;
+
+  public inline Complex(complex value) {
+    this.value = value;
+  }
+
+  // CvR: at the moment I can't be bothered to write this.
+  //public Complex(String s) throws NumberFormatException {
+  //  this.value = valueOf(s).value;
+  //}
+
+  public inline complex complexValue() {
+    return value;
+  }
+
+  public static String toString(complex value) {
+    return "(" + Double.toString( real(value) ) + "," + Double.toString( imag(value) ) + ")";
+  }
+
+  public inline String toString() {
+    return toString(value);
+  }
+
+  public boolean equals(Object obj) {
+    if ( (obj!=null) && (obj instanceof Complex)) {
+      Complex that=(Complex )obj;
+
+      // CvR: TODO: More subtle than this, similar to code below
+      return that.value == value;
+//      if ((this.isNaN()==true) && (that.isNaN()==true)) return true;
+//    
+//      double left = this.value;
+//      double right = that.value;
+//
+//      if ((left==+0.0) && (right==-0.0)) return false;
+//      if ((left==-0.0) && (right==+0.0)) return false;
+//
+//      return (left==right);
+    }
+    else {
+      return false;
+    }
+  }
+  
+  public inline double doubleValue()
+  {
+    return ((double)value);
+  }
+
+  public inline float floatValue()
+  {
+    return ((float)value);
+  }
+
+  public inline int hashCode()
+  {
+    return ((int)value);
+  }
+  
+  public inline int intValue()
+  {
+    return ((int)value);
+  }
+  
+  public inline long longValue() {
+    return (long) value;
+  }
+
+//  public static Double valueOf(String s) throws NumberFormatException {
+//    if (s == null) {
+//      throw new NullPointerException();
+//    }
+//    return (new Double(valueOf0(s)));
+//  }
+//
+//  public static double parseDouble(String s) throws NumberFormatException {
+//    if (s == null) {
+//      throw new NullPointerException();
+//    }
+//    return valueOf0(s);
+//  }
+
+// CvR: the following methods duplicate many of the methods of
+// java.lang.Math for complex numbers. Unfortunately, they cannot be
+// put in Math since they are `more specific' than their counterparts
+// that work on doubles, so according to the rules they would always
+// be used, even for doubles!
+native public static complex sin(final complex a);
+
+native public static complex cos(final complex a);
+
+native public static complex tan(final complex a);
+
+native public static complex sqrt(final complex a);
+
+native public static complex exp(final complex a);
+
+native public static complex log(final complex a);
+
+native public static double abs(final complex a);
+
+native public static double arg(final complex a);
+
+native public static double norm(final complex a);
+
+// Construct a complex number from polar coordinates.
+native public static complex polar( final double rho, final double theta );
+
+native public static complex conj(final complex a);
+
+native public static double real(final complex a);
+
+native public static double imag(final complex a);
+
+native public static complex pow(final complex a, final complex b);
+}

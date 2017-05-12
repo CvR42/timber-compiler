@@ -1,0 +1,45 @@
+Extensions:
+
+- Type __string for a more lightweight manipulation of strings.
+- The ?: operator also works on __string.
+- Multi-dimensional arrays.
+- each and foreach.
+- Cardinality-list syntax on for.
+- The expression `new a[] { 1, 2 }' of Java 1.2 is supported.
+- main() is also allowed.
+- <type>.class of Java 1.2 is correctly parsed, but currently
+gives an incorrect answer.
+- getSize( dim )
+
+
+Restrictions:
+- Character.TYPE and similar currently contain a null pointer.
+- Evaluation order is not always the same as in Java.
+- A switch case is always a separate scope, so variable declarations
+in one switch case are not visible in switch cases below it.
+- A lot of the standard library functions are not yet supported,
+because the native functions that they (perhaps indirectly) invoke are
+not implemented.
+- Class Thread is not supported.
+- Many introspection methods, such as Class.newInstance() are not
+supported.
+- NullPointerExceptions are never thrown. Instead a segmentation
+fault occurs.
+- Array bound exceptions are never thrown. Instead an internal
+error is generated.
+- OutOfMemory exceptions are never thrown.
+- There is no garbage collection, and the interface that allows twiddling
+of the garbage collector is not supported.
+- There is no good default exception handler.
+
+Other issues:
+- Forward references to variables currently do not cause an error.
+- No check is done on variables that are used before they are
+set. This is required according to JLS 16.
+- Impossible instanceof expressions are not detected at compile-time.
+- If a class implements an interface, it should be verified that it
+does in fact provide all the functions for that interface. That's
+currently not done.
+- Arrays are not proper subclasses of Object. This means that casting
+from Object to an array type is not supported, and that methods like
+clone(), getClass() do not work.

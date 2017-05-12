@@ -1,0 +1,12 @@
+// The Forkable interface
+//
+// For classes that implement interface spar.lang.Forkable the compiler
+// implements a number of restrictions that ensure that the processes
+// truely have their own state.
+
+package spar.lang;
+
+public interface Forkable
+{
+  public abstract void run();
+}

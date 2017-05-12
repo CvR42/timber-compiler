@@ -1,0 +1,19 @@
+public class oktargetref {
+    public void method(){
+	__println( 1, "Hello, I'm a method" );
+    }
+    public int val( int x ){
+	 return x;
+    }
+    public static oktargetref sideeffect( oktargetref x ){
+	__println( 1, "Hi, I'm a side-effect" );
+	return x;
+    }
+    public static void main(String args[])
+    {
+	oktargetref x = new oktargetref();
+
+	sideeffect(x).method();
+	__println( 1, sideeffect(x).val( 42 ) );
+    }
+}

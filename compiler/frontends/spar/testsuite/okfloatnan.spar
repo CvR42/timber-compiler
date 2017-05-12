@@ -1,0 +1,14 @@
+public class okfloatnan {
+    static void reportNumber( String nm, float d ){
+	int v = Float.floatToIntBits( d );
+	System.out.println( nm + ": " + v + "(0x" + Integer.toHexString( v ) + ")" );
+    }
+
+    public static void main( String argv[] ){
+	reportNumber( "Official POSITIVE_INFINITY", Float.POSITIVE_INFINITY );
+	reportNumber( "Official NEGATIVE_INFINITY", Float.NEGATIVE_INFINITY );
+	reportNumber( "Official NaN", Float.NaN );
+	reportNumber( "Official MIN_VALUE", Float.MIN_VALUE );
+	reportNumber( "Official MAX_VALUE", Float.MAX_VALUE );
+    }
+}

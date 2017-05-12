@@ -1,0 +1,16 @@
+// Cardinality lists should be flagged by the
+// compiler if the --nocards flag is given.
+
+package spar.testsuite;
+
+public class errnocards {
+    public static void main()
+    {
+	for( i <~ :5 ) __println( 1, "huh?" );
+	foreach( i <~ :5 ) __println( 1, "huh?" );
+	each {
+	    __println( 1, "huh?" );
+	    __println( 1, "wot?" );
+	}
+    }
+}

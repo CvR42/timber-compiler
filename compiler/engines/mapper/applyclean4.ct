@@ -1,0 +1,56 @@
+/*
+   Applyclean4 engine
+
+   Make sure an internal error is generated for all nodes that are either
+   obsolete or should have been rewritten.
+   */
+
+.. File: applyclean3.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors ExprIsNewOwner ExprGetNewOwner
+.append actors ExprIsNewMaster ExprGetNewMaster
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "applyclean3.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+.foreach t ExprIsNewOwner ExprGetNewOwner ExprIsNewMaster ExprGetNewMaster
+static $t rewrite_$t_action(
+    $t e, global_context gc )
+{
+.call generate_walker_call "    " e $t $t
+    internal_error("Clean4: node $t should have been rewritten");
+    return e;
+}
+
+.endforeach
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_clean4(
+    vnusprog elm, global_context gc )
+{
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}

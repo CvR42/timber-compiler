@@ -1,0 +1,26 @@
+// After JLS2 8.8.5    Constructor Body
+
+
+class Point {
+    int x, y;
+    Point(int x, int y) { this.x = x; this.y = y; }
+}
+class ColoredPoint extends Point {
+    static final int WHITE = 0, BLACK = 1;
+    int color;
+    ColoredPoint(int x, int y) {
+        this(x, y, WHITE);
+    }
+    ColoredPoint(int x, int y, int color) {
+        super(x, y);
+        this.color = color;
+    }
+}
+
+public class genjlsexplicitcons {
+    public static void main(){
+	Point p1 = new Point( 1, 2 );
+	Point p2 = new ColoredPoint( 1, 2 );
+	Point p3 = new ColoredPoint( 1, 2, ColoredPoint.BLACK );
+    }
+}

@@ -1,0 +1,15 @@
+// Minimal test program - Spar version.
+
+public class t {
+    public static int fn( int a[] )
+    {
+        return a[0] + a[1];
+    }
+
+    public static void main()
+    {
+        int a[] = { 1, 2, 3 };
+
+	int v = fn( a );
+    }
+}

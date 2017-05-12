@@ -1,0 +1,17 @@
+
+public class SorSpar {
+    final static int N = 2000;
+    final static int iters = 30;
+
+    public static void main(){
+	final double A[*,*] = new double[N,N];
+	final double f = 0.75;
+
+	A[N/2,N/2] = 100;
+	for( n :- 0:iters ){
+	    for( i :- 1:N-1, j :- 1:N-1 ){
+		A[i,j] = f*A[i,j] + (1-f)*(A[i,j-1]+A[i,j+1]+A[i+1,j]+A[i-1,j])/4;
+	    }
+	}
+    }
+}

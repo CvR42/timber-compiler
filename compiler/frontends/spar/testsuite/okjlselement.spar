@@ -1,0 +1,19 @@
+// After JLS2 15.20.2    Type Comparison Operator instanceof
+//
+// In contrast to Java, Spar accepts a misguided 'instanceof', but instead
+// of an error message it simply substitutes 'false'.
+
+class Point { int x, y; }
+
+class Element { int atomicNumber; }
+
+public class okjlselement {
+    public static void main(String[] args) {
+        Point p = new Point();
+        Element e = new Element();
+        if (e instanceof Point) {                        // compile-time error
+            System.out.println("I get your point!");
+            p = (Point) e;                               // compile-time error
+        }
+    }
+}

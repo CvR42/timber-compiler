@@ -1,0 +1,31 @@
+// After JLS2 6.3.1    Hiding Names
+//
+// Note that this example is not shown in JLS 2.
+
+
+class Point { int x, y; }
+
+public class okjls97 {
+
+    static Point Point(int x, int y) {
+        Point p = new Point();
+        p.x = x; p.y = y;
+        return p;
+    }
+
+
+    public static void main(String[] args) {
+        int Point;
+        Point[] pa = new Point[2];
+        for (Point = 0; Point < 2; Point++) {
+            pa[Point] = new Point();
+            pa[Point].x = Point;
+            pa[Point].y = Point;
+        }
+        __println(1,pa[0].x , "," , pa[0].y);
+        __println(1,pa[1].x , "," , pa[1].y);
+        Point p = Point(3, 4);
+        __println(1,p.x , "," , p.y);
+    }
+
+}

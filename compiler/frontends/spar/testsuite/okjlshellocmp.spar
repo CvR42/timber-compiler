@@ -1,0 +1,20 @@
+// After JLS2 3.10.5    String Literals
+
+
+package testsuite;
+
+import spar.testsuite.subpack.*;
+
+public class okjlshellocmp {
+    public static void main(String[] args) {
+        String hello = "Hello", lo = "lo";
+        System.out.print((hello == "Hello") + " ");
+        System.out.print((Other.hello == hello) + " ");
+        System.out.print((spar.testsuite.subpack.Other.hello == hello) + " ");
+        System.out.print((hello == ("Hel"+"lo")) + " ");
+        System.out.print((hello == ("Hel"+lo)) + " ");
+        System.out.println(hello == ("Hel"+lo).intern());
+    }
+}
+
+class Other { static String hello = "Hello"; }

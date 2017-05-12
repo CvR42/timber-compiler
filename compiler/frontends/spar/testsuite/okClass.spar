@@ -1,0 +1,11 @@
+package spar.testsuite;
+
+public class okClass {
+    public static void main()
+    {
+	Class c = okClass.class;
+
+	System.out.println( c.getName() );
+	//System.out.println( void.class.getName() );
+    }
+}

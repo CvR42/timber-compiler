@@ -1,0 +1,40 @@
+/* 
+ *  mystyle.css - simple CSS2 style sheet for my home pages.
+ *
+ *  Author: Leo Breebaart, Last updated: 5 Feb 2000
+ *
+ */
+
+body 
+{
+	background-color:white; 
+	color:black;
+}
+h2 {
+    color:red;
+    background-color:transparent; 
+}
+table.navigation {
+    color:black;
+    background-color:#EBC79E;
+}
+td.parent {
+    color:black;
+    background-color:#D9D9F3;
+    vertical-align:middle;
+    text-align:center;
+    padding-left:12pt;
+    padding-right:12pt;
+}
+td.brother {
+    vertical-align:top;
+    text-align:center;
+    padding-left:12pt;
+    padding-right:12pt;
+}
+
+.small  {font-size: 80%}
+.center {text-align: center}
+.blue   {color: #000088; background-color:transparent}
+.red    {color: #880000; background-color:transparent}
+.centerblue {text-align: center; color: #000088; background-color:transparent}

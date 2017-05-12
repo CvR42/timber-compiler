@@ -1,0 +1,6 @@
+errjarray.spar:9: In Java array types, '*' is not allowed
+	int n[*];			// Not the Java notation of an array.
+	        ^
+errjarray.spar:10: In Java, multidimensional arrays are not allowed
+	int n[*,*];			// Multi-dim array.
+	          ^

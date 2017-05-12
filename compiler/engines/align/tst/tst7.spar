@@ -1,0 +1,14 @@
+public class tst7 {
+  static int c;
+
+  static void max(int a, int b, int d) {
+    c = (a > b) ? a : b + d;
+  }
+
+  public static void main() {
+    int [*]<$ on = (lambda (i) dsp2D[i]) $> a;
+
+    int i = 2;
+    max(a[i+1], a[i], a[i]);
+  }
+};

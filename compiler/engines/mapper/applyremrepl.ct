@@ -1,0 +1,136 @@
+/* Applyremrepl engine
+
+   Remove nested replicated distributions. As nested distributions only
+   cause read operations these can be removed, as they cause unnecessary
+   overhead.
+   If statements contain replicated distributions, remove them as these
+   cause only unnecessary owner tests. Don't do this for 2-owned assignment
+   statements, otherwise communication might get messed up.
+   */
+
+.. File: applyremrepl.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors NewOwnLocation ExprWrapper statement
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "applyremrepl.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+static NewOwnLocation rewrite_NewOwnLocation_action(
+    NewOwnLocation elm, global_context gc )
+{
+.call push_do_transform
+    gc->do_transform = true;
+.call generate_walker_call "    " elm NewOwnLocation NewOwnLocation
+.call pop_do_transform
+    return elm;
+}
+
+static expression rewrite_ExprWrapper_action(
+    ExprWrapper elm, global_context gc )
+{
+.call generate_walker_call "    " elm ExprWrapper ExprWrapper
+    if (gc->do_transform)
+    {
+	bool yippee = true;
+	if (elm->on != OwnerExpr_listNIL)
+	{
+	    for (unsigned i=0; i<elm->on->sz; i++)
+	    {
+		if (elm->on->arr[i]->tag != TAGNewOwnReplicated)
+		    yippee = false;
+	    }
+	}
+	if (yippee)
+	{
+	    rfre_OwnerExpr_list(elm->on);
+	    elm->on = OwnerExpr_listNIL;
+	}
+    }
+    return elm;
+}
+
+static statement rewrite_statement_action(
+    statement elm, global_context gc )
+{
+.call generate_walker_call "    " elm statement statement
+    if (elm->tag == TAGSmtAssign)
+    {
+	SmtAssign sa = to_SmtAssign(elm);
+	if (sa->rhs->tag == TAGExprWrapper)
+	{
+	    ExprWrapper rhs = to_ExprWrapper(sa->rhs);
+	    if (rhs->on != OwnerExpr_listNIL && rhs->on->sz != 0)
+	    {
+		return elm;
+	    }
+	}
+    }
+    if (elm->on != OwnerExpr_listNIL)
+    {
+	for (unsigned i=0; i<elm->on->sz; i++)
+	{
+	    switch (elm->on->arr[i]->tag)
+	    {
+		case TAGNewOwnReplicated:
+		{
+		    fprintf(stderr,"remrepl:zapped NewOwnReplicated\n");
+		    elm->on = delete_OwnerExpr_list(elm->on, i);
+		    break;
+		}
+		case TAGNewOwnLocation:
+		{
+		    NewOwnLocation nol = to_NewOwnLocation(elm->on->arr[i]);
+		    assert (nol->distr != DistrExpr_listNIL);
+		    if (nol->distr->sz == 1 &&
+			nol->distr->arr[0]->tag == TAGNewDistReplicated)
+		    {
+			fprintf(stderr,"remrepl:zapped NewOwnLocation\n");
+			elm->on = delete_OwnerExpr_list(elm->on, i);
+		    }
+		    break;
+		}
+		default:
+		    break;
+	    }
+	}
+    }
+    if (elm->on != OwnerExpr_listNIL && elm->on->sz == 0)
+    {
+	rfre_OwnerExpr_list(elm->on);
+	elm->on = OwnerExpr_listNIL;
+    }
+    return elm;
+}
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_rem_repl( vnusprog elm, global_context gc )
+{
+.call init_do_transform
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}
+

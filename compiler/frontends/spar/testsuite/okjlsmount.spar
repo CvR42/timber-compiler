@@ -1,0 +1,14 @@
+// After JLS2 15.11.1    Field Access Using a Primary
+
+public class okjlsmount {
+    static __string mountain = "Chocorua";
+
+    static okjlsmount favorite(){
+        __print(1,"Mount ");
+        return null;
+    }
+
+    public static void main(String[] args) {
+        __println(1,favorite().mountain);
+    }
+}

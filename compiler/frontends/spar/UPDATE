@@ -1,0 +1,253 @@
+New in Spar version 1.5
+
+- Reserved keyword assert, to be compatible with new Java versions.
+- Greatly improved compatibility with Java, thanks to the Jacks
+validation suite.
+- Analysis is improved at a lot of places, allowing a broader range of
+code to be optimized effectively.
+
+New in Spar version 1.4
+
+- The Spar language extensions are only supported in files ending with .spar.
+
+- Inner class support.
+
+New in Spar version 1.3
+
+- Vnus now also does analysis and optimizations. In particular, it does
+optimization and elemination on null pointer checks and bound checks.
+
+- Added the --nogc and a --strictanalysis flags.
+
+- Added a more efficient nullednewarray construct to Vnus for arrays that
+are supposed to be initialized to null.
+
+- The rank of an array can now also be specified as a compile-time
+constant. That is, type declarations like `int a[*^2]' are now also
+allowed.
+
+- Spar no longer supports the methods setSize, setRoom, and fitRoom
+on arrays.
+
+- Added a spar.util.Vector type that is similar to java.util.Vector,
+but parameterized with the element type of the vector. This replaces
+the setSize methods on normal arrays for the 1-dimensional case (which
+is by far the most common).
+
+This spar.util.Vector is used internally to represent the pool of
+internalized Strings, and thereby serves as an example of a user-defined
+array representation that is used.
+
+
+New in Spar version 1.2
+
+- A lot more agressive analysis of code, including 'final' analysis of
+formal parameters and local variables.
+
+- The Spar compiler and its documentation now use the second edition of
+the Java Language Specification (JLS2 for short) as reference.  Not all
+of the inner classes stuff is implemented, though.
+
+- Preparations have been started to support garbage collection. The
+run-time administration that is needed is already generated, and it is
+good enough to allow garbage collection on *some* programs. Unfortunately
+it is not good enough to work on all programs. Nevertheless, the run-time
+adminstration is there, and should give a very accurate indication of the
+eventual garbage-collection administration overhead.
+
+- Inline methods no longer allow type parameters. This feature was of
+dubious value, and caused considerable implementation problems. A generic
+types still support type parameters, and can be used as a workaround.
+
+- Lots of bug fixes.
+
+
+New in Spar version 1.1.1
+
+- The compiler now tests for variables that are used before they are set.
+  This is nice in its own right, but the compiler also takes the opportunity
+  to administrate some other information about variables at the
+  same time. This allows some redundant code to be eliminated.
+
+- The compiler no longer allows the '%' operator on complex numbers.
+
+- When checking for legal inline functions, the compiler
+  now knows that methods in a final class are final.
+
+- A throw statement may only throw a subclass of java.lang.Throwable,
+  and a class that is caught in the same function, that is a subclass
+  of java.lang.Error, java.lang.RuntimeError, or a class listed in the
+  'throws' class of the method.
+
+- The compiler now makes sure that you really implement the interfaces
+  that you promised to implement.
+
+- The compiler now complains about local variables that are used before
+  they are declared. It does not yet complain about class *fields* that
+  are used before they are declared.
+
+- The compiler is somewhat smarter about static calls: methods in
+  classes that have no subclasses are now called statically. This could be
+  generalized to methods that are never overridden, but the administration
+  to detect that is not yet completed.
+
+- An instanceof that can never evaluate to true, since the equivalent cast
+  would cause an error, now causes a runtime error.
+
+
+New in Spar version 1.1
+
+- Added support for the do-it-yourself infix operator. That is, anywhere
+you write add(a,b) it is now also allowed to write a \add b.
+
+- Tuple widening conversion and tuple narrowing conversion are now
+defined and implemented.
+
+- Lots of minor changes to make the stuff more portable.
+
+- The compiler now requires at least Tm version 2.0.7 (Use 'tm -h' to verify
+this).
+
+
+- The 'macro' keyword has been renamed to 'inline', and is now officially
+supported. There are at the moment some restrictions, though.
+
+- subscript operations on objects are now transformed to calls
+to getElement or setElement. According to the Spar definition, this
+should only happend if the class implements spar.lang.Array, but that
+check is not yet implemented.
+
+- Fixed a bug that caused incorrect code for a 'continue' statement
+in classical for() loops and while(){} loops.
+
+- Continue is now also supported for cardinality loops.
+
+- Null pointer exceptions are now thrown in all cases.
+
+- Class and interface parameters must be surrounded with (| |), both
+for formal and actual parameters.
+
+- more strict error checking
+  - local declarations cannot hide other locals or formal parameters
+  - no 'type' formal parameters in normal functions and constructors
+
+
+New in Spar version 1.0.4
+
+- Null pointer exceptions are now also generated for method invocations
+  where this is relevant.
+
+- Fixed some smaller bugs:
+  - Sometimes inappropriate default 'super' calls were inserted in
+  constructor bodies. This has been fixed.
+
+- Fixed an ommission in the Spar parser that prevented some tuple
+array expressions. You can now write:
+    tuple int^2 [] a = new tuple int^2 [24];
+
+- 'break' to a label now works as it should, except that any
+'finally' blocks between the jump and the label are not honoured.
+
+- Pragmas on types are now passed on to Vnus.
+
+- Enough of FileInputStream is now supported, so that opening and reading
+from a file is possible.
+
+- More of FileOutputStream is supported, so that opening a file for
+write or append is now also possible.
+
+- argv is now constructed properly.
+
+- Documented the methods of java.lang.Complex, including complex sin,
+cos and tan, and such.
+
+- Vnus and Spar now support arbitrary lower-bounds and strides in
+cardinality lists.
+
+- <tuple>.length is now supported.
+
+- Quite a lot of small bugs were fixes.
+
+New in Spar version 1.0.3
+
+- Better performance
+
+New in Spar version 1.0.2
+
+- Cardinalities have a new syntax, for example:
+  foreach( i <~ 0:a.length ) a[i] = 0;
+
+- Cardinalities also allow vector iterators. For example:
+  foreach( i <~ :a.getSize() ) a@i = 0;
+
+- Complete overhaul of pragmas in the language.
+
+- In pragmas, Spar and Java keywords are now identifiers like any
+other. Exceptions: 'true' and 'false'. Thus, <$ class=0 $> is now allowed.
+
+- setroom, setsize and fitroom are now pseudo-methods on an array.
+
+- Tuples and vectors
+
+- Array access through generic tuple expressions and the '@' subscript
+notation.
+
+- All new syntax of Java 1.1 (although not everything is implemented).
+Exception: <array type>.class.
+
+- The above *does* include the new dynamic initializer.
+
+- Templates (although there still are some problems.)
+
+- Syntax of templates, array access and tuple types is likely to change
+in the near future, as the current notation is ugly.
+
+- Evaluation order is now even closer to real Java.
+
+- Inner classes are parsed, but do not generate correct code. If you're
+lucky you get an explicit error message, but an internal error is also
+possible. Implementing them would require some reverse-engineering of
+the Sun compiler, since *exact* documentation of the semantics of inner
+classes (as opposed to brief, non-exhaustive, descriptions) are not
+available in public documentation.
+
+
+New in Spar version 1.0.1
+
+* Most of the examples in the Java Language Specification now behave
+correctly. This has caused the fixing of lots of minor points all over
+the compilation path.
+
+* Complex numbers are now treated like all other numeric types.
+
+- Spar now supports imaginary literals. They have the same syntax as
+floating-point literals, but have a 'i' or 'I' as suffix. This allows
+expressions like '1+2i'.
+
+- In assignment and parameter passing, Java allows implicit widening
+conversion between numeric types (roughly: if the destination type has
+more bits, the conversion is ok). Spar also supports widening conversions
+to complex values.
+
+* The expression getsize( A, 0 ), which returned the size of an
+array in the given dimension, has been replaced by the expression
+A.getSize( 0 ). The old notation is no longer supported.
+
+* The keyword 'setsize' has been renamed to '__setsize'. Similar
+for 'setroom', 'fitroom', 'delete' and 'garbagecollect'.
+
+* When the value that is returned by a method is ignored, a
+  new special Vnus language construct is generated that explicitly
+  evaluates an expression and ignores the result.
+
+* The restrictions on the classes that may contain the 'main' method
+  are now documented.
+
+* Implicit string conversion as in '"bla"+x' now generates the string "null"
+when a reference variable is null.
+
+* Evaluation order of array access expressions is now according to the
+language specification.
+
+* An array access now throws a NullPointerException when appropriate.
+The check can be switched off with --nonotnullassert.

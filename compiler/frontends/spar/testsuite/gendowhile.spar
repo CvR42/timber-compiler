@@ -1,0 +1,17 @@
+// File: gendowhile.spar
+//
+// Make sure that the compiler realizes that the body of a do { } while
+// loop has been executed before the end condition is evaluated.
+
+public class gendowhile {
+    public static void main(){
+	int a;
+	int n = 3;
+
+	do {
+	    a = n;
+	    n--;
+	} while( a>0 );
+	__println( 1, a );
+    }
+}

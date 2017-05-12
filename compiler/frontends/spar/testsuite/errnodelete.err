@@ -1,0 +1,2 @@
+errnodelete.spar:10: variable already defined: 'a'
+errnodelete.spar:10: undefined type: 'delete'

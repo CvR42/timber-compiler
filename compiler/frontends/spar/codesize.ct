@@ -1,0 +1,198 @@
+.. File: codesize.ct
+..
+.. Tree analyzer to estimate the generated code size for a piece of code.
+..
+.set reduction_type int
+.set neutral_element 0
+.set analysis_name codesize
+..
+.macro generate_formal_parameters nm t
+.return "( const_$t $(nm), int limit )"
+.endmacro
+..
+.macro generate_actual_parameters nm should_type is_type
+.if ${eq $(should_type) $(is_type)}
+.return "( $(nm), limit )"
+.else
+.return "( (const_$(should_type)) $(nm), limit )"
+.endif
+.endmacro
+..
+.macro generate_reduction_operation a b
+.return "($a)+($b)"
+.endmacro
+..
+.. Generate a test expression that evaluates to true iff there is
+.. no point in continuing the analyzis.
+.macro generate_termination_test v
+.return "(($v)>limit)"
+.endmacro
+..
+.macro generate_empty_analyzer_body indent t
+$(indent)(void) limit;
+.endmacro
+..
+.macro generate_setup_code t indent elm res
+.if ${member ${metatype $t} list class constructor constructorbase}
+$(indent)if( $(elm) == $tNIL ){
+$(indent)$(indent)return $(neutral_element);
+$(indent)}
+.endif
+.endmacro
+..
+.. For which types are there actions defines?
+.set actors
+.append actors ${nonvirtual expression statement ${subclasses expression statement}}
+..
+.. Some tunable constants that estimate the code size required for various
+.. features.
+.set call 3
+.set fieldaccess 2
+.set test 2
+.set throw 2
+.set new 3
+.. Actions for all visited types
+.set analyze_action_Catch reduction $(test)
+.set analyze_action_SwitchCase reduction $(test)
+.set analyze_action_FormalParameter_list reduction
+.set analyze_action_BooleanExpression constant 1
+.set analyze_action_ByteExpression constant 1
+.set analyze_action_CharExpression constant 1
+.set analyze_action_ClassIdExpression constant $[2*$(fieldaccess)]
+.set analyze_action_DefaultValueExpression constant 1
+.set analyze_action_DoubleExpression constant 2
+.set analyze_action_FloatExpression constant 2
+.set analyze_action_IntExpression constant 1
+.set analyze_action_LongExpression constant 1
+.set analyze_action_NullExpression constant 1
+.set analyze_action_OuterSuperFieldExpression reduction $(fieldaccess)
+.set analyze_action_OuterThisExpression reduction $(fieldaccess)
+.set analyze_action_ShortExpression constant 1
+.set analyze_action_SizeofExpression reduction 1
+.set analyze_action_SuperFieldExpression reduction $(fieldaccess)
+.set analyze_action_TypeExpression ignore
+.set analyze_action_TypeFieldExpression constant 1
+.set analyze_action_TypeInstanceOfExpression reduction $[2*$(test)+$(fieldaccess)]
+.set analyze_action_VariableNameExpression constant 1
+.set analyze_action_InterfaceInstanceOfExpression reduction $[2*$(test)+$(fieldaccess)]
+.set analyze_action_ClassInstanceOfExpression reduction $[2*$(test)+$(fieldaccess)]
+.set analyze_action_GetLengthExpression reduction $(fieldaccess)
+.set analyze_action_GetSizeExpression reduction $(fieldaccess)
+.set analyze_action_GetBufExpression reduction $(fieldaccess)
+.set analyze_action_InstanceOfExpression reduction $[2*$(fieldaccess)]
+.set analyze_action_ArrayInitExpression reduction $[$(call)]
+.set analyze_action_AssignOpExpression reduction 1
+.set analyze_action_ClassExpression constant $[$(fieldaccess)+$(call)]
+.set analyze_action_ConstructorInvocationStatement reduction $[2*$(call)]
+.set analyze_action_FieldInvocationExpression reduction $[$(fieldaccess)+$(call)]
+.set analyze_action_MethodInvocation reduction $(call)
+.set analyze_action_VectorSubscriptExpression reduction 1
+.set analyze_action_FieldExpression reduction $(fieldaccess)
+.set analyze_action_PreIncrementExpression reduction 1
+.set analyze_action_PreDecrementExpression reduction 1
+.set analyze_action_PostIncrementExpression reduction 1
+.set analyze_action_PostDecrementExpression reduction 1
+.set analyze_action_UnopExpression reduction 1
+.set analyze_action_BinopExpression reduction 1
+.set analyze_action_ShortopExpression reduction 2
+.set analyze_action_IfExpression reduction $(test)
+.set analyze_action_NotNullAssertExpression reduction $[1+$(test)+$(call)]
+.set analyze_action_StringExpression constant 1
+.set analyze_action_WhereExpression reduction
+.set analyze_action_ForcedCastExpression reduction
+.set analyze_action_TryStatement reduction
+.set analyze_action_AnnotationExpression reduction
+.set analyze_action_BracketExpression reduction
+.set analyze_action_CastExpression reduction
+.set analyze_action_ComplexExpression reduction
+.set analyze_action_SimpleTryStatement reduction
+.set analyze_action_InternalizeExpression reduction $(call)
+.set analyze_action_NullStringExpression reduction $[$(call)+1]
+.set analyze_action_OuterSuperInvocationStatement reduction $(call)
+.set analyze_action_TypeInvocationStatement reduction $(call)
+.set analyze_action_FieldInvocationStatement reduction
+.set analyze_action_SuperConstructorInvocationStatement reduction $(call)
+.set analyze_action_SuperInvocationStatement reduction $(call)
+.set analyze_action_OuterSuperConstructorInvocationStatement reduction $(call)
+.set analyze_action_ThisConstructorInvocationStatement reduction $(call)
+.set analyze_action_ValueReturnStatement reduction 1
+.set analyze_action_GotoStatement reduction 1
+.set analyze_action_ReturnStatement reduction 1
+.set analyze_action_EmptyStatement ignore
+.set analyze_action_BreakStatement constant 1
+.set analyze_action_ContinueStatement constant 1
+.set analyze_action_DeleteStatement reduction $(call)
+.set analyze_action_ExpressionStatement reduction
+.set analyze_action_ThrowStatement reduction $(throw)
+.set analyze_action_IfStatement reduction $(test)
+.set analyze_action_DoWhileStatement reduction $(test)
+.set analyze_action_WhileStatement reduction $(test)
+.set analyze_action_InternalThrowStatement reduction $(throw)
+.set analyze_action_AssignStatement reduction 1
+.set analyze_action_PrintStatement reduction $(call)
+.set analyze_action_PrintLineStatement reduction $[2*$(call)]
+.set analyze_action_ForStatement reduction $(test)
+.set analyze_action_ForeachStatement reduction $(test)
+.set analyze_action_FieldDeclaration reduction
+.set analyze_action_WaitStatement reduction 2
+.set analyze_action_SwitchStatement reduction 1
+.set analyze_action_ClassicForStatement reduction $(test)
+.set analyze_action_ClassDeclaration reduction
+.set analyze_action_InterfaceDeclaration reduction
+.set analyze_action_FunctionDeclaration reduction
+.set analyze_action_NativeFunctionDeclaration reduction
+.set analyze_action_AbstractFunctionDeclaration reduction
+.set analyze_action_ConstructorDeclaration reduction
+.set analyze_action_TypeInvocationExpression reduction $(call)
+.set analyze_action_SuperInvocationExpression reduction $(call)
+.set analyze_action_MethodInvocationExpression reduction
+.set analyze_action_MethodInvocationStatement reduction
+.set analyze_action_SynchronizedStatement reduction
+.set analyze_action_StaticInitializer reduction
+.set analyze_action_OuterSuperInvocationExpression reduction $[$(fieldaccess)+$(call)]
+.set analyze_action_NewArrayExpression reduction $[1+$(call)]
+.set analyze_action_NewClassExpression reduction $[1+$(call)]
+.set analyze_action_NewInitArrayExpression reduction $[1+$(call)]
+.set analyze_action_NewInnerClassExpression reduction $[1+$(call)]
+.set analyze_action_NewRecordExpression reduction $[1+$(fieldaccess)+$(call)]
+.set analyze_action_BlockStatement reduction
+.set analyze_action_EachStatement reduction
+.set analyze_action_SubscriptExpression reduction $[1+2*$(test)$+$(throw)]
+.set analyze_action_GCSetRefChainLinkStatement reduction 1
+.set analyze_action_GCSetTopRefChainLinkStatement reduction 1
+.set analyze_action_GCBuildRefChainLinkStatement reduction 5
+.set analyze_action_InstanceInitializer reduction 2
+.set analyze_action_VectorExpression reduction 2
+.. -------------------------------------------
+..
+.insert tmcanalyze.t
+..
+.set visit_types ${call calc_analyzer "statement_list" "$(actors)"}
+..
+/* File: codesize.c
+ *
+ * Given a statement, return the estimated size of the generated code
+ * for this statement in abstract instructions.
+ */
+
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "symbol_table.h"
+#include "pragma.h"
+#include "global.h"
+#include "codesize.h"
+
+.call generate_analyzer_forwards "$(visit_types)"
+
+// --------- user functions -----------------
+
+// --------- end user functions -----------------
+
+.call generate_analyzer "$(visit_types)"
+
+int code_size_statement_list( const_statement_list sl, int limit )
+{
+    return $(analysis_name)_statement_list${call generate_actual_parameters sl statement_list statement_list};
+}

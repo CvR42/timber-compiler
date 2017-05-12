@@ -1,0 +1,1215 @@
+.. File: regtype.ct
+..
+.. Register types
+..
+.. Return 'walk' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the datastructure we're walking on, and a type 't', of that variable,
+.. generate a return statement/
+.macro generate_walker_return indent var t
+$(indent)return $(var);
+.endmacro
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+.if ${member ${stemname $t} ${typelist}}
+$(indent)if( $(var) == 0 ){
+$(indent)    return $(var);
+$(indent)}
+.endif
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+static $t regtype_$t_walker( $t $(var), regtype_data *ctx )
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we're walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+static $t regtype_$t_walker( $t $(var), regtype_data *ctx );
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) regtype_$(type)_action( $(var), ctx );
+.else
+$(indent)$(var) = ($(type)) regtype_$(type)_action( to_$(type)( $(var) ), ctx );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) regtype_$(type)_walker( $(var), ctx );
+.else
+$(indent)$(var) = ($(type)) regtype_$(type)_walker( to_$(type)( $(var) ), ctx );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var', and a type 'type', generate
+.. the body of an empty walker function.
+.macro generate_empty_walker_body indent var type
+$(indent)(void) ctx;
+.endmacro
+..
+..
+.. For which types are there actions defines?
+.set actors
+.append actors AbstractFunctionDeclaration
+.append actors ClassDeclaration
+.append actors ConstructorDeclaration
+.append actors FunctionDeclaration
+.append actors InterfaceDeclaration
+.append actors NativeFunctionDeclaration
+.append actors SparProgramUnit
+.append actors NewClassExpression
+.append actors TypeName
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "Signature SparProgramUnit" "$(actors)"}
+..
+/* File: regtype.c
+ *
+ * Register all classes with their fully qualified names in a global list
+ * of types.
+ */
+
+#include <stdio.h>
+#include <assert.h>
+#include <tmc.h>
+#include <string.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "error.h"
+#include "symbol_table.h"
+#include "global.h"
+#include "regtype.h"
+#include "collect.h"
+#include "typederive.h"
+#include "typename.h"
+#include "service.h"
+#include "doimports.h"
+#include "dump.h"
+
+.foreach t TypeName
+typedef ${alias $t} $t;
+.endforeach
+.foreach t TypeName
+typedef ${alias $t}_list $t_list;
+.endforeach
+
+typedef struct str_regtype_data {
+    SparProgram *prog;
+    TypeEntry_list typelist;	// List of types being constructed
+    origsymbol_list ondemands;	// List of packages in on-demand imports
+    tmsymbol owner;		// Fully qualified name of owner.
+    tmsymbol enclosing_type;	// FQ name of the enclosing class, or NULL.
+    TypeBinding_list typebindings;
+    tmstring path;		// Path name of the file of this unit
+    tmsymbol packagename;	// Fully qualified name of the package
+    const char *fnm;		// The source file of the compilation unit
+    MethodMapping_list method_mappings;
+    MethodMapping_list constructor_mappings;
+    FieldMapping_list field_mappings;
+    context where;
+    tmsymbol_list definitions;
+    bool has_superclass;
+} regtype_data;
+
+.call generate_walker_forwards "$(visit_types)"
+
+#line $[1+${tpllineno}] "${tplfilename}"
+
+/* Given a method signature 's', return a mangled native method name
+ * according to the Java standard.
+ *
+ * For the moment it is assumed that the method is not overloaded,
+ * so that the long mangled name with signature mangling
+ * is not necessary.
+ */
+static tmsymbol gen_native_name( const Signature s, tmsymbol parent )
+{
+    // TODO: do this right
+    tmstring m_parent = jni_mangle_symbol( parent );
+    tmstring m_method = jni_mangle_symbol( s->name );
+    tmstring nm = printf_tmstring( "Java_%s_%s", m_parent, m_method );
+    tmsymbol res;
+
+    rfre_tmstring( m_parent );
+    rfre_tmstring( m_method );
+    res = add_tmsymbol( nm );
+    rfre_tmstring( nm );
+    return res;
+}
+
+/* Given a block that is presumed to be the list of declarations of a
+ * class, return true if there is at least one constructor declaration 
+ * in the class.
+ */
+static bool has_constructors( const statement_list smts )
+{
+    for( unsigned int ix=0; ix<smts->sz; ix++ ){
+	const_statement smt = smts->arr[ix];
+
+	if( smt->tag == TAGConstructorDeclaration ){
+	    return true;
+	}
+    }
+    return false;
+}
+
+/* Given a method translation 'from' to 'to', add it to the translation list. */
+static MethodMapping_list add_Method_translation(
+ MethodMapping_list mappings,
+ tmsymbol ctx,
+ const MethodMapping mapping
+)
+{
+    mappings = append_MethodMapping_list( mappings, mapping );
+    if( showmangling ){
+	tmstring snm = typename_Signature( mapping->realname );
+
+	fprintf(
+	    stderr,
+	    "Add to context '%s': method mapping %s->%s\n",
+	    ctx->name,
+	    snm,
+	    mapping->mangledname->name
+	);
+	rfre_tmstring( snm );
+    }
+    return mappings;
+}
+
+/* Given a symbol of a (non-static) method definition, create and enter
+ * its translation in the list.
+ */
+static MethodMapping_list build_Method_translation(
+ MethodMapping_list mappings,
+ regtype_data *ctx,
+ Signature s
+)
+{
+.call generate_descent_call "    " s Signature Signature
+    if( has_any_flag( s->flags, ACC_NATIVE ) ){
+	mappings = add_Method_translation(
+	    mappings,
+	    ctx->owner,
+	    new_MethodMapping(
+		rdup_Signature( s ),
+		gen_native_name( s, ctx->owner ),
+		ctx->owner
+	    )
+	);
+    }
+    else {
+	tmsymbol nw = qualify_tmsymbol( ctx->owner, s->name );
+
+	mappings = add_Method_translation(
+	    mappings,
+	    ctx->owner,
+	    new_MethodMapping(
+		rdup_Signature( s ),
+		gen_fqname( nw ),
+		ctx->owner
+	    )
+	);
+    }
+    return mappings;
+}
+
+/* Given a list of symbols that are for (non-static) method definitions, enter
+ * them in the list of translations.
+ */
+static MethodMapping_list build_Method_translations(
+ MethodMapping_list mappings,
+ regtype_data *ctx,
+ const_Signature_list sl
+)
+{
+    for( unsigned int ix=0; ix<sl->sz; ix++ ){
+	mappings = build_Method_translation( mappings, ctx, sl->arr[ix] );
+    }
+    return mappings;
+}
+
+static void register_type( regtype_data *ctx, TypeEntry e )
+{
+    ctx->typelist = register_TypeEntry( ctx->typelist, e );
+    ctx->definitions = append_tmsymbol_list( ctx->definitions, e->name->sym );
+}
+
+/* Given the name of a locally defined type, add it to the list of type
+ * bindings.
+ */
+static void build_type_binding( regtype_data *ctx, const origsymbol s )
+{
+    tmsymbol nw = qualify_tmsymbol( ctx->owner, s->sym );
+
+    ctx->typebindings = register_TypeBinding(
+	ctx->typebindings,
+	ctx->packagename,
+	new_TypeBinding( s->sym, nw )
+    );
+
+    // Also register bindings that use the shorthand name of the
+    // outer class.
+    const char *p = nw->name;
+    if( ctx->packagename != tmsymbolNIL && ctx->packagename->name[0] != '\0' ){
+	const char *package_string = ctx->packagename->name;
+	size_t pos = strlen( package_string );
+
+	if( strncmp( p, package_string, pos ) != 0 ){
+	    internal_error( "package name doesn't match" );
+	}
+	assert( p[pos] == '.' );
+	p += pos+1;
+    }
+    const char *p1 = strchr( p, '.' );
+
+    // 'p' now points to the type that is not qualified by the
+    // package name. If it's still a qualified name, register that
+    // type binding too.
+    // Repeat as long as this is a qualified name.
+    while( p1 != NULL ){
+	ctx->typebindings = register_TypeBinding(
+	    ctx->typebindings,
+	    ctx->packagename,
+	    new_TypeBinding( add_tmsymbol( p ), nw )
+	);
+	p = p1+1;
+	p1 = strchr( p, '.' );
+    }
+}
+
+/* Given an object type with the name 's', bind it by referring to the type
+ * mappings list.
+ */
+static origsymbol bind_type_origsymbol( regtype_data *ctx, const_origsymbol s )
+{
+    if( s == origsymbolNIL ){
+	return origsymbolNIL;
+    }
+    origsymbol res = rdup_origsymbol( s );
+    tmsymbol trt = canonify_type(
+	ctx->prog,
+	ctx->packagename,
+	tmsymbolNIL,
+	ctx->ondemands,
+	&ctx->typebindings,
+	s
+    );
+    if( trt != tmsymbolNIL ){
+	res->sym = trt;
+	if( showmangling ){
+	    fprintf(
+		stderr,
+		"mapped type '%s'->'%s'\n",
+		s->sym->name,
+		trt->name
+	    );
+	}
+    }
+    return res;
+}
+
+/* Given an object type with the name 's', bind it by referring to the type
+ * mappings list.
+ */
+static tmsymbol bind_type_tmsymbol( regtype_data *ctx, tmsymbol s )
+{
+    if( s == tmsymbolNIL ){
+	return s;
+    }
+    tmsymbol trt = canonify_type(
+	ctx->prog,
+	ctx->packagename,
+	tmsymbolNIL,
+	ctx->ondemands,
+	&ctx->typebindings,
+	s,
+	originNIL
+    );
+    if( trt != tmsymbolNIL ){
+	if( showmangling ){
+	    fprintf(
+		stderr,
+		"mapped type '%s'->'%s'\n",
+		s->name,
+		trt->name
+	    );
+	}
+    }
+    return trt;
+}
+
+/* Given a class name and a list of methods, complain about identical
+ * entries.
+ */
+static void check_double_methods( tmsymbol owner, Signature_list methods )
+{
+    for( unsigned int ixa=0; ixa<methods->sz; ixa++ ){
+	Signature sa = methods->arr[ixa];
+
+	for( unsigned int ixb=ixa+1; ixb<methods->sz; ixb++ ){
+	    Signature sb = methods->arr[ixb];
+
+	    if( isequal_Signature( sa, sb ) ){
+		const tmstring nm = typename_Signature( sa );
+
+		error( "In: %s: duplicate method declaration: %s", owner->name, nm );
+		rfre_tmstring( nm );
+	    }
+	}
+    }
+}
+
+/* Given a class name and a list of constructors, complain about identical
+ * entries.
+ */
+static void check_double_constructors( tmsymbol owner, Signature_list constructors )
+{
+    for( unsigned int ixa=0; ixa<constructors->sz; ixa++ ){
+	Signature sa = constructors->arr[ixa];
+
+	for( unsigned int ixb=ixa+1; ixb<constructors->sz; ixb++ ){
+	    Signature sb = constructors->arr[ixb];
+
+	    if( isequal_Signature( sa, sb ) ){
+		const tmstring nm = typename_Signature( sa );
+
+		error( "In: %s: duplicate constructor declaration: %s", owner->name, nm );
+		rfre_tmstring( nm );
+	    }
+	}
+    }
+}
+
+/* Given a class name and a list of fields, complain about identical
+ * entries.
+ */
+static void check_double_fields( tmsymbol owner, Field_list fields )
+{
+    for( unsigned int ixa=0; ixa<fields->sz; ixa++ ){
+	Field fa = fields->arr[ixa];
+
+	for( unsigned int ixb=ixa+1; ixb<fields->sz; ixb++ ){
+	    Field fb = fields->arr[ixb];
+
+	    if( fa->name == fb->name ){
+		error(
+		    "In: %s: duplicate field declaration: %s",
+		    owner->name,
+		    fa->name->name
+		);
+	    }
+	}
+    }
+}
+
+// Given the name of its owner and the name of a constructor,
+// make sure that the last component of the qualified name is
+// the same as the constructor name.
+//
+// This check is done in this pass since we have the fully qualified name
+// available in this pass, and all further passes only handle the constructors
+// they actually use. Since a constructor that fails this test is
+// inherently impossible to reach, the error would never be generated.
+static void check_constructor_name( tmsymbol fq_owner, origsymbol name )
+{
+    tmsymbol first;
+    tmsymbol last;
+
+    break_qualified_tmsymbol( fq_owner, &first, &last );
+    if( name->sym != last ){
+	origin_error( name->org, "Invalid method declaration; return type required" );
+    }
+}
+
+// Given the type of initialization (static or dynamic) and the name
+// of the class we're talking about, generate a name for the constructor
+// or function that contains the initialization code for the class.
+static tmsymbol gen_init_name( const char *typ, tmsymbol nm )
+{
+    tmstring str = printf_tmstring( "%s_init_%s", typ, nm->name );
+    tmsymbol res = gen_tmsymbol( str );
+    rfre_tmstring( str );
+    return res;
+}
+
+static void register_init_function( regtype_data *ctx, const_Signature s )
+{
+    unsigned int pos;
+
+    if( !search_MethodMapping( ctx->method_mappings, s, &pos ) ){
+	tmstring snm = typename_Signature( s );
+
+	internal_error( "No mapping defined for init function '%s'", snm );
+    }
+    tmsymbol mangled_name = ctx->method_mappings->arr[pos]->mangledname;
+    Entry e = new_ForwardFunctionEntry(
+	mangled_name,
+	Pragma_listNIL,
+	s->flags,
+	ctx->owner,
+	ctx->packagename,
+	false,				// virtually used?
+	0,				// direct use count
+	false,				// overridden
+	rdup_Signature( s ),
+	new_FormalParameter_list(),	// This parameters
+	new_FormalParameter_list(),	// parameters
+	new_type_list(),
+	new_VoidType(),
+	false				// being mangled?
+    );
+    (*ctx->prog)->symtab = add_symtab( (*ctx->prog)->symtab, e );
+}
+
+/* -------- actors ---------- */
+
+/* Given a type name, determine the fully qualified name of the type, 
+ * replace the type name with that.
+ */
+static TypeName regtype_TypeName_action( TypeName s, regtype_data *ctx )
+{
+    if( s == origsymbolNIL ){
+	return s;
+    }
+.call generate_walker_call "    " s TypeName TypeName
+    origsymbol res = bind_type_origsymbol( ctx, s );
+    rfre_origsymbol( s );
+    return res;
+}
+
+/* Register a forward declaration to a constructor. */
+static ConstructorDeclaration regtype_ConstructorDeclaration_action(
+ ConstructorDeclaration fn,
+ regtype_data *ctx
+)
+{
+    unsigned int pos;
+    context oldwhere = ctx->where;
+
+    check_constructor_name( ctx->owner, fn->name );
+
+    ctx->where = CTX_DYNAMICROUTINE;
+.call generate_walker_call "    " fn ConstructorDeclaration ConstructorDeclaration
+    Signature s = construct_Method_Signature( fn );
+    if( !search_MethodMapping( ctx->constructor_mappings, s, &pos ) ){
+	tmstring snm = typename_Signature( s );
+
+	internal_error( "No mapping defined for constructor '%s'", snm );
+    }
+    tmsymbol mangled_name = ctx->constructor_mappings->arr[pos]->mangledname;
+    Entry e = new_ForwardFunctionEntry(
+	mangled_name,
+	rdup_Pragma_list( fn->pragmas ),
+	fn->flags,
+	ctx->owner,
+	ctx->packagename,
+	false,				// virtually used
+	0,				// direct use count
+	false,				// overridden
+	s,
+	new_FormalParameter_list(),	// This parameters
+	rdup_FormalParameter_list( fn->parameters ),
+	rdup_type_list( fn->throws ),
+	new_ObjectType( bind_type_origsymbol( ctx, fn->name ) ),
+	false			// being mangled?
+    );
+    (*ctx->prog)->symtab = add_symtab( (*ctx->prog)->symtab, e );
+    ctx->where = oldwhere;
+    return fn;
+}
+
+// Action for class NewClassExpression.
+// Don't visit the anonymous class.
+static NewClassExpression regtype_NewClassExpression_action(
+ NewClassExpression e,
+ regtype_data *ctx
+)
+{
+    (void) regtype_NewClassExpression_walker;
+    if( e == NewClassExpressionNIL ){
+        return e;
+    }
+.call generate_descent_call "    " e->outer expression expression
+// Don't try to bind the type name of a class constructor, since 
+// at this point we don't know enough to do it right. It may have
+// an outer expression, and it may refer to a type relative to that.
+..call generate_descent_call "    " e->cl type type
+.call generate_descent_call "    " e->parameters expression_list expression_list
+    // Don't walk into e->body.
+    return e;
+}
+
+/* Register a forward declaration to a function. */
+static FunctionDeclaration regtype_FunctionDeclaration_action(
+ FunctionDeclaration fn,
+ regtype_data *ctx
+)
+{
+    unsigned int pos;
+    context oldwhere = ctx->where;
+
+    if( oldwhere == CTX_OBJECT && (fn->flags & ACC_STATIC) == 0 ){
+	ctx->where = CTX_DYNAMICROUTINE;
+    }
+    else {
+	ctx->where = CTX_STATICROUTINE;
+    }
+    if( oldwhere == CTX_GLOBAL ){
+	fn->flags |= ACC_STATIC;
+    }
+.call generate_walker_call "    " fn FunctionDeclaration FunctionDeclaration
+    Signature s = construct_Method_Signature( fn );
+    if( !search_MethodMapping( ctx->method_mappings, s, &pos ) ){
+	tmstring snm = typename_Signature( s );
+
+	internal_error( "No mapping defined for method '%s'", snm );
+    }
+    tmsymbol mangled_name = ctx->method_mappings->arr[pos]->mangledname;
+    Entry e = new_ForwardFunctionEntry(
+	mangled_name,
+	rdup_Pragma_list( fn->pragmas ),
+	fn->flags,
+	ctx->owner,
+	ctx->packagename,
+	false,			// virtually used?
+	0,			// direct use count
+	false,			// overridden
+	s,
+	new_FormalParameter_list(),	// This parameters
+	rdup_FormalParameter_list( fn->parameters ),
+	rdup_type_list( fn->throws ),
+	rdup_type( fn->rettype ),
+	false			// being mangled?
+    );
+    (*ctx->prog)->symtab = add_symtab( (*ctx->prog)->symtab, e );
+    ctx->where = oldwhere;
+    return fn;
+}
+
+/* Register a forward declaration to a native function. */
+static NativeFunctionDeclaration regtype_NativeFunctionDeclaration_action(
+ NativeFunctionDeclaration fn,
+ regtype_data *ctx
+)
+{
+    unsigned int pos;
+
+    if( ctx->where == CTX_GLOBAL ){
+	fn->flags |= ACC_STATIC;
+    }
+.call generate_walker_call "    " fn NativeFunctionDeclaration NativeFunctionDeclaration
+    Signature s = construct_Method_Signature( fn );
+    if( !search_MethodMapping( ctx->method_mappings, s, &pos ) ){
+	tmstring snm = typename_Signature( s );
+
+	internal_error( "No mapping defined for method '%s'", snm );
+    }
+    tmsymbol mangled_name = ctx->method_mappings->arr[pos]->mangledname;
+    Entry e = new_ForwardFunctionEntry(
+	mangled_name,
+	rdup_Pragma_list( fn->pragmas ),
+	fn->flags,
+	ctx->owner,
+	ctx->packagename,
+	false,			// virtually used?
+	0,			// direct use count
+	false,			// overridden
+	s,
+	new_FormalParameter_list(),	// This parameters
+	rdup_FormalParameter_list( fn->parameters ),
+	rdup_type_list( fn->throws ),
+	rdup_type( fn->rettype ),
+	false			// being mangled?
+    );
+    (*ctx->prog)->symtab = add_symtab( (*ctx->prog)->symtab, e );
+    return fn;
+}
+
+/* Register a forward declaration to an abstract function. */
+static AbstractFunctionDeclaration regtype_AbstractFunctionDeclaration_action(
+ AbstractFunctionDeclaration fn,
+ regtype_data *ctx
+)
+{
+    unsigned int pos;
+
+    if( ctx->where == CTX_GLOBAL ){
+	fn->flags |= ACC_STATIC;
+    }
+.call generate_walker_call "    " fn AbstractFunctionDeclaration AbstractFunctionDeclaration
+    Signature s = construct_Method_Signature( fn );
+    if( !search_MethodMapping( ctx->method_mappings, s, &pos ) ){
+	tmstring snm = typename_Signature( s );
+
+	internal_error( "No mapping defined for method '%s'", snm );
+    }
+    tmsymbol mangled_name = ctx->method_mappings->arr[pos]->mangledname;
+    Entry e = new_ForwardFunctionEntry(
+	mangled_name,
+	rdup_Pragma_list( fn->pragmas ),
+	fn->flags,
+	ctx->owner,
+	ctx->packagename,
+	false,			// virtually used
+	0,			// direct use count
+	false,			// overridden
+	s,
+	new_FormalParameter_list(),	// This parameters
+	rdup_FormalParameter_list( fn->parameters ),
+	rdup_type_list( fn->throws ),
+	rdup_type( fn->rettype ),
+	false			// being mangled?
+    );
+    (*ctx->prog)->symtab = add_symtab( (*ctx->prog)->symtab, e );
+    return fn;
+}
+
+/* Register a class declaration. */
+static ClassDeclaration regtype_ClassDeclaration_action(
+ ClassDeclaration cl,
+ regtype_data *ctx
+)
+{
+    (void) regtype_ClassDeclaration_walker;
+    if( has_any_flag( cl->flags, ACC_LOCAL_OBJECT ) ){
+	// Don't register local classes, since they don't have a canonical name.
+	return cl;
+    }
+
+    statement_list blk = cl->body;
+    tmsymbol oldowner = ctx->owner;
+    context old_where = ctx->where;
+    bool old_has_superclass = ctx->has_superclass;
+
+    // TODO: this statement can probably be deleted, now that
+    // we explicitly register inner type bindings in the outer class.
+    build_type_binding( ctx, cl->name );
+    if( trace_bindings ){
+        dump_TypeBinding_list( stderr, ctx->typebindings, "Type `%s' inherits the folling type bindings", cl->name->sym->name );
+    }
+    TypeBinding_list old_typebindings = ctx->typebindings;
+    ctx->typebindings = rdup_TypeBinding_list( ctx->typebindings );
+    ctx->has_superclass = (cl->super != typeNIL);
+    ctx->where = CTX_OBJECT;
+    if(
+        has_any_flag( cl->flags, ACC_PUBLIC ) &&
+	!has_any_flag( cl->flags, ACC_LOCAL_OBJECT|ACC_MEMBER_OBJECT ) &&
+	ctx->fnm != NULL
+    ){
+	check_findable_public( cl->name, ctx->fnm );
+    }
+    ctx->owner = qualify_tmsymbol( ctx->owner, cl->name->sym );
+    if( strcmp( ctx->owner->name, "java.lang.Object" ) == 0 ){
+	// The class java.lang.Object is special, because it does not have
+	// a superclass.
+        if( cl->super != typeNIL ){
+	    rfre_type( cl->super );
+	    cl->super = typeNIL;
+	}
+    }
+    if( !has_constructors( blk ) ){
+	// The class has no constructors, so build a default one.
+	statement_list body = new_statement_list();
+	/* The default constructor is public if the class is (JLS2 8.8.7) */
+	modflags flags = cl->flags & ACC_PUBLIC;
+	if( !pref_no_inlining ){
+	    flags |= ACC_INLINE;
+	}
+
+	/* build a default constructor as per JLS2 8.8.7 */
+	if( cl->super != typeNIL ){
+	    body = append_statement_list(
+		body,
+		new_SuperConstructorInvocationStatement(
+		    gen_origin(),
+		    Pragma_listNIL,
+		    origsymbol_listNIL,	// Labels
+		    new_expression_list()
+		)
+	    );
+	}
+	cl->body = append_statement_list(
+	    cl->body,
+	    new_ConstructorDeclaration(
+		gen_origin(),
+		Pragma_listNIL,
+		origsymbol_listNIL,	// Labels
+		flags,
+		false,
+		rdup_origsymbol( cl->name ),
+		new_FormalParameter_list(),
+		new_type_list(),		/* throws */
+		new_Block( tmsymbolNIL, new_Pragma_list(), body )
+	    )
+	);
+    }
+    tmsymbol outer_this = tmsymbolNIL;
+    if(
+	ctx->enclosing_type != tmsymbolNIL &&
+	!has_any_flag( cl->flags, ACC_STATIC )
+    ){
+	outer_this = gen_tmsymbol( "outerthis" );
+	FieldDeclaration thisfield = new_FieldDeclaration(
+	    gen_origin(),
+	    Pragma_listNIL,
+	    origsymbol_listNIL,	// Labels
+	    ACC_PUBLIC,
+	    false,
+	    add_origsymbol( outer_this ),
+	    new_ObjectType( add_origsymbol( bind_type_tmsymbol( ctx, ctx->enclosing_type ) ) ),
+	    new_OptExprNone()
+	);
+	cl->body = insert_statement_list( cl->body, 0, thisfield );
+    }
+.call generate_descent_call "    " cl->formals FormalParameter_list FormalParameter_list
+.call generate_descent_call "    " cl->interfaces type_list type_list
+.call generate_descent_call "    " cl->hiddenparms HiddenParameter_list HiddenParameter_list
+.call generate_descent_call "    " cl->super type type
+    tmsymbol old_enclosing_type = ctx->enclosing_type;
+    ctx->enclosing_type = ctx->owner;
+    Field_list fields = collect_type_fields( blk, NO_FORCE_STATIC );
+    Signature_list methods = collect_type_methods( blk );
+    Signature_list constructors = collect_class_constructors( blk );
+    check_double_methods( ctx->owner, methods );
+    check_double_fields( ctx->owner, fields );
+    check_double_constructors( ctx->owner, constructors );
+    cl->dynInit = gen_init_name( "dynamic", cl->name->sym );
+    cl->staticInit = gen_init_name( "static", cl->name->sym );
+    cl->staticInitNeed = gen_init_name( "needstatic", cl->name->sym );
+    Signature staticinitfn = new_Signature(
+        ACC_STATIC|ACC_INIT|ACC_FINAL|ACC_PUBLIC,
+	cl->staticInit,
+	new_type_list()
+    );
+    Signature dynamicinitfn = new_Signature(
+        ACC_INIT|ACC_FINAL|ACC_PRIVATE,
+	cl->dynInit,
+	new_type_list()
+    );
+
+    // First, construct type bindings for the enclosed types.
+    for( unsigned int i=0; i<blk->sz; i++ ){
+	statement def = blk->arr[i];
+
+	if( is_TypeDeclaration( def ) ){
+	    const_TypeDeclaration td = to_const_TypeDeclaration( def );
+
+	    build_type_binding( ctx, td->name );
+	}
+    }
+    // Then, process the inner type declarations.
+    for( unsigned int iy=0; iy<blk->sz; iy++ ){
+	statement def = blk->arr[iy];
+
+	if( is_TypeDeclaration( def ) ){
+.call generate_descent_call "	    " def statement statement
+	}
+    }
+    MethodMapping_list method_mappings = new_MethodMapping_list();
+    MethodMapping_list constructor_mappings = new_MethodMapping_list();
+    MethodMapping_list old_method_mappings = ctx->method_mappings;
+    MethodMapping_list old_constructor_mappings = ctx->constructor_mappings;
+    FieldMapping_list old_field_mappings = ctx->field_mappings;
+    FieldMapping_list field_mappings = new_FieldMapping_list();
+    method_mappings = build_Method_translation( method_mappings, ctx, staticinitfn );
+    method_mappings = build_Method_translation( method_mappings, ctx, dynamicinitfn );
+    method_mappings = build_Method_translations( method_mappings, ctx, methods );
+    constructor_mappings = build_Method_translations( constructor_mappings, ctx, constructors );
+    ctx->method_mappings = method_mappings;
+    ctx->field_mappings = field_mappings;
+    ctx->constructor_mappings = constructor_mappings;
+    register_init_function( ctx, staticinitfn );
+    register_init_function( ctx, dynamicinitfn );
+    rfre_Field_list( fields );
+
+    rfre_Signature_list( methods );
+    rfre_Signature_list( constructors );
+    Field staticinitneed = new_Field(
+        ACC_INIT|ACC_STATIC|ACC_PUBLIC,
+	cl->staticInitNeed
+    );
+    ctx->field_mappings = build_Field_translation(
+	ctx->field_mappings,
+	ctx->owner,
+	staticinitneed
+    );
+    rfre_Field( staticinitneed );
+
+    for( unsigned int ix=0; ix<blk->sz; ix++ ){
+	statement def = blk->arr[ix];
+
+	if( !is_TypeDeclaration( def ) ){
+.call generate_descent_call "	    " def statement statement
+	}
+	if( is_VariableDeclaration( def ) ){
+	    Field fld = new_Field(
+		to_declaration(def)->flags,
+		to_VariableDeclaration(def)->name->sym
+	    );
+	    ctx->field_mappings = build_Field_translation(
+		ctx->field_mappings,
+		ctx->owner,
+		fld
+	    );
+	    rfre_Field( fld );
+	}
+    }
+    rfre_Signature( dynamicinitfn );
+    rfre_Signature( staticinitfn );
+    ctx->enclosing_type = old_enclosing_type;
+    if( trace_bindings ){
+        dump_TypeBinding_list( stderr, ctx->typebindings, "Type `%s' has the folling type bindings", cl->name->sym->name );
+    }
+    TypeEntry e = new_ClassEntry(
+	new_origsymbol( ctx->owner, rdup_origin( cl->name->org ) ),
+	ctx->packagename,
+	ctx->enclosing_type,				// Enclosing type
+	0,						// use count
+	new_tmsymbol_list(),				// subclasses
+	rdup_Pragma_list( cl->pragmas ),
+	cl->flags,
+	method_mappings,
+	field_mappings,
+	ctx->typebindings,
+	cl->formals->sz>0,
+	gen_role_tmsymbol( cl->name, "introspection" ),
+	outer_this,					// Outer this field name
+	0, 0,						// Class numbers
+	rdup_type_list( cl->interfaces ),
+	gen_role_tmsymbol( cl->name, "vtable" ),
+	cl->staticInit,
+	cl->staticInitNeed,
+	cl->staticInitTrivial,
+	gen_role_tmsymbol( cl->name, "mark" ),
+	tmsymbolNIL,
+	tmsymbolNIL,
+	rdup_type( cl->super ),
+	constructor_mappings,
+	rdup_HiddenParameter_list( cl->hiddenparms ),	// Hidden parms.
+	gen_tmsymbol( "ivtable" ),
+	gen_tmsymbol( cl->name->sym->name )		// Record name
+    );
+    register_type( ctx, e );
+    ctx->owner = oldowner;
+    ctx->method_mappings = old_method_mappings;
+    ctx->field_mappings = old_field_mappings;
+    ctx->constructor_mappings = old_constructor_mappings;
+    ctx->typebindings = old_typebindings;
+    ctx->where = old_where;
+    ctx->has_superclass = old_has_superclass;
+    return cl;
+}
+
+/* Register an interface declaration. */
+static InterfaceDeclaration regtype_InterfaceDeclaration_action(
+ InterfaceDeclaration inf,
+ regtype_data *ctx
+)
+{
+    (void) regtype_InterfaceDeclaration_walker;
+
+    statement_list blk = inf->body;
+    tmsymbol oldowner = ctx->owner;
+    FieldMapping_list field_mappings = new_FieldMapping_list();
+    MethodMapping_list method_mappings = new_MethodMapping_list();
+    MethodMapping_list old_method_mappings = ctx->method_mappings;
+    FieldMapping_list old_field_mappings = ctx->field_mappings;
+    context old_where = ctx->where;
+
+    build_type_binding( ctx, inf->name );
+    if( trace_bindings ){
+        dump_TypeBinding_list( stderr, ctx->typebindings, "Interface `%s' inherits the folling type bindings", inf->name->sym->name );
+    }
+    TypeBinding_list old_typebindings = ctx->typebindings;
+    ctx->typebindings = rdup_TypeBinding_list( ctx->typebindings );
+.call generate_descent_call "    " inf->formals FormalParameter_list FormalParameter_list
+.call generate_descent_call "    " inf->interfaces type_list type_list
+    ctx->where = CTX_OBJECT;
+    if(
+        has_any_flag( inf->flags, ACC_PUBLIC ) &&
+	!has_any_flag( inf->flags, ACC_MEMBER_OBJECT|ACC_LOCAL_OBJECT ) &&
+	ctx->fnm != NULL
+    ){
+	check_findable_public( inf->name, ctx->fnm );
+    }
+    if( has_any_flag( inf->flags, ACC_MEMBER_OBJECT ) ){
+	// This implements a rule in JLS2 8.5.2:
+	// Member interfaces are always implicitly static.
+        inf->flags |= ACC_STATIC;
+    }
+    ctx->owner = qualify_tmsymbol( ctx->owner, inf->name->sym );
+    tmsymbol old_enclosing_type = ctx->enclosing_type;
+    ctx->enclosing_type = ctx->owner;
+
+    // First, construct type bindings for all inner types.
+    for( unsigned int i = 0; i<inf->body->sz; i++ ){
+	statement def = inf->body->arr[i];
+
+	if( is_TypeDeclaration( def ) ){
+	    const_TypeDeclaration td = to_const_TypeDeclaration( def );
+
+	    build_type_binding( ctx, td->name );
+	}
+    }
+
+    // Then, visit the inner types. The other members will be visited later.
+    for( unsigned int ix = 0; ix<inf->body->sz; ix++ ){
+	statement def = inf->body->arr[ix];
+
+	if( is_TypeDeclaration( def ) ){
+.call generate_descent_call "	    " def statement statement
+	}
+    }
+    // TODO: is FORCE_STATIC necessary? If not, delete this parameter.
+    Field_list fields = collect_type_fields( blk, FORCE_STATIC );
+    Signature_list methods = collect_type_methods( blk );
+    check_double_methods( ctx->owner, methods );
+    check_double_fields( ctx->owner, fields );
+    inf->staticInit = gen_init_name( "static", inf->name->sym );
+    inf->staticInitNeed = gen_init_name( "needstatic", inf->name->sym );
+    Signature staticinitfn = new_Signature(
+        ACC_STATIC|ACC_INIT|ACC_FINAL|ACC_PUBLIC,
+	inf->staticInit,
+	new_type_list()
+    );
+    methods = append_Signature_list( methods, staticinitfn );
+    Field staticinitneed = new_Field(
+        ACC_INIT|ACC_STATIC|ACC_PUBLIC,
+	inf->staticInitNeed
+    );
+    fields = append_Field_list( fields, staticinitneed );
+    field_mappings = build_Field_translations( field_mappings, ctx->owner, fields );
+    method_mappings = build_Method_translations( method_mappings, ctx, methods );
+    ctx->method_mappings = method_mappings;
+    ctx->field_mappings = field_mappings;
+    register_init_function( ctx, staticinitfn );
+    rfre_Field_list( fields );
+    rfre_Signature_list( methods );
+    for( unsigned int iy = 0; iy<inf->body->sz; iy++ ){
+	statement def = inf->body->arr[iy];
+
+	if( !is_TypeDeclaration( def ) ){
+.call generate_descent_call "	    " def statement statement
+	}
+    }
+    ctx->enclosing_type = old_enclosing_type;
+    if( trace_bindings ){
+        dump_TypeBinding_list( stderr, ctx->typebindings, "Interface `%s' has the folling type bindings", inf->name->sym->name );
+    }
+    TypeEntry e = new_InterfaceEntry(
+	new_origsymbol( ctx->owner, rdup_origin( inf->name->org ) ),
+	ctx->packagename,
+	ctx->enclosing_type,		// Enclosing type
+	0,				// use count
+	new_tmsymbol_list(),		// subclasses
+	rdup_Pragma_list( inf->pragmas ),
+	inf->flags,
+	method_mappings,
+	field_mappings,
+	ctx->typebindings,
+	inf->formals->sz>0,
+	gen_role_tmsymbol( inf->name, "introspection" ),
+	tmsymbolNIL,			// Outer this field name
+	0, 0,		// Class numbers
+	rdup_type_list( inf->interfaces ),
+	gen_role_tmsymbol( inf->name, "vtable" ),
+	inf->staticInit,
+	inf->staticInitNeed,
+	inf->staticInitTrivial
+    );
+    register_type( ctx, e );
+    ctx->owner = oldowner;
+    ctx->method_mappings = old_method_mappings;
+    ctx->typebindings = old_typebindings;
+    ctx->field_mappings = old_field_mappings;
+    ctx->where = old_where;
+    return inf;
+}
+
+static void update_package_type(
+    regtype_data *ctx,
+    Pragma_list pragmas,
+    FieldMapping_list field_mappings,
+    MethodMapping_list method_mappings,
+    TypeBinding_list typebindings
+)
+{
+    TypeEntry e = search_TypeEntry( ctx->typelist, ctx->owner );
+    if( e == TypeEntryNIL ){
+	e = new_PackageEntry(
+	    new_origsymbol( ctx->owner, originNIL ),
+	    ctx->packagename,
+	    tmsymbolNIL,	// Enclosing class
+	    0,
+	    new_tmsymbol_list(),
+	    rdup_Pragma_list( pragmas ),
+	    ACC_PUBLIC|ACC_STATIC,
+	    method_mappings,
+	    field_mappings,
+	    typebindings,
+	    false,
+	    gen_role_tmsymbol( ctx->packagename, "introspection" ),
+	    tmsymbolNIL,	// Outer this field name
+	    0, 0		// Class numbers
+	);
+	register_type( ctx, e );
+    }
+    else {
+	if( e->tag == TAGPackageEntry ){
+	    PackageEntry pe = to_PackageEntry( e );
+
+	    pe->pragmas = concat_Pragma_list(
+		pe->pragmas,
+		rdup_Pragma_list( pragmas )
+	    );
+	    pe->methods = concat_MethodMapping_list( pe->methods, method_mappings );
+	    pe->fields = concat_FieldMapping_list( pe->fields, field_mappings );
+	    pe->types = concat_TypeBinding_list( pe->types, typebindings );
+	}
+	else {
+	    internal_error( "Package '%s' is not registered as a package", ctx->owner->name );
+	}
+    }
+}
+
+/* Register a SparProgramUnit declaration. */
+static SparProgramUnit regtype_SparProgramUnit_action(
+ SparProgramUnit unit,
+ regtype_data *ctx
+)
+{
+    FieldMapping_list field_mappings = new_FieldMapping_list();
+    MethodMapping_list method_mappings = new_MethodMapping_list();
+    tmsymbol oldowner = ctx->owner;
+    MethodMapping_list old_method_mappings = ctx->method_mappings;
+    FieldMapping_list old_field_mappings = ctx->field_mappings;
+    tmsymbol_list old_definitions = ctx->definitions;
+
+    ctx->definitions = new_tmsymbol_list();
+    // TODO: is this code necessary at all? 
+    if( unit->packagename != origsymbolNIL ){
+	ctx->owner = unit->packagename->sym;
+	ctx->typebindings = append_TypeBinding_list(
+	    ctx->typebindings,
+	    new_TypeBinding( unit->packagename->sym, unit->packagename->sym )
+	);
+    }
+
+    ctx->method_mappings = method_mappings;
+    ctx->field_mappings = field_mappings;
+    ctx->packagename = ctx->owner;
+    (void) register_single_import_list( ctx->prog, &ctx->typebindings, unit->directimports );
+.call generate_walker_call "    " unit SparProgramUnit SparProgramUnit
+    update_package_type(
+	ctx,
+	unit->pragmas,
+	field_mappings,
+	method_mappings,
+	rdup_TypeBinding_list( ctx->typebindings )
+    );
+    rfre_tmsymbol_list( unit->definitions );
+    unit->definitions = ctx->definitions;
+    ctx->owner = oldowner;
+    ctx->method_mappings = old_method_mappings;
+    ctx->field_mappings = old_field_mappings;
+    ctx->definitions = old_definitions;
+    return unit;
+}
+
+/* -------- End of action functions ---------- */
+
+.call generate_walker "$(visit_types)"
+
+#line $[1+${tpllineno}] "${tplfilename}"
+
+/* Register all declarations in a SparProgramUnit. */
+void regtype_TypeDeclaration( SparProgram *prog, TypeDeclaration dcl, SparProgramUnit unit, TypeBinding_list *typebindings, tmsymbol enclosing_type )
+{
+    regtype_data the_ctx;
+    regtype_data *ctx = &the_ctx;
+
+    the_ctx.prog = prog;
+    the_ctx.typelist = (*prog)->typelist;
+    the_ctx.ondemands = unit->demandimports;
+    the_ctx.path = unit->path;
+    the_ctx.packagename = tmsymbolNIL;
+    the_ctx.typebindings = *typebindings;
+    if( unit->packagename == origsymbolNIL ){
+	the_ctx.owner = add_tmsymbol( "" );
+    }
+    else {
+	the_ctx.owner = unit->packagename->sym;
+	the_ctx.packagename = unit->packagename->sym;
+    }
+    the_ctx.fnm = (const char *) NULL;
+    the_ctx.field_mappings = FieldMapping_listNIL;
+    the_ctx.method_mappings = MethodMapping_listNIL;
+    the_ctx.where = CTX_GLOBAL;
+    the_ctx.enclosing_type = enclosing_type;
+    the_ctx.definitions = unit->definitions;
+    the_ctx.has_superclass = false;
+    build_type_binding( ctx, dcl->name );
+.call generate_descent_call "    " dcl TypeDeclaration TypeDeclaration
+    (*prog)->typelist = the_ctx.typelist;
+    *typebindings = the_ctx.typebindings;
+}
+
+/* Register all declarations in a SparProgramUnit. */
+void regtype_SparProgramUnit( SparProgram *prog, SparProgramUnit unit, const_tmstring fnm )
+{
+    regtype_data the_ctx;
+    regtype_data *ctx = &the_ctx;
+
+    the_ctx.prog = prog;
+    the_ctx.typelist = (*prog)->typelist;
+    the_ctx.ondemands = unit->demandimports;
+    the_ctx.path = unit->path;
+    the_ctx.packagename = tmsymbolNIL;
+    the_ctx.enclosing_type = tmsymbolNIL;
+    the_ctx.typebindings = unit->typebindings;
+    the_ctx.owner = add_tmsymbol( "" );
+    the_ctx.fnm = fnm;
+    the_ctx.field_mappings = FieldMapping_listNIL;
+    the_ctx.method_mappings = MethodMapping_listNIL;
+    the_ctx.where = CTX_GLOBAL;
+    the_ctx.definitions = tmsymbol_listNIL;
+    the_ctx.has_superclass = false;
+.call generate_descent_call "    " unit SparProgramUnit SparProgramUnit
+    (*prog)->typelist = the_ctx.typelist;
+}

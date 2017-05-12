@@ -1,0 +1,21 @@
+public class okvecswap {
+	static complex [*] x;
+	static complex [*] y;
+
+	static void FFT() {
+			[x,y] = [y,x];
+	}
+
+	static public void main(String [] args) {
+	    x = new complex [100];
+	    y = new complex [100];
+	    x[0] = 3;
+	    y[0] = 5;
+	    __println(1,x[0]);
+	    __println(1,y[0]);
+	    FFT();
+	    __println(1,x[0]);
+	    __println(1,y[0]);
+	    
+	}
+}

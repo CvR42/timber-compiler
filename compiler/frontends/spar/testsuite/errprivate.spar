@@ -1,0 +1,14 @@
+// Try to access a private method and field of an other package.
+
+package spar.testsuite;
+
+import spar.testsuite.subpack.hello;
+
+public class errprivate {
+    public static void main()
+    {
+	hello.nosay();
+	hello.nofield = 2;
+	hello n = new hello( 42 );
+    }
+}

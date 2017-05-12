@@ -1,0 +1,28 @@
+// File: okvarfirst.spar
+//
+// Test the resolution of ambiguous prefixes in qualified names.
+
+class foo {
+    final int n = 3;
+    final int x = 3;
+    static final void bar()
+    {
+	__println( 1, "Hello from foo.bar()" );
+    }
+}
+
+public final class okvarfirst {
+    final int n = 6;
+    static final void bar()
+    {
+	__println( 1, "Hello from t.bar()" );
+    }
+    public static void main( String argv[] ){
+	okvarfirst foo = new okvarfirst();
+
+	// The two qualified names foo.<something> should bind to the
+	// variable 'foo' above, not the class foo.
+	foo.bar();
+	__println( 1, foo.n );
+    }
+}

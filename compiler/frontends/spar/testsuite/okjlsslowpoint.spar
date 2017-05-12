@@ -1,0 +1,32 @@
+// After JLS2 8.4.8.1    Example: Overriding
+
+
+class Point {
+    int x = 0, y = 0;
+    void move(int dx, int dy) {
+	x += dx;
+	y += dy;
+	System.out.println( "position=("+x+","+y+")" );
+    }
+}
+class SlowPoint extends Point {
+    int xLimit, yLimit;
+    SlowPoint( int dx, int dy ){ xLimit = dx; yLimit = dy; }
+    void move(int dx, int dy) {
+        super.move(limit(dx, xLimit), limit(dy, yLimit));
+    }
+    static int limit(int d, int limit) {
+        return d > limit ? limit : d < -limit ? -limit : d;
+    }
+}
+
+public class okjlsslowpoint {
+    public static void main(){
+	SlowPoint p = new SlowPoint( 2, 2 );
+	p.move( 1, 1 );
+	p.move( 0, 1 );
+	p.move( 1, 0 );
+	p.move( 3, 3 );
+	p.move( -3, -3 );
+    }
+}

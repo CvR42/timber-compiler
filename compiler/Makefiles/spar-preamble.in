@@ -1,0 +1,13 @@
+# PVM settings
+HAVE_PVM=@have_pvm@
+PVM_INCLUDEDIR=@pvm_includedir@
+PVM_LIBDIR=@pvm_libdir@
+#LAM:MPI settings
+HAVE_MPI=@have_mpi@
+MPIFLAVOUR=@mpiflavour@
+LAM_INCLUDEDIR=@lam_includedir@
+LAM_LIBDIR=@lam_libdir@
+LAM_LIBS="@lam_libs@"
+MPICH_CXX_FLAGS="@mpich_cxx_flags@"
+MPICH_LIBDIR_FLAGS="@mpich_libdir_flags@"
+MPICH_LIBS_FLAGS="@mpich_libs_flags@"

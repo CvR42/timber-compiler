@@ -1,0 +1,16 @@
+// After JLS2 14.18    The <code>synchronized</code> Statement
+//
+// As long as the synchronized statement is ignored, this test succeeds
+// in a trivial manner.
+// Once synchronization is implemented, though, success is not so obvious.
+
+public class okjlssync2 {
+    public static void main(String[] args) {
+        okjlssync2 t = new okjlssync2();
+        synchronized(t) {
+            synchronized(t) {
+                __println(1,"made it!");
+            }
+        }
+    }
+}

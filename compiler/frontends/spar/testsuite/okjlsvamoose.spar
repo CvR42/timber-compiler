@@ -1,0 +1,24 @@
+// After JLS2 15.13.2    Examples: Array Access Evaluation Order
+
+
+public class okjlsvamoose {
+
+    public static void main(String[] args) {
+        int[] a = null;
+
+	// This is just here to fool the compiler.
+	if( args.length>20 ){
+	    a = new int[10];
+	}
+        try {
+            int i = a[vamoose()];
+            System.out.println(i);
+        } catch (Exception e) {
+            System.out.println(e);
+        }
+    }
+
+    static int vamoose() throws Exception {
+        throw new Exception("Twenty-three skidoo!");
+    }
+}

@@ -1,0 +1,12 @@
+// After JLS2 8.3.2    Initialization of Fields
+
+class Point {
+    int x = 1, y = 5;
+}
+
+public class okjlsvarinit {
+    public static void main(String[] args) {
+        Point p = new Point();
+        System.out.println(p.x + ", " + p.y);
+    }
+}

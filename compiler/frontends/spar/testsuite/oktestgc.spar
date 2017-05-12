@@ -1,0 +1,52 @@
+// File: oktestgc.spar
+//
+// Test spontaneous garbage collection, by grabbing a large part
+// of memory, and allocating unused class instances like mad in the
+// remaining part of memory.
+
+class Thing {
+    complex n = 0;
+}
+
+class BigThing extends Thing {
+    complex arr[] = new complex[100];
+}
+
+public final class oktestgc {
+    static void show_freeMemory( long nowmem, long startmem )
+    {
+	final int maxstars = 60;
+	long stars = (nowmem*maxstars)/startmem;
+
+	for( int i=0; i<stars; i++ ){ __print( 1, '*' ); }
+	__println( 1 );
+    }
+
+    public static void main(){
+	Thing arr[] = new Thing[100];
+	Runtime rt = Runtime.getRuntime();
+	int ix = 0;
+	// The amount of memory in bytes that we work in.
+	final int workmem = 10000;
+
+	// Grab all but 'workmem'.
+	char stuffing[] = new char[(int) (rt.freeMemory()-workmem)];
+	final long startmem = rt.freeMemory();
+
+	for( int i=0; i<100000; i++ ){
+	    if( ix>=arr.length ){
+		ix = 0;
+	    }
+	    if( (i % 2) == 0 ){
+		arr[ix] = new Thing();
+	    } 
+	    else {
+		arr[ix] = new BigThing();
+	    }
+	    //show_freeMemory( rt.freeMemory(), startmem );
+	}
+	// Try to fool any smart optimizers.
+	stuffing[0] = '?';
+	__println( 1, "Succeeded" );
+    }
+}

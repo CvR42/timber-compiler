@@ -1,0 +1,23 @@
+// File: genflow.spar
+//
+// Make sure that data flow analysis is smart enough not to be fooled
+// by if/then/else constructs when complaining about uninitialized
+// variables.
+
+public class genflow {
+    public static void main(){
+	int a;
+	int x = 3;
+
+	if( x>2 ){
+	    a = 0;
+	}
+	else {
+	    a = 2;
+	}
+	// Since 'a' is initialized in both branches of the if
+	// above, don't complain.
+	__println( 1, a );
+	x++;
+    }
+}

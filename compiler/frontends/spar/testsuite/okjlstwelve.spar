@@ -1,0 +1,13 @@
+// After JLS2 15.7.1    Evaluate Left-Hand Operand First
+
+
+public class okjlstwelve {
+    public static void main(String[] args) {
+        int a = 9;
+        a += (a = 3);                                    // first example
+        __println(1,a);
+        int b = 9;
+        b = b + (b = 3);                                    // second example
+        __println(1,b);
+    }
+}

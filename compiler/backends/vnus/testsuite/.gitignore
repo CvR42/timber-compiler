@@ -1,0 +1,10 @@
+dist.lst
+Makefile
+runok
+runrte
+config.cache
+config.log
+config.status
+configure
+rteinitarray.c
+*.done

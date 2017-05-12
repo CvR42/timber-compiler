@@ -1,0 +1,4 @@
+errnocards.spar:9: syntax error
+	for( i <~ :5 ) __println( 1, "huh?" );
+	          ^
+cannot recover from earlier parse errors, goodbye

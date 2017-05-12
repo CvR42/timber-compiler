@@ -1,0 +1,14 @@
+//package spar.testsuite;
+
+import java.io.*;
+
+public class gensuperequal {
+    public boolean equals( Object obj ){
+	return super.equals( obj );
+    }
+    public static void main(){
+	gensuperequal x = new gensuperequal();
+
+	x.equals( x );
+    }
+}

@@ -1,0 +1,35 @@
+// This tests method binding.
+
+package spar.testsuite;
+
+public class okmax {
+    public static int max( int a, int b ){
+	__println( 1, "int max invoked" );
+	if( a>b ) return a;
+	return b;
+    }
+
+    public static long max( long a, long b ){
+	__println( 1, "long max invoked" );
+	if( a>b ) return a;
+	return b;
+    }
+
+    public static float max( float a, float b ){
+	__println( 1, "float max invoked" );
+	if( a>b ) return a;
+	return b;
+    }
+
+    public static double max( double a, double b ){
+	__println( 1, "double max invoked" );
+	if( a>b ) return a;
+	return b;
+    }
+
+    public static void main(){
+	double d = 42.0;
+	double res = max( d, 0.0 );
+	__println( 1, "res = ", res );
+    }
+}

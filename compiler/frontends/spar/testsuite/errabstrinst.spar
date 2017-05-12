@@ -1,0 +1,21 @@
+// File: errabstrinst.spar
+//
+// Test the handling of attempts to construct an instance of an abstract class.
+
+abstract class Point {
+    int x=1, y=1;
+    void move(int dx, int dy){
+	x += dx;
+	y += dy;
+	alert();
+    }
+    abstract void alert();
+}
+
+public class errabstrinst {
+    public static void main(String args[])
+    {
+	Point p = new Point();
+	p.move( 1, -1 );
+    }
+}

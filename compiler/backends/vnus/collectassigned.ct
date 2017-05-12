@@ -1,0 +1,237 @@
+.. File: collectassigned.ct
+..
+.. Inspect a method, and mark all formal parameters and local
+.. variables that are never assigned to as 'final'. For formal parameters
+.. it is possible to use the ACC_FINAL modifier bit, but for local
+.. variables it is necessary to distinguish the ACC_DEDUCED_FINAL
+.. and the ACC_FINAL modifier, since otherwise constants that had
+.. been deduced to be final would be propagated, in violation of
+.. the Java semantics.
+..
+.. TODO: 
+.. - Let the analyzer work for tuples and vectors. For now variables
+.. of these types are never deduced to be final.
+.. - Extend the analysis to the readonly property of reference variables.
+.. - Do final marking of the formal parameter of a catch block.
+..
+.. Return 'walk' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the datastructure we're walking on, and a type 't', of that variable,
+.. generate a return statement/
+.macro generate_walker_return indent var t
+$(indent)return;
+.endmacro
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+.if ${member ${stemname $t} ${typelist}}
+$(indent)if( $(var) == $tNIL ){
+$(indent)    return;
+$(indent)}
+.endif
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+static void collectassigned_$t_walker( const_$t $(var), collectassigned_data *ctx )
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we're walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+static void collectassigned_$t_walker( const_$t $(var), collectassigned_data *ctx );
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)collectassigned_$(type)_action( $(var), ctx );
+.else
+$(indent)collectassigned_$(type)_action( to_const_$(type)( $(var) ), ctx );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)collectassigned_$(type)_walker( $(var), ctx );
+.else
+$(indent)collectassigned_$(type)_walker( to_const_$(type)( $(var) ), ctx );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${len ${comm ${alltypes ${stemname $(type)} ${subclasses ${stemname $(type)}}} "" $(visit_types)}}
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.else
+$(indent)// alltypes $(type) ${subclasses $(type)}: ${alltypes $(type)} ${subclasses $(type)}
+$(indent)// Nothing to do for type '$(type)'
+.endif
+.endmacro
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtAssign
+.append actors SmtReceive
+.append actors SmtAReceive
+.append actors SmtAssignOp
+.append actors SmtProcedureCall
+.append actors ExprFunctionCall
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "block statement_list" "$(actors)"}
+..
+// ->->-> This is a GENERATED FILE <-<-<-
+
+/* File: collectassigned.c
+ *
+ * See which variables and formal parameters are never assigned to,
+ * and mark them as such.
+ *
+ * This helps quite a lot in the other analysis of the program.
+ */
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "collectassigned.h"
+#include "service.h"
+#include "vnusctl.h"
+
+.foreach t ${aliases}
+typedef ${alias $t} $t;
+.endforeach
+
+typedef struct str_collectassigned_data {
+    tmsymbol_list vars;
+    bool invocations;
+} collectassigned_data;
+
+.call generate_walker_forwards "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+/* -------- actors ---------- */
+
+/* Action for type SmtAssign. */
+static void collectassigned_SmtAssign_action(
+    const_SmtAssign smt,
+    collectassigned_data *ctx
+)
+{
+.call generate_walker_call "    " smt SmtAssign SmtAssign
+    const_location lhs = smt->lhs;
+    if( lhs->tag == TAGLocName ){
+	ctx->vars = add_tmsymbol_list(
+	    ctx->vars,
+	    to_const_LocName(lhs)->name->sym
+	);
+    }
+}
+
+/* Action for type SmtReceive. */
+static void collectassigned_SmtReceive_action(
+    const_SmtReceive smt,
+    collectassigned_data *ctx
+)
+{
+.call generate_walker_call "    " smt SmtReceive SmtReceive
+    const_location elm = smt->elm;
+    if( elm->tag == TAGLocName ){
+	ctx->vars = add_tmsymbol_list(
+	    ctx->vars,
+	    to_const_LocName(elm)->name->sym
+	);
+    }
+}
+
+/* Action for type SmtAReceive. */
+static void collectassigned_SmtAReceive_action(
+    const_SmtAReceive smt,
+    collectassigned_data *ctx
+)
+{
+.call generate_walker_call "    " smt SmtAReceive SmtAReceive
+    const_location elm = smt->elm;
+    if( elm->tag == TAGLocName ){
+	ctx->vars = add_tmsymbol_list(
+	    ctx->vars,
+	    to_const_LocName(elm)->name->sym
+	);
+    }
+}
+
+/* Action for type SmtAssignOp. */
+static void collectassigned_SmtAssignOp_action(
+    const_SmtAssignOp smt,
+    collectassigned_data *ctx
+)
+{
+.call generate_walker_call "    " smt SmtAssignOp SmtAssignOp
+    const_location lhs = smt->lhs;
+    if( lhs->tag == TAGLocName ){
+	ctx->vars = add_tmsymbol_list(
+	    ctx->vars,
+	    to_const_LocName(lhs)->name->sym
+	);
+    }
+}
+
+.foreach t SmtProcedureCall ExprFunctionCall
+/* Action for type $t. */
+static void collectassigned_$t_action(
+    const_$t smt,
+    collectassigned_data *ctx
+)
+{
+.call generate_walker_call "    " smt $t $t
+    ctx->invocations = true;
+}
+
+.endforeach
+/* -------- End of action functions ---------- */
+
+.call generate_walker "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+/* Given a block, collect all variables that are possibly assigned to in that
+ * block, and all nested blocks.
+ */
+void collectassigned_block( const_block decl, tmsymbol_list *vars, bool *inv )
+{
+    collectassigned_data the_ctx;
+    the_ctx.vars = *vars;
+    the_ctx.invocations = *inv;
+    collectassigned_data *ctx = &the_ctx;
+
+.call generate_descent_call "    " decl block block
+
+    *vars = the_ctx.vars;
+    *inv = the_ctx.invocations;
+}

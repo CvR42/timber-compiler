@@ -1,0 +1,23 @@
+// File: okstrbuf.spar
+//
+// Do an extensive test of the StringBuffer class.
+
+public class okstrbuf {
+    public static void main(){
+	StringBuffer b1 = new StringBuffer();
+	StringBuffer b2 = new StringBuffer( "test" );
+	StringBuffer b3 = new StringBuffer( 10 );
+	__println( 1, "b1: capacity:", b1.capacity(), " length:", b1.length() );
+	__println( 1, "b2: capacity:", b2.capacity(), " length:", b2.length() );
+	__println( 1, "b3: capacity:", b3.capacity(), " length:", b3.length() );
+	b1.append( false );
+	__println( 1, "b1: capacity:", b1.capacity(), " length:", b1.length() );
+	b1.append( "test" );
+	__println( 1, "b1: capacity:", b1.capacity(), " length:", b1.length() );
+	b1.append( 42 );
+	__println( 1, "b1: capacity:", b1.capacity(), " length:", b1.length() );
+	b1.insert( 1, 42 );
+	__println( 1, "b1: capacity:", b1.capacity(), " length:", b1.length() );
+    }
+}
+

@@ -1,0 +1,333 @@
+|| File: vnus.ds
+||
+|| Datastructures describing the intermediate programming language Vnus
+
+|| An origin descriptor.
+|| This is tacked on to all sorts of constructs for which it is convenient
+|| to track the origin.
+origin == ( file:filename, line:int );
+
+|| A symbol with its origin.
+origsymbol == ( sym:tmsymbol, orig:origin );
+
+|| The aliases below are used to distinguish between the name spaces the
+|| various symbols are in.
+varname -> origsymbol;
+pragmaname -> origsymbol;
+labelname -> origsymbol;
+scopename -> tmsymbol;
+filename -> tmsymbol;
+fieldname -> origsymbol;
+
+vnusprog == ( pragmas:[Pragma], declarations:[declaration], statements:block );
+
+declaration ~= { name:varname, flags:int, pragmas:[Pragma] };
+
+RoutineDeclaration = declaration +
+    DeclFunction: { parms:[varname], rettype:type, body:block } |
+    DeclProcedure: { parms:[varname], body:block } |
+    DeclExternalFunction: { parms:[varname], rettype:type } |
+    DeclExternalProcedure: { parms:[varname] }
+    ;
+
+VariableDeclaration = declaration +
+    DeclGlobalVariable: { t:type, init:optexpression } |
+    DeclLocalVariable: { scope:scopename, t:type, init:optexpression } |
+    DeclFormalVariable: { scope:scopename, t:type } |
+    DeclCardinalityVariable: {} |
+    DeclExternalVariable: { t:type }
+    ;
+
+TypeDeclaration = declaration +
+    DeclRecord: { fields:[field] }
+    ;
+
+|| A statement block with a scope name
+block == ( scope:scopename, orig:origin, pragmas:[Pragma], on:[OwnerExpr], statements:[statement] );
+
+switchCase = { body:block } +
+    SwitchCaseValue: { cond:vnus_int } |
+    SwitchCaseDefault: {}
+    ;
+
+waitCase = { body:block } +
+    WaitCaseValue: { cond:expression } |
+    WaitCaseTimeout: { time:expression }
+    ;
+
+statement ~= { label:labelname, orig:origin, pragmas:[Pragma], on:[OwnerExpr] };
+
+Imperative = statement +
+    SmtAssign: { lhs:location, rhs:expression } |
+    SmtAssignOp: { lhs:location, op:BINOP, rhs:expression } |
+    SmtProcedureCall: { proc:expression, parameters:[expression] } |
+    SmtExpression: { x:expression }
+    ;
+
+Control = statement +
+    SmtWhile: { cond:expression, body:block } |
+    SmtDoWhile: { cond:expression, body:block } |
+    SmtFor: { cards:[cardinality], body:block } |
+    SmtIf: { cond:expression, thenbody:block, elsebody:block } |
+    SmtBlock: { body:block } |
+    || Used internally by the backend.
+    SmtPseudoBlock: { body:block } |
+    SmtSwitch: { cond:expression, cases:[switchCase] } |
+    SmtWait: { cases:[waitCase] } |
+    SmtReturn: {} |
+    SmtValueReturn: { v:expression } |
+    SmtGoto: { target:labelname } |
+    SmtThrow: { elm:expression } |
+    SmtRethrow: {} |
+    SmtCatch: { elm:varname, body:block, handler:block }
+    ;
+
+Parallelization = statement +
+    SmtForall: { cards:[cardinality], map:[OwnerExpr], body:block } |
+    SmtForkall: { cards:[cardinality], map:[OwnerExpr], body:block } |
+    SmtFork: { statements:[statement] } |
+    SmtForeach: { cards:[cardinality], map:[OwnerExpr], body:block } |
+    SmtEach: { statements:[statement] }
+    ;
+
+Communication = statement +
+    SmtBarrier: {} |
+    SmtWaitPending: {} |
+    SmtSend: { dest:expression, elm:expression } |
+    SmtReceive: { src:expression, elm:location } |
+    SmtBlocksend: { dest:expression, buf:expression, nelm:expression } |
+    SmtBlockreceive: {src:expression, buf:expression, nelm:expression } |
+    SmtASend: { dest:expression, elm:expression } |
+    SmtAReceive: { src:expression, elm:location } |
+    SmtABlocksend: { dest:expression, buf:expression, nelm:expression } |
+    SmtABlockreceive: {src:expression, buf:expression, nelm:expression } |
+    SmtAggrSend: {
+	dest:expression,
+	buf:expression,
+	offset:expression,
+	nstrides:expression,
+	strides:[expression],
+	stridecnts:[expression],
+	exclusive:expression
+    } |
+    SmtAggrReceive: {
+	src:expression,
+	buf:expression,
+	offset:expression,
+	nstrides:expression,
+	strides:[expression],
+	stridecnts:[expression],
+	exclusive:expression
+    }
+    ;
+
+MemoryManagement = statement +
+    SmtDelete: { adr:expression } |
+    SmtGarbageCollect: {}
+    ;
+
+Support = statement +
+    SmtEmpty: {} |
+    SmtPrint: { argv:[expression] } |
+    SmtPrintLn: { argv:[expression] }
+    ;
+
+TaskParallel = statement +
+    SmtAddTask: { id:expression, parms:expression } |
+    SmtRegisterTask: { id:expression, proc:expression } |
+    SmtExecuteTasks: {} |
+    SmtTSend: { dest:expression, elm:expression } |
+    SmtTReceive: { src:expression, elm:location }
+    ;
+
+size =
+    SizeDontcare: { orig:origin } |
+    SizeExpression: { x:expression };
+
+|| A type
+type =
+    TypeMap: { map:OwnerExpr, t:type } |
+    TypeBase: { base:BASETYPE } |
+    TypeShape: { sizes:[size], elmtype:type } |
+    TypeUnsizedArray: { elmtype:type } |
+    TypePointer: { elmtype:type } |
+    TypeNeutralPointer: {} |			|| The type of 'null'
+    TypeArray: { sz:int, elmtype:type } |	|| The type of array inits.
+    TypeRecord: { fields:[field] } |
+    TypeNamedRecord: { name:varname } |
+    TypeProcedure: { formals:[type] } |
+    TypeFunction: { formals:[type], rettype:type } |
+    TypePragmas: { pragmas:[Pragma], t:type }
+    ;
+
+field == ( name:fieldname, elmtype:type );
+
+|| A cardinality - a variable that iterates over a given range, with
+|| a given stride. Contrary to many other range notations, the stride
+|| should not be negative.
+cardinality == (
+    name:varname,
+    lowerbound:expression,
+    upperbound:expression,
+    stride:expression,
+    secondaries:[secondary]
+);
+
+|| A secondary - a variable that follows a cardinality
+secondary == (
+    name:varname,
+    lowerbound:expression,
+    stride:expression
+);
+
+|| A Vnus location expression
+location =
+    LocName: { name:varname } |
+    LocField: { rec:expression, field:fieldname } |
+    LocFieldNumber: { rec:expression, field:vnus_int } |
+    LocSelection: { shape:expression, indices:[expression] } |
+    LocFlatSelection: { shape:expression, index:expression } |
+    LocWrapper: { pragmas:[Pragma], on:[OwnerExpr], l:location } |
+    LocDeref: { ref:expression } |
+    LocWhere: { scope:scopename, l:location }
+    ;
+
+AssertLocation = location + 
+    LocNotNullAssert: { l:location }
+    ;
+
+optexpression =
+    OptExprNone: {} |
+    OptExpr: { x:expression }
+    ;
+
+|| A Vnus expression.
+expression ~= {};
+
+LiteralExpression = expression +
+    ExprByte: { v:vnus_byte } |
+    ExprShort: { v:vnus_short } |
+    ExprInt: { v:vnus_int } |
+    ExprLong: { v:vnus_long } |
+    ExprFloat: { v:vnus_float } |
+    ExprDouble: { v:vnus_double } |
+    ExprChar: { c:vnus_char } |
+    ExprBoolean: { b:vnus_boolean } |
+    ExprString: { s:vnus_string } |
+    ExprNull: {} |
+    ExprSizeof: { t:type }
+    ;
+
+AccessExpression = expression +
+    ExprName: { name:varname } |
+    ExprSelection: { shape:expression, indices:[expression] } |
+    ExprFlatSelection: { shape:expression, index:expression } |
+    ExprField: { rec:expression, field:fieldname } |
+    ExprFieldNumber: { rec:expression, field:vnus_int } |
+    ExprDeref: { ref:expression } |
+    ExprFunctionCall: { function:expression, parameters:[expression] }
+    ;
+
+ConstructorExpression = expression +
+    ExprComplex: { re:expression, im:expression } |
+    ExprShape: { sizes:[size], elmtype:type, arr:expression, nelms:int } |
+    ExprRecord: { fields:[expression] } |
+    ExprAddress: { adr:location } |
+    ExprNewArray: { t:type, length:expression, init:optexpression } |
+    ExprNew: { t:type } |
+    ExprFilledNew: { t:type, init:expression, gcmarker:varname } |
+    ExprNulledNew: { t:type, gcmarker:varname } |
+    ExprNewRecord: { t:type, fields:[expression] }
+    ;
+
+OperatorExpression = expression +
+    ExprCast: { t:type, x:expression } |
+    ExprIf: { cond:expression, thenval:expression, elseval:expression } |
+    ExprWhere: { scope:scopename, x:expression } |
+    ExprUnop: { optor:UNOP, operand:expression } |
+    ExprBinop: { left:expression, optor:BINOP, right:expression } |
+    ExprReduction: { optor:BINOP, operands:[expression] } |
+    ExprIsBoundViolated: { val:expression, upperbound:expression } |
+    ExprIsUpperBoundViolated: { val:expression, upperbound:expression } |
+    ExprIsLowerBoundViolated: { val:expression } |
+    ExprCheckedIndex: { val:expression, upperbound:expression } |
+    ExprUpperCheckedIndex: { val:expression, upperbound:expression } |
+    ExprLowerCheckedIndex: { val:expression }
+    ;
+
+ShapeInfoExpression = expression +
+    ExprGetBuf: { shape:expression } |
+    ExprGetSize: { shape:expression, dim:expression } |
+    ExprGetLength: { shape:expression }
+    ;
+
+AssertExpression = expression +
+    ExprNotNullAssert: { x:expression }
+    ;
+
+MiscellaneousExpression ~= expression +
+    ExprWrapper: { pragmas:[Pragma], on:[OwnerExpr], x:expression } |
+    ExprIsRaised: { var:expression } |
+    || Only used internally for the list of expressions of a subscript
+    || and a shape expression
+    ExprArray: { elmtype:type, elms:[expression] }
+    ;
+
+|| An owner can contain replication and thus be a group of processors.
+|| If there is no replication the master is the same as the owner, otherwise
+|| the master is just one processor from the owner group.
+|| These nodes should only occur inside the mapper.
+MappingExpression ~= expression + { on:OwnerExpr };
+
+MappingIsExpression = MappingExpression + { proc:[expression] } +
+    ExprIsNewOwner: {} |
+    ExprIsNewMaster: {}
+    ;
+
+MappingGetExpression = MappingExpression +
+    ExprGetNewOwner: {} |
+    ExprGetNewMaster: {}
+    ;
+
+Pragma = { name:pragmaname } +
+    FlagPragma: {} |                || Being there is enough
+    ValuePragma: { x:PragmaExpression }
+    ;
+
+PragmaExpression ~= {};
+
+|| Various types of literals
+LiteralPragmaExpression = PragmaExpression +
+    NumberPragmaExpression: { v:vnus_double } |
+    StringPragmaExpression: { s:vnus_string } |
+    BooleanPragmaExpression: { b:vnus_boolean }
+    ;
+
+SymbolPragmaExpression = PragmaExpression +
+    NamePragmaExpression: { name:origsymbol } |
+    ExternalNamePragmaExpression: { name:varname }
+    ;
+
+ListPragmaExpression = PragmaExpression + { l:[PragmaExpression] };
+
+OwnerExpr = 
+    NewOwnDontCare: {} |
+    NewOwnReplicated: {} |
+    NewOwnLocation: { proc:expression, distr:[DistrExpr] } |
+    NewOwnMap: { parms:[varname], on:OwnerExpr }
+    ;
+
+|| intexpressions???
+DistrExpr =
+    NewDistDontCare: {} |
+    NewDistBlock: { index:expression, size:expression } |
+    NewDistCyclic: { index:expression, extent:expression } |
+    NewDistBC: { index:expression, size:expression, extent:expression } |
+    NewDistReplicated: {} |
+    NewDistLocal: { index:expression } |
+    NewDistAlign: { with:location }
+    ;
+
+|| Local Variables:
+|| tab-width:8
+|| End:

@@ -1,0 +1,12 @@
+interface inf {
+    void bar();
+    void foo();
+}
+
+public class errmissingimpl implements inf {
+    public void bar() {}
+    public static void main( String args[] )
+    {
+	System.out.println( "Hello" );
+    }
+}

@@ -1,0 +1,3 @@
+errpubliclocalclass.spar:15: A local class cannot be declared 'public'
+	};
+	^

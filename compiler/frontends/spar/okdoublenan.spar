@@ -1,0 +1,22 @@
+public class okdoublenan {
+    static void reportNumber( String nm, double d ){
+	long v = Double.doubleToLongBits( d );
+	System.out.println( nm + ": " + v + "(0x" + Long.toHexString( v ) + ")" );
+    }
+
+    public static void main( String argv[] ){
+	reportNumber( "Official POSITIVE_INFINITY", Double.POSITIVE_INFINITY );
+	reportNumber( "Official NEGATIVE_INFINITY", Double.NEGATIVE_INFINITY );
+	reportNumber( "Official NaN", Double.NaN );
+	reportNumber( "Official MIN_VALUE", Double.MIN_VALUE );
+	reportNumber( "Official MAX_VALUE", Double.MAX_VALUE );
+	double n = 0.0;
+	System.out.println( n );
+	System.out.println( -n );
+	System.out.println( Double.MIN_VALUE );
+	System.out.println( Double.MAX_VALUE );
+	System.out.println( Double.NaN );
+	System.out.println( Double.POSITIVE_INFINITY );
+	System.out.println( Double.NEGATIVE_INFINITY );
+    }
+}

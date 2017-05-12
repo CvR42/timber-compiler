@@ -1,0 +1,9 @@
+// After JLS2 8.3.2.2    Initializers for Instance Variables
+
+public class errjlsZ1 {
+    static int i = j + 2;
+    static int j = 4;
+    public static void main(String args[]){
+	System.out.println( "i="+i+", j="+j );
+    }
+}

@@ -1,0 +1,11 @@
+public class errassignthis {
+    public void f()
+    {
+	this = null;
+    }
+    public static void main(){
+	errassignthis x = new errassignthis();
+
+	x.f();
+    }
+}

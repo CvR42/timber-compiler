@@ -1,0 +1,11 @@
+// After JLS2 16 Definite assignment
+
+public final class errjlsda4 {
+    public static void main(){
+	int k;
+	int n = 5;
+	if( n>2 )
+	    k = 3;
+	System.out.println(k);
+    }
+}

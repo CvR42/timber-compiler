@@ -1,0 +1,951 @@
+.. File: substitute.ct
+..
+.. Substitute the given types and values.
+..
+.. This is used to implement generic types and macros.
+..
+.. Return 'walk' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the datastructure we're walking on, and a type 't', of that variable,
+.. generate a return statement/
+.macro generate_walker_return indent var t
+$(indent)return $(var);
+.endmacro
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+.if ${member ${stemname $t} ${typelist}}
+$(indent)if( $(var) == 0 ){
+$(indent)    return $(var);
+$(indent)}
+.endif
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+static $t substitute_$t_walker( $t $(var), subst_data *ctx )
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we're walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+static $t substitute_$t_walker( $t $(var), subst_data *ctx );
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) substitute_$(type)_action( $(var), ctx );
+.else
+$(indent)$(var) = ($(type)) substitute_$(type)_action( to_$(type)( $(var) ), ctx);
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) substitute_$(type)_walker( $(var), ctx );
+.else
+$(indent)$(var) = ($(type)) substitute_$(type)_walker( to_$(type)( $(var) ), ctx );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var', and a type 'type', generate
+.. the body of an empty walker function.
+.macro generate_empty_walker_body indent var type
+$(indent)(void) ctx;
+.endmacro
+..
+.. For which types are there actions defines?
+.. Currently we're naive, and assume only VariableNames and TypeNames
+.. are affected. No doubt this overlooks something
+.set actors
+.append actors Block
+.append actors WhereExpression
+.append actors LabelName
+.append actors Cardinality
+.append actors ClassDeclaration
+.append actors ConstructorDeclaration
+.append actors ConstructorInvocationStatement
+.append actors ForStatement
+.append actors ForeachStatement
+.append actors FormalParameter
+.append actors GenericObjectType
+.append actors InterfaceDeclaration
+.append actors MethodDeclaration
+.append actors MethodInvocationExpression
+.append actors MethodInvocationStatement
+.append actors ObjectType
+.append actors TypeDeclaration
+.append actors TypeName
+.append actors VariableDeclaration
+.append actors VariableName
+.append actors VariableNameExpression
+.append actors ExternalNamePragmaExpression
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "optexpression Block TypeDeclaration" "$(actors)"}
+..
+// ->->-> This is a GENERATED FILE <-<-<-
+
+/* File: substitute.c
+ *
+ * Apply a set of expression and type substitutions.
+ */
+
+#include <string.h>
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "symbol_table.h"
+#include "typederive.h"
+#include "substitute.h"
+#include "service.h"
+#include "error.h"
+#include "typename.h"
+#include "exprname.h"
+
+.foreach t VariableName TypeName LabelName
+typedef ${alias $t} $t;
+.endforeach
+.foreach t LabelName
+typedef ${alias $t}_list $t_list;
+.endforeach
+
+typedef struct str_subst_data {
+    TypeAbstraction_list type_abstractions;
+    ValueAbstraction_list value_abstractions;
+    const_NameTranslation_list label_translations;
+    const_NameTranslation_list scope_translations;
+    const_NameTranslation_list variable_translations;
+    const_origin org;
+} subst_data;
+
+.call generate_walker_forwards "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+// Given an origsymbol 's', and a pointer 'pos', return false if 's'
+// cannot be found in the type abstractions. Return true if 's' is listed
+// in the abstractions, and assign the index of the entry to '*pos'.
+static bool search_TypeAbstraction_pos( const_TypeAbstraction_list tl, const_origsymbol s, unsigned int *pos )
+{
+     for( unsigned int ix=0; ix<tl->sz; ix++ ){
+	 if( s->sym == tl->arr[ix]->name ){
+	     *pos = ix;
+	     return true;
+	 }
+     }
+     return false;
+}
+
+// Given an origsymbol 's', and a pointer 'pos', return false if 's'
+// cannot be found in the value abstractions. Return true if 's' is listed
+// in the abstractions, and assign the index of the entry to '*pos'.
+static bool search_ValueAbstraction_pos( const_ValueAbstraction_list vl, const_origsymbol s, unsigned int *pos )
+{
+     for( unsigned int ix=0; ix<vl->sz; ix++ ){
+	 if( s->sym == vl->arr[ix]->name ){
+	     *pos = ix;
+	     return true;
+	 }
+     }
+     return false;
+}
+
+// Given an origsymbol 's', return the type it is associated with, if
+// any.
+static type search_TypeAbstraction( subst_data *ctx, const_origsymbol s )
+{
+     unsigned int pos;
+     const_TypeAbstraction_list tl = ctx->type_abstractions;
+
+     if( search_TypeAbstraction_pos( tl, s, &pos ) ){
+	 return tl->arr[pos]->value;
+     }
+     return typeNIL;
+}
+
+// Given an origsymbol 's', return the value it is associated with, if
+// any.
+static expression search_ValueAbstraction( subst_data *ctx, const_origsymbol s )
+{
+     unsigned int pos;
+     const_ValueAbstraction_list vl = ctx->value_abstractions;
+
+     if( search_ValueAbstraction_pos( vl, s, &pos ) ){
+	 return vl->arr[pos]->value;
+     }
+     return expressionNIL;
+}
+
+// Given an origsymbol 's', substitute it, if necessary, with a
+// typename in the type abstraction list. If the type in the abstraction
+// list is something else, complain.
+static origsymbol substitute_typename( subst_data *ctx, origsymbol s )
+{
+    type t = search_TypeAbstraction( ctx, s );
+    if( t != typeNIL ){
+	// We must substitute
+	if( t->tag != TAGObjectType ){
+	    tmstring tnm = typename_type( t );
+	    origsymbol_error( s, "only a class or interface is allowed here, not a '%s'", tnm );
+	    origin_error( ctx->org, "the offending instantiation was requested here" );
+	    rfre_tmstring( tnm );
+	}
+	else {
+	    if( trace_inlining || trace_generics ){
+		tmstring tnm = typename_type( t );
+		fprintf( stderr, "did type name sustitution %s -> %s\n", s->sym->name, tnm );
+		rfre_tmstring( tnm );
+	    }
+	    s->sym = to_ObjectType(t)->name->sym;
+	}
+    }
+    return s;
+}
+
+// Given the original of type 't' and the substituted type 'new_t', complain
+// if the new type is not an ObjectType.
+static void enforce_object_type( const_origin org, const_type t, const_type new_t )
+{
+    if( new_t != typeNIL && new_t->tag != TAGObjectType && t->tag == TAGObjectType ){
+	tmstring tnm = typename_type( new_t );
+	origsymbol_error(
+	    to_const_ObjectType(t)->name,
+	    "only a class or interface can be substituted here, not a '%s'",
+	    tnm
+	);
+	origin_error( org, "the offending object instantiation was requested here" );
+	rfre_tmstring( tnm );
+    }
+}
+
+// Given the original list of types 'tl' and the substituted list of
+// types 'new_tl', complain if one of the new types is not an ObjectType.
+static void enforce_object_types(
+ const_origin org,
+ const_type_list tl,
+ const_type_list new_tl
+)
+{
+    assert( tl->sz == new_tl->sz );
+    for( unsigned int ix=0; ix<tl->sz; ix++ ){
+	enforce_object_type( org, tl->arr[ix], new_tl->arr[ix] );
+    }
+}
+
+// Given a symbol 'nm', return NULL if 'nm' is does not occur in the
+// list of types to be substituted. If 'nm' *does* occur, return
+// the old type abstraction list, and put a new type abstraction list
+// in the context with the abstraction of 'nm' deleted.
+//
+// This function should be used together with restore_TypeAbstraction.
+static TypeAbstraction_list hide_TypeAbstraction( subst_data *ctx, origsymbol nm )
+{
+    unsigned int pos;
+    if( search_TypeAbstraction_pos( ctx->type_abstractions, nm, &pos ) ){
+	TypeAbstraction_list old_ta = ctx->type_abstractions;
+	TypeAbstraction_list ta = rdup_TypeAbstraction_list( ctx->type_abstractions );
+	ta = delete_TypeAbstraction_list( ta, pos );
+	ctx->type_abstractions = ta;
+	return old_ta;
+    }
+    return TypeAbstraction_listNIL;
+}
+
+static void restore_TypeAbstraction( subst_data *ctx, TypeAbstraction_list old_ta )
+{
+    if( old_ta != TypeAbstraction_listNIL ){
+	rfre_TypeAbstraction_list( ctx->type_abstractions );
+	ctx->type_abstractions = old_ta;
+    }
+}
+
+// Given a context, the name of the field or method to access, and pointers
+// to a type 't' and an origsymbol 'field', return false if this name
+// does not have one of the types to substitute as a prefix.
+// Return true if it does.
+static bool is_type_substitute(
+ subst_data *ctx,
+ const_origsymbol nm,
+ type *tp,
+ origsymbol *field
+)
+{
+    tmstring str = rdup_tmstring( nm->sym->name );
+    char *p = strchr( str, '.' );
+    if( p == NULL ){
+	rfre_tmstring( str );
+	return false;
+    }
+    *p = '\0';
+    tmstring fieldnm = new_tmstring( p+1 );
+    // Now 'str' holds the first part of the qualified name.
+    origsymbol s = new_origsymbol( add_tmsymbol( str ), originNIL );
+    rfre_tmstring( str );
+    type t = search_TypeAbstraction( ctx, s );
+    rfre_origsymbol( s );
+    if( t == typeNIL ){
+	// Not one of our types, so give up.
+	rfre_tmstring( fieldnm );
+	return false;
+    }
+    // Yep, this one is for us.
+    *tp = t;
+    *field = new_origsymbol( add_tmsymbol( fieldnm ), rdup_origin( nm->org ) );
+    rfre_tmstring( fieldnm );
+    return true;
+}
+
+/* -------- actors ---------- */
+
+/* Action for type Block.
+ * Declarations that are local to this block may have hidden some
+ * variable mappings. Preserve the original variable mappings here,
+ * so that they can be restored outside the block.
+ */
+static Block substitute_Block_action(
+ Block e,
+ subst_data *ctx
+)
+{
+    if(
+	ctx->value_abstractions->sz == 0 &&
+	ctx->type_abstractions->sz == 0 &&
+	(ctx->scope_translations == NULL || ctx->scope_translations->sz == 0) &&
+	(ctx->variable_translations == NULL || ctx->variable_translations->sz == 0)
+    ){
+	// Since there is nothing to substitute, we might as well do nothing.
+	return e;
+    }
+    ValueAbstraction_list old_vl = ctx->value_abstractions;
+    ctx->value_abstractions = rdup_ValueAbstraction_list( old_vl );
+.call generate_walker_call "    " e Block Block
+    rfre_ValueAbstraction_list( ctx->value_abstractions );
+    ctx->value_abstractions = old_vl;
+    if( ctx->scope_translations != NULL && e->scope != tmsymbolNIL ){
+	tmsymbol s1 = translate_name( ctx->scope_translations, e->scope );
+	if( s1 != tmsymbolNIL ){
+	    e->scope = s1;
+	}
+    }
+    return e;
+}
+
+/* Action for type WhereExpression.
+ * Declarations that are local to this block may have hidden some
+ * variable mappings. Preserve the original variable mappings here,
+ * so that they can be restored outside the block.
+ */
+static WhereExpression substitute_WhereExpression_action(
+ WhereExpression e,
+ subst_data *ctx
+)
+{
+    if(
+	ctx->value_abstractions->sz == 0 &&
+	ctx->type_abstractions->sz == 0 &&
+	(ctx->scope_translations == NULL || ctx->scope_translations->sz == 0) &&
+	(ctx->variable_translations == NULL || ctx->variable_translations->sz == 0)
+    ){
+	// Since there is nothing to substitute, we might as well do nothing.
+	return e;
+    }
+    ValueAbstraction_list old_vl = ctx->value_abstractions;
+    ctx->value_abstractions = rdup_ValueAbstraction_list( old_vl );
+.call generate_walker_call "    " e WhereExpression WhereExpression
+    rfre_ValueAbstraction_list( ctx->value_abstractions );
+    ctx->value_abstractions = old_vl;
+    if( ctx->scope_translations != NULL && e->scope != tmsymbolNIL ){
+	tmsymbol s1 = translate_name( ctx->scope_translations, e->scope );
+	if( s1 != tmsymbolNIL ){
+	    e->scope = s1;
+	}
+    }
+    return e;
+}
+
+/* Action for type ForStatement.
+ * Cardinalities of this statement may hide some
+ * variable mappings. Preserve the original variable mappings here,
+ * so that they can be restored outside the block.
+ */
+static ForStatement substitute_ForStatement_action(
+ ForStatement e,
+ subst_data *ctx
+)
+{
+    if(
+	ctx->value_abstractions->sz == 0 &&
+	ctx->type_abstractions->sz == 0 &&
+	(ctx->scope_translations == NULL || ctx->scope_translations->sz == 0) &&
+	(ctx->variable_translations == NULL || ctx->variable_translations->sz == 0)
+    ){
+	// Since there is nothing to substitute, we might as well do nothing.
+	return e;
+    }
+    ValueAbstraction_list old_vl = ctx->value_abstractions;
+    ctx->value_abstractions = rdup_ValueAbstraction_list( old_vl );
+.call generate_walker_call "    " e ForStatement ForStatement
+    rfre_ValueAbstraction_list( ctx->value_abstractions );
+    ctx->value_abstractions = old_vl;
+    return e;
+}
+
+/* Action for type MethodInvocationStatement.
+ * Cardinalities of this statement may hide some
+ * variable mappings. Preserve the original variable mappings here,
+ * so that they can be restored outside the block.
+ */
+static ImperativeStatement substitute_MethodInvocationStatement_action(
+ MethodInvocationStatement e,
+ subst_data *ctx
+)
+{
+    type t;
+    origsymbol method;
+
+.call generate_walker_call "    " e MethodInvocationStatement MethodInvocationStatement
+    if( is_type_substitute( ctx, e->invocation->name, &t, &method ) ){
+	TypeInvocationStatement res = new_TypeInvocationStatement(
+	    rdup_origin( e->org ),
+	    rdup_Pragma_list( e->pragmas ),
+	    origsymbol_listNIL,	// Labels
+	    rdup_type( t ),
+	    method,
+	    rdup_expression_list( e->invocation->parameters )
+	);
+	rfre_statement( e );
+	return res;
+    }
+    return e;
+}
+
+/* Action for type MethodInvocationExpression.
+ * Cardinalities of this statement may hide some
+ * variable mappings. Preserve the original variable mappings here,
+ * so that they can be restored outside the block.
+ */
+static SideEffectExpression substitute_MethodInvocationExpression_action(
+ MethodInvocationExpression e,
+ subst_data *ctx
+)
+{
+    type t;
+    origsymbol method;
+
+.call generate_walker_call "    " e MethodInvocationExpression MethodInvocationExpression
+    if( is_type_substitute( ctx, e->invocation->name, &t, &method ) ){
+	TypeInvocationExpression res = new_TypeInvocationExpression(
+	    rdup_origin( method->org ),
+	    rdup_type( t ),
+	    method,
+	    rdup_expression_list( e->invocation->parameters )
+	);
+	rfre_expression( e );
+	return res;
+    }
+    return e;
+}
+
+/* Action for type ForeachStatement.
+ * Cardinalities of this statement may hide some
+ * variable mappings. Preserve the original variable mappings here,
+ * so that they can be restored outside the block.
+ */
+static ForeachStatement substitute_ForeachStatement_action(
+ ForeachStatement e,
+ subst_data *ctx
+)
+{
+    if(
+	ctx->value_abstractions->sz == 0 &&
+	ctx->type_abstractions->sz == 0 &&
+	(ctx->scope_translations == NULL || ctx->scope_translations->sz == 0) &&
+	(ctx->variable_translations == NULL || ctx->variable_translations->sz == 0)
+    ){
+	// Since there is nothing to substitute, we might as well do nothing.
+	return e;
+    }
+    ValueAbstraction_list old_vl = ctx->value_abstractions;
+    ctx->value_abstractions = rdup_ValueAbstraction_list( old_vl );
+.call generate_walker_call "    " e ForeachStatement ForeachStatement
+    rfre_ValueAbstraction_list( ctx->value_abstractions );
+    ctx->value_abstractions = old_vl;
+    return e;
+}
+
+/* Action for type TypeName. */
+static TypeName substitute_TypeName_action(
+ TypeName e,
+ subst_data *ctx
+)
+{
+.call generate_walker_call "    " e TypeName TypeName
+    type x = search_TypeAbstraction( ctx, e );
+    if( x != typeNIL ){
+	origsymbol_internal_error( e, "Generic type variable should have been substituted" );
+    }
+    return e;
+}
+
+/* Action for type ConstructorDeclaration. */
+static ConstructorDeclaration substitute_ConstructorDeclaration_action(
+ ConstructorDeclaration e,
+ subst_data *ctx
+)
+{
+.call generate_walker_call "    " e ConstructorDeclaration ConstructorDeclaration
+    e->name = substitute_typename( ctx, e->name );
+    return e;
+}
+
+/* Action for type VariableName. */
+static VariableName substitute_VariableName_action(
+ VariableName e,
+ subst_data *ctx
+)
+{
+    if( e == origsymbolNIL ){
+	return e;
+    }
+#if 0
+    if( strcmp( e->sym->name, "tmp_0" ) == 0 ){
+	fprintf( stderr, "Yep\n" );
+    }
+#endif
+.call generate_walker_call "    " e VariableName VariableName
+    tmsymbol s1 = translate_name( ctx->variable_translations, e->sym );
+
+    if( s1 != tmsymbolNIL ){
+	if( trace_inlining || trace_generics ){
+	    fprintf(
+		stderr,
+		"did variable name sustitution %s -> %s\n",
+		e->sym->name,
+		s1->name
+	    );
+	}
+	e->sym = s1;
+    }
+    return e;
+}
+
+/* Action for type VariableDeclaration. */
+static VariableDeclaration substitute_VariableDeclaration_action(
+ VariableDeclaration e,
+ subst_data *ctx
+)
+{
+    unsigned int pos;
+
+.call generate_walker_call "    " e VariableDeclaration VariableDeclaration
+    if( search_ValueAbstraction_pos( ctx->value_abstractions, e->name, &pos ) ){
+	if( trace_inlining || trace_generics ){
+	    fprintf(
+		stderr,
+		"Variable subsitution rule for '%s' hidden by local decl.\n",
+		e->name->sym->name
+	    );
+	}
+	ctx->value_abstractions = delete_ValueAbstraction_list(
+	    ctx->value_abstractions,
+	    pos
+	);
+    }
+    return e;
+}
+
+/* Action for type FormalParameter. */
+static FormalParameter substitute_FormalParameter_action(
+ FormalParameter e,
+ subst_data *ctx
+)
+{
+    unsigned int pos;
+
+.call generate_walker_call "    " e FormalParameter FormalParameter
+    if( e->t->tag == TAGTypeType ){
+	if( search_TypeAbstraction_pos( ctx->type_abstractions, e->name, &pos ) ){
+	    ctx->type_abstractions = delete_TypeAbstraction_list(
+		ctx->type_abstractions,
+		pos
+	    );
+	    if( trace_inlining || trace_generics ){
+		fprintf(
+		    stderr,
+		    "Type subsitution rule for '%s' hidden by formal decl.\n",
+		    e->name->sym->name
+		);
+	    }
+	}
+    }
+    else {
+	if( search_ValueAbstraction_pos( ctx->value_abstractions, e->name, &pos ) ){
+	    ctx->value_abstractions = delete_ValueAbstraction_list(
+		ctx->value_abstractions,
+		pos
+	    );
+	    if( trace_inlining || trace_generics ){
+		fprintf(
+		    stderr,
+		    "Value subsitution rule for '%s' hidden by formal decl.\n",
+		    e->name->sym->name
+		);
+	    }
+	}
+    }
+    return e;
+}
+
+/* Action for type Cardinality. */
+static Cardinality substitute_Cardinality_action(
+ Cardinality e,
+ subst_data *ctx
+)
+{
+    unsigned int pos;
+
+.call generate_walker_call "    " e Cardinality Cardinality
+    if( search_ValueAbstraction_pos( ctx->value_abstractions, e->name, &pos ) ){
+	ctx->value_abstractions = delete_ValueAbstraction_list(
+	    ctx->value_abstractions,
+	    pos
+	);
+	if( trace_inlining || trace_generics ){
+	    fprintf(
+		stderr,
+		"Value subsitution rule for '%s' hidden by cardinality\n",
+		e->name->sym->name
+	    );
+	}
+    }
+    return e;
+}
+
+/* Action for type ConstructorInvocationStatement.  */
+static ConstructorInvocationStatement substitute_ConstructorInvocationStatement_action(
+ ConstructorInvocationStatement e,
+ subst_data *ctx
+)
+{
+.call generate_walker_call "    " e ConstructorInvocationStatement ConstructorInvocationStatement
+    // e->t = substitute_typename( ctx, e->t );
+    return e;
+}
+
+/* Action for type GenericObjectType.  */
+static GenericObjectType substitute_GenericObjectType_action(
+ GenericObjectType e,
+ subst_data *ctx
+)
+{
+.call generate_walker_call "    " e GenericObjectType GenericObjectType
+    e->name = substitute_typename( ctx, e->name );
+    return e;
+}
+
+/* Action for type ClassDeclaration.
+ * Since we've already generated a new name for the class that is being
+ * specialized, we assume that this is an inner class. Such a class definition
+ * hides our outer typename, so take evasive action.
+ */
+static ClassDeclaration substitute_ClassDeclaration_action(
+ ClassDeclaration e,
+ subst_data *ctx
+)
+{
+    TypeAbstraction_list old_ta = hide_TypeAbstraction( ctx, e->name ); 
+.call generate_walker_call "    " e ClassDeclaration ClassDeclaration
+    restore_TypeAbstraction( ctx, old_ta );
+    return e;
+}
+
+/* Action for type InterfaceDeclaration.
+ * Since we've already generated a new name for the class that is being
+ * specialized, we assume that this is an inner interface. Such an interface
+ * definition hides our outer typename, so take evasive action.
+ */
+static InterfaceDeclaration substitute_InterfaceDeclaration_action(
+ InterfaceDeclaration e,
+ subst_data *ctx
+)
+{
+    TypeAbstraction_list old_ta = hide_TypeAbstraction( ctx, e->name ); 
+.call generate_walker_call "    " e InterfaceDeclaration InterfaceDeclaration
+    restore_TypeAbstraction( ctx, old_ta );
+    return e;
+}
+
+/* Action for type MethodDeclaration. */
+static MethodDeclaration substitute_MethodDeclaration_action(
+ MethodDeclaration e,
+ subst_data *ctx
+)
+{
+    type_list old_types = rdup_type_list( e->throws );
+.call generate_walker_call "    " e MethodDeclaration MethodDeclaration
+    enforce_object_types( ctx->org, old_types, e->throws );
+    rfre_type_list( old_types );
+    return e;
+}
+
+/* Action for type TypeDeclaration. */
+static TypeDeclaration substitute_TypeDeclaration_action(
+ TypeDeclaration e,
+ subst_data *ctx
+)
+{
+    type_list old_types = rdup_type_list( e->interfaces );
+.call generate_walker_call "    " e TypeDeclaration TypeDeclaration
+    enforce_object_types( ctx->org, old_types, e->interfaces );
+    rfre_type_list( old_types );
+    return e;
+}
+
+/* Action for type ObjectType. */
+static type substitute_ObjectType_action(
+ ObjectType e,
+ subst_data *ctx
+)
+{
+    if( e == ObjectTypeNIL ){
+	return e;
+    }
+    type x = search_TypeAbstraction( ctx, e->name );
+    if( x != typeNIL ){
+	if( trace_inlining || trace_generics ){
+	    tmstring tnm = typename_type( x );
+	    fprintf( stderr, "did type sustitution '%s' -> %s\n", e->name->sym->name, tnm );
+	    rfre_tmstring( tnm );
+	}
+	rfre_type( e );
+	return rdup_type( x );
+    }
+.call generate_walker_call "    " e ObjectType ObjectType
+    return e;
+}
+
+/* Action for type LabelName. */
+static LabelName substitute_LabelName_action(
+ LabelName e,
+ subst_data *ctx
+)
+{
+    if( e == origsymbolNIL ){
+	return e;
+    }
+.call generate_walker_call "    " e LabelName LabelName
+    tmsymbol s1 = translate_name( ctx->label_translations, e->sym );
+    if( s1 != tmsymbolNIL ){
+	e->sym = s1;
+    }
+    return e;
+}
+
+/* Action for type VariableNameExpression. */
+static expression substitute_VariableNameExpression_action(
+ VariableNameExpression e,
+ subst_data *ctx
+)
+{
+    type t;
+    origsymbol field;
+
+    if( is_type_substitute( ctx, e->name, &t, &field ) ){
+	TypeFieldExpression res = new_TypeFieldExpression(
+	    rdup_type( t ),
+	    field
+	);
+	rfre_expression( e );
+	return res;
+    }
+    expression x = search_ValueAbstraction( ctx, e->name );
+    if( x != expressionNIL ){
+	if( trace_inlining || trace_generics ){
+	    tmstring vnm = name_expression( x );
+	    fprintf(
+		stderr,
+		"did variable sustitution %s -> %s\n",
+		e->name->sym->name,
+		vnm
+	    );
+	    rfre_tmstring( vnm );
+	}
+	rfre_expression( e );
+	return rdup_expression( x );
+    }
+.call generate_walker_call "    " e VariableNameExpression VariableNameExpression
+    return e;
+}
+
+/* Action for type ExternalNamePragmaExpression. */
+static PragmaExpression substitute_ExternalNamePragmaExpression_action(
+ ExternalNamePragmaExpression e,
+ subst_data *ctx
+)
+{
+    type t;
+    origsymbol field;
+
+    if( is_type_substitute( ctx, e->name, &t, &field ) ){
+	// TODO: generate a proper error message.
+	internal_error( "fail" );
+    }
+    expression x = search_ValueAbstraction( ctx, e->name );
+    if( x != expressionNIL ){
+	if( x->tag == TAGVariableNameExpression ){
+	    rfre_origsymbol( e->name );
+	    e->name = rdup_origsymbol( to_VariableNameExpression(x)->name );
+	    if( trace_inlining || trace_generics ){
+		tmstring vnm = name_expression( x );
+		fprintf(
+		    stderr,
+		    "external name pragma sustituted %s -> %s\n",
+		    e->name->sym->name,
+		    vnm
+		);
+		rfre_tmstring( vnm );
+	    }
+	}
+	else {
+	    // TODO: generate a proper error message.
+	    internal_error( "fail" );
+	}
+    }
+.call generate_walker_call "    " e ExternalNamePragmaExpression ExternalNamePragmaExpression
+    return e;
+}
+
+/* -------- End of action functions ---------- */
+
+.call generate_walker "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+/* Given a type declaration, substitute all given parameters. */
+TypeDeclaration substitute_TypeDeclaration(
+ const_origin org,
+ TypeDeclaration decl,
+ const_TypeAbstraction_list tl,
+ const_ValueAbstraction_list vl
+)
+{
+    subst_data the_ctx;
+    subst_data *ctx = &the_ctx;
+    if( tl == NULL ){
+	the_ctx.type_abstractions = new_TypeAbstraction_list();
+    }
+    else {
+	the_ctx.type_abstractions = rdup_TypeAbstraction_list( tl );
+    }
+    if( vl == NULL ){
+	the_ctx.value_abstractions = new_ValueAbstraction_list();
+    }
+    else {
+	the_ctx.value_abstractions = rdup_ValueAbstraction_list( vl );
+    }
+    the_ctx.label_translations = NameTranslation_listNIL;
+    the_ctx.scope_translations = NameTranslation_listNIL;
+    the_ctx.variable_translations = NameTranslation_listNIL;
+    the_ctx.org = org;
+
+.call generate_descent_call "    " decl TypeDeclaration TypeDeclaration
+    rfre_ValueAbstraction_list( the_ctx.value_abstractions );
+    rfre_TypeAbstraction_list( the_ctx.type_abstractions );
+    return decl;
+}
+
+/* Given a type declaration, substitute all given parameters. */
+Block substitute_Block(
+ const_origin org,
+ Block decl,
+ const_TypeAbstraction_list tl,
+ const_NameTranslation_list ll,
+ const_ValueAbstraction_list vl,
+ const_NameTranslation_list sl,
+ const_NameTranslation_list nl
+)
+{
+    subst_data the_ctx;
+    subst_data *ctx = &the_ctx;
+    if( tl == NULL ){
+	the_ctx.type_abstractions = new_TypeAbstraction_list();
+    }
+    else {
+	the_ctx.type_abstractions = rdup_TypeAbstraction_list( tl );
+    }
+    if( vl == NULL ){
+	the_ctx.value_abstractions = new_ValueAbstraction_list();
+    }
+    else {
+	the_ctx.value_abstractions = rdup_ValueAbstraction_list( vl );
+    }
+    the_ctx.label_translations = ll;
+    the_ctx.scope_translations = sl;
+    the_ctx.variable_translations = nl;
+    the_ctx.org = org;
+
+.call generate_descent_call "    " decl Block Block
+    rfre_ValueAbstraction_list( the_ctx.value_abstractions );
+    rfre_TypeAbstraction_list( the_ctx.type_abstractions );
+    return decl;
+}
+
+/* Given a type declaration, substitute all given parameters. */
+optexpression substitute_optexpression(
+ optexpression x,
+ const_ValueAbstraction_list vl,
+ const_NameTranslation_list sl,
+ const_NameTranslation_list nl
+)
+{
+    subst_data the_ctx;
+    subst_data *ctx = &the_ctx;
+    the_ctx.type_abstractions = new_TypeAbstraction_list();
+    if( vl == NULL ){
+	the_ctx.value_abstractions = new_ValueAbstraction_list();
+    }
+    else {
+	the_ctx.value_abstractions = rdup_ValueAbstraction_list( vl );
+    }
+    the_ctx.label_translations = NameTranslation_listNIL;
+    the_ctx.scope_translations = sl;
+    the_ctx.variable_translations = nl;
+    the_ctx.org = originNIL;
+
+.call generate_descent_call "    " x optexpression optexpression
+    rfre_ValueAbstraction_list( the_ctx.value_abstractions );
+    rfre_TypeAbstraction_list( the_ctx.type_abstractions );
+    return x;
+}

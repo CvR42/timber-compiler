@@ -1,0 +1,17 @@
+// File: errouterstaticclass
+//
+// Make sure that the compiler complains about outer classes that are declared
+// static.
+
+public static final class errouterstaticclass {
+    int n = 3;
+    public static class inner {
+	int getn() { return n; }
+    }
+    public static void main( String args[] ){
+	t outer = new t();
+	//t.inner i = outer.new inner();
+	static class localclass { int getn() { return 3; } };
+	System.out.println( i.getn() );
+    }
+}

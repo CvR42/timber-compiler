@@ -1,0 +1,2 @@
+errjlsass2.spar:34: assigning a Point to a ColoredPoint requires an explicit cast
+errjlsass2.spar:36: assigning a Point to a Colorable requires an explicit cast

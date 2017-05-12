@@ -1,0 +1,16 @@
+// After JLS2 16 Definite assignment
+
+public final class errjlsflow2 {
+    static void flow( boolean flag ){
+	int k;
+	if (flag)
+	    k = 3;
+	if (!flag)
+	    k = 4;
+	__println(1,k);
+    }
+    public static void main(){
+	flow( true );
+	flow( false );
+    }
+}

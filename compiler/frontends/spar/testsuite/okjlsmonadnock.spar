@@ -1,0 +1,17 @@
+// After JLS2 15.12.4.6    Example: Target Reference and Static Methods
+
+
+public class okjlsmonadnock {
+    static void mountain() {
+        __println(1,"Monadnock");
+    }
+
+    static okjlsmonadnock favorite(){
+        __print(1,"Mount ");
+        return null;
+    }
+
+    public static void main(String[] args) {
+        favorite().mountain();
+    }
+}

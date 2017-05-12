@@ -1,0 +1,219 @@
+# Top-level makefile for the mapper directory.
+
+
+
+TMROOT=/Users/reeuwijk/lab
+
+include ./Make.vars
+
+prefix=/Users/reeuwijk/lab
+exec_prefix=${prefix}
+INSTALL = /usr/bin/install -c
+INSTALL_PROGRAM = ${INSTALL}
+UNINSTALL_PROGRAM = rm -f
+INSTALL_SCRIPT = ${INSTALL}
+INSTALL_DATA = ${INSTALL} -m 644
+
+help:
+	@$(ECHO) " Possible make targets:"
+	@$(ECHO) "all              Create local running programs."
+	@$(ECHO) "clean            Delete all temporary files."
+	@$(ECHO) "empty            Delete all temporary files and executables."
+	@$(ECHO) "reallyempty      Delete all generated files and links."
+	@$(ECHO) "depend           Update all dependencies files"
+	@$(ECHO) "symbolic         Make symbolic links to files in backend."
+
+all: symbolic
+	$(MAKE) -f Make.initial all
+	$(MAKE) -f Make.spmd all
+	$(MAKE) -f Make.taskpar all
+
+clean:
+	$(MAKE) -f Make.initial clean
+	$(MAKE) -f Make.spmd clean
+	$(MAKE) -f Make.taskpar clean
+
+tests:
+	@$(ECHO) "No tests implemented"
+
+check:
+	@$(ECHO) "No tests implemented"
+
+install: spmd initial
+	$(INSTALL) -d ${exec_prefix}/libexec
+	$(INSTALL_PROGRAM) spmd ${exec_prefix}/libexec/spar-spmd
+	$(INSTALL_PROGRAM) initial ${exec_prefix}/libexec/spar-initial
+
+uninstall:
+	$(UNINSTALL_PROGRAM) ${exec_prefix}/libexec/spar-spmd
+	$(UNINSTALL_PROGRAM) ${exec_prefix}/libexec/spar-initial
+
+empty:
+	$(MAKE) -f Make.initial empty
+	$(MAKE) -f Make.spmd empty
+	$(MAKE) -f Make.taskpar empty
+
+depend: symbolic
+	$(MAKE) -f Make.initial depend
+	$(MAKE) -f Make.spmd depend
+	$(MAKE) -f Make.taskpar depend
+
+symbolic: defs.h
+
+defs.h:	$(VNUSDIR)/defs.h
+	ln -s $(VNUSDIR)/defs.h
+	ln -s $(VNUSDIR)/error.c error.cc
+	ln -s $(VNUSDIR)/error.h
+	ln -s $(VNUSDIR)/tmadmin.ct
+
+SOFTLINKS	= defs.h error.cc error.h \
+		  tmadmin.ct 
+
+TMSRC = tmadmin.ds \
+    scheduler.ds \
+    system.ds \
+    varowner.ds \
+    apply2owned.ct \
+    applyaggr.ct \
+    applyaggr2.ct \
+    applybreakout.ct \
+    applybug.ct \
+    applyca1.ct \
+    applyca2.ct \
+    applyca3.ct \
+    applycheck.ct \
+    applyclean.ct \
+    applyclean2.ct \
+    applyclean3.ct \
+    applyclean4.ct \
+    applyclean5.ct \
+    applyclear_on.ct \
+    applydistcheck.ct \
+    applygetowner.ct \
+    applydiststrip.ct \
+    applyel1.ct \
+    applyexprredzap.ct \
+    applyfillowner.ct \
+    applyftf.ct \
+    applyftf2.ct \
+    applyftn1.ct \
+    applyif5.ct \
+    applyif6.ct \
+    applyif7.ct \
+    applyio3.ct \
+    applyit02.ct \
+    applyit1.ct \
+    applyit2.ct \
+    applyliftcond.ct \
+    applymas.ct \
+    applymergecond.ct \
+    applymergeloop.ct \
+    applyoa5.ct \
+    applyopasszap.ct \
+    applyopt.ct \
+    applyot.ct \
+    applyot2.ct \
+    applypcp0.ct \
+    applypcp3.ct \
+    applypre1.ct \
+    applypre2.ct \
+    applypre4.ct \
+    applyred1.ct \
+    applyremrepl.ct \
+    applyresident.ct \
+    applyselect_on.ct \
+    applytag.ct \
+    applytaskpar.ct \
+    applytp0.ct \
+    applytp1.ct \
+    extradefs.ht \
+    gensearch.t \
+    gensupport.t \
+    genwalk.t \
+    parseowners.ct \
+    replace.ct \
+    search.ct \
+    tmadmin.ht \
+    tmadmin.t
+
+SRC = main.cc global.cc initial.cc issubset.cc parsepragmas.cc \
+ spmd.cc taskpar.cc service.cc symtable.cc applyif2.cc applytp2.cc
+
+HDR = apply2owned.h \
+    applyaggr.h \
+    applyaggr2.h \
+    applybreakout.h \
+    applybug.h \
+    applyca1.h \
+    applyca2.h \
+    applyca3.h \
+    applycheck.h \
+    applyclean.h \
+    applyclean2.h \
+    applyclean3.h \
+    applyclean4.h \
+    applyclean5.h \
+    applyclear_on.h \
+    applydistcheck.h \
+    applygetowner.h \
+    applydiststrip.h \
+    applyel1.h \
+    applyexprredzap.h \
+    applyfillowner.h \
+    applyftf.h \
+    applyftf2.h \
+    applyftn1.h \
+    applyif2.h \
+    applyif5.h \
+    applyif6.h \
+    applyif7.h \
+    applyio3.h \
+    applyit02.h \
+    applyit1.h \
+    applyit2.h \
+    applyliftcond.h \
+    applymas.h \
+    applymergecond.h \
+    applymergeloop.h \
+    applyoa5.h \
+    applyopasszap.h \
+    applyopt.h \
+    applyot.h \
+    applyot2.h \
+    applypcp0.h \
+    applypcp3.h \
+    applypre1.h \
+    applypre2.h \
+    applypre4.h \
+    applyred1.h \
+    applyremrepl.h \
+    applyresident.h \
+    applyselect_on.h \
+    applytag.h \
+    applytaskpar.h \
+    applytp0.h \
+    applytp1.h \
+    applytp2.h \
+    engine.h \
+    global.h \
+    issubset.h \
+    parseowners.h \
+    parsepragmas.h \
+    replace.h \
+    search.h \
+    service.h \
+    symtable.h
+
+CONFIGUREFILES = Makefile.in configure configure.ac
+MYMAKEFILES = Make.initial Make.rules Make.spmd \
+  Make.taskpar Make.vars.in
+
+DISTFILES = $(CONFIGUREFILES) $(TMSRC) $(SRC) $(HDR) $(MYMAKEFILES) .cvsignore
+
+reallyempty:	empty
+	rm -f $(SOFTLINKS)
+
+include $(COMPILERSRCROOT)/Makefiles/Make.configure
+include $(COMPILERSRCROOT)/Makefiles/Make.dist
+
+Make.vars: Make.vars.in

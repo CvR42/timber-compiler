@@ -1,0 +1,28 @@
+// all possible pragmas in a spar program
+// pragmaname denotes the place in the tm-IR
+
+globalpragmas <$ vnusprog_p $>;
+
+<$ class_p $> public class tst {
+  <$ statdecl_p $> static int i = 3;
+  <$ fielddecl_p $> int j = 4;
+
+  <$ constr_p $> tst() {
+    i = <$ this_p $>this.j;
+  }
+
+  <$ classbody_p $>{}
+
+  <$ method_p $> public static void main(<$ param_p $>String args[]) {
+    <$ locvar_p $> int <$ primtype_p $> a[][]<$ decldim_p $> = 
+        <$ new_p $>new int[100]<$ vector_p $>[]<$ newdim_p $>;
+    tuple [int,int,int]<$ tupletype_p $> t;
+
+    <$ primary_p $> tst.i = 5;
+
+    foreach (k :- 0:10)
+      <$ block_p $> {
+        <$ stmt_p $> a[3][1] =  (<$ expr_p $> 3*4) + 5;
+      }
+  }
+};

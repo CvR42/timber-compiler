@@ -1,0 +1,3 @@
+errjlsarrobj.spar:21: assigning a Point[] to a ColoredPoint[] requires an explicit cast
+errjlsarrobj.spar:13: cannot assign a long[] to a java.lang.Long
+errjlsarrobj.spar:14: cannot assign a long[] to a short[]

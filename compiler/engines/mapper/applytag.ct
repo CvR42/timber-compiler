@@ -1,0 +1,56 @@
+/* Applytag test engine
+
+   Tag assignment statements with FlagPragma("hop").
+   */
+
+.. File: applytag.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtAssign
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "applytag.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+/* Rewrite action for 'vnusprog'. */
+static SmtAssign rewrite_SmtAssign_action(
+    SmtAssign elm, global_context /*gc*/ )
+{
+    elm->pragmas = append_Pragma_list(
+        elm->pragmas,
+        new_FlagPragma(new_origsymbol(add_tmsymbol( "hop" ), gen_origin())));
+    return elm;
+}
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_tag( vnusprog elm, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+    (void) rewrite_SmtAssign_walker;
+    
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}
+

@@ -1,0 +1,3 @@
+errbadthrow.spar:9: Cannot throw 'errbadthrow', since it is not a subclass of java.lang.Throwable
+errbadthrow.spar:9: Exception errbadthrow must be caught, or must be declared in the throws clause of this method
+errbadthrow.spar:16: Exception TestException must be caught, or must be declared in the throws clause of this method

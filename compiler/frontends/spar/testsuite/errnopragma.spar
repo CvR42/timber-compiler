@@ -1,0 +1,12 @@
+// Spar language extensions to Java. These should be flagged by the
+// compiler if the --nopragma flag is given.
+
+package spar.testsuite;
+
+public class errnopragma {
+    public static void main()
+    {
+	<$pointless$>
+	__println( 1, "hello world" );
+    }
+}

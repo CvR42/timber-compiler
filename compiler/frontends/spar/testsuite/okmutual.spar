@@ -1,0 +1,12 @@
+// Minimal test program.
+
+package spar.testsuite;
+
+import spar.testsuite.subpack.*;
+
+public class okmutual {
+    public static void main()
+    {
+	mutual2.say();
+    }
+}

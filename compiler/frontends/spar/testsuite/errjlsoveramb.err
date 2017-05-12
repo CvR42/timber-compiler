@@ -1,0 +1,4 @@
+errjlsoveramb.spar:18: Method reference 'test(ColoredPoint,ColoredPoint)' is ambiguous
+Possible method: 'test(ColoredPoint,Point)'
+Possible method: 'test(Point,ColoredPoint)'
+You can resolve this by qualifying the name.

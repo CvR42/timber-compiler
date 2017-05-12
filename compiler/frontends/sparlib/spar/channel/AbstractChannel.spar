@@ -1,0 +1,21 @@
+// File: spar.channel.AbstractChannel.spar
+
+package spar.channel;
+
+public class AbstractChannel implements WaitableChannel {
+    protected int handle = -1;
+
+    // TODO: implement correctly.
+    public boolean isOpen() { return handle != -1; }
+
+    public void close() throws java.io.IOException
+    {
+        boolean ok = spar.compiler.File.close( handle );
+	handle = -1;
+	if( !ok ){
+	    throw new java.io.IOException();
+	}
+    }
+
+    protected int getHandle() { return handle; }
+}

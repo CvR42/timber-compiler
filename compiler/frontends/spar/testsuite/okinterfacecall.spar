@@ -1,0 +1,17 @@
+package spar.testsuite;
+
+import java.io.*;
+
+interface Hello {
+    void hello();
+}
+
+public class okinterfacecall implements Hello {
+    void hello(){
+	__println( 1, "Hello world" );
+    }
+    public static void main(){
+	Hello x = new okinterfacecall();
+	x.hello();
+    }
+}

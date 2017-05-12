@@ -1,0 +1,92 @@
+/* Applymergecond test engine
+
+   COMMENT TO BE CORRECTED
+   Lift a condition out of a loop iff:
+   - loop has only 1 stmt, that stmt is an if statement
+   - condition is independent of cardinality variables
+   - loop has no scope-> no local variables to be dependent on
+   - no else part, otherwise we would have to duplicate code
+   */
+
+.. File: applyftf.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtIf
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "search.h"
+#include "applyftf.h"
+
+static bool hasFired = false;
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+/* Rewrite action for 'vnusprog'. */
+static statement rewrite_SmtIf_action(
+    SmtIf e, global_context gc )
+{
+.call generate_walker_call "    " e SmtIf SmtIf
+    if (e->thenbody == blockNIL ||
+	e->thenbody->scope != tmsymbolNIL ||
+	e->thenbody->statements == statement_listNIL ||
+	e->thenbody->statements->sz != 1 ||
+	e->thenbody->statements->arr[0]->tag != TAGSmtIf)
+	return e;
+    if (e->elsebody != blockNIL &&
+	e->elsebody->statements != statement_listNIL &&
+	e->elsebody->statements->sz != 0)
+	return e;
+    SmtIf ifStmt = to_SmtIf(e->thenbody->statements->arr[0]);
+    assert (ifStmt->cond != expressionNIL);
+    if (ifStmt->elsebody != blockNIL &&
+	ifStmt->elsebody->statements != statement_listNIL &&
+	ifStmt->elsebody->statements->sz != 0)
+	return e;
+
+    e->cond = new_ExprBinop(
+	e->cond,
+	BINOP_SHORTAND,
+	ifStmt->cond);
+    ifStmt->cond = expressionNIL;
+    block oldBody = e->thenbody;
+    e->thenbody = ifStmt->thenbody;
+    ifStmt->thenbody = blockNIL;
+    rfre_block(oldBody);
+    fprintf(stderr,"mergecond: merged 2 conditions\n");
+    hasFired = true;
+    return e;
+}
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_mergecond( vnusprog elm, global_context gc )
+{
+    hasFired = false;
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}
+
+bool hasFired_mergecond()
+{
+    return hasFired;
+}

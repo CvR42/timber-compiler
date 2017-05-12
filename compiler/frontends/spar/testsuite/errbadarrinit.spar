@@ -1,0 +1,7 @@
+public class errbadarrinit {
+    public static void main(){
+        int a [][] = { { { 1 } } };
+
+	__println( 1, a[0][0] );
+    }
+}

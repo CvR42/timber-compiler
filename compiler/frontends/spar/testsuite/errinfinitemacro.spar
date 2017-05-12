@@ -1,0 +1,13 @@
+// File: errinfinitemacro.
+// Test the handling of unterminated recursive inlining.
+import java.io.*;
+
+public class errinfinitemacro {
+    public static inline int fac( final int n )
+    {
+	return fac( n );
+    }
+    public static void main(){
+	__println( 1, fac( 4 ) );
+    }
+}

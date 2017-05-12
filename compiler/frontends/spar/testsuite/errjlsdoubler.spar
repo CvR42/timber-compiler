@@ -1,0 +1,16 @@
+// After JLS2 15.12.2.1    Find Methods that are Applicable and Accessible
+
+
+class Doubler {
+    static int two() { return two(1); }
+    private static int two(int i) { return 2*i; }
+}
+
+public class errjlsdoubler extends Doubler {    
+    public static long two(long j) {return j+j; }
+
+    public static void main(String[] args) {
+        System.out.println(two(3));
+        System.out.println(Doubler.two(3)); // compile-time error
+    }
+}

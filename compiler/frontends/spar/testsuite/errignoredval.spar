@@ -1,0 +1,12 @@
+package spar.testsuite;
+
+class t1 {
+    static int bla() { return 42; }
+}
+
+public class errignoredval {
+    public static void main()
+    {
+	t1.bla();
+    }
+}

@@ -1,0 +1,21 @@
+// After JLS2 14.10    The switch Statement
+
+
+public class okjlstoomany {
+
+    static void howMany(int k) {
+        switch (k) {
+        case 1:            __print(1,"one ");
+        case 2:            __print(1,"too ");
+        case 3:            __println(1,"many");
+        }
+    }
+
+
+    public static void main() {
+        howMany(3);
+        howMany(2);
+        howMany(1);
+    }
+
+}

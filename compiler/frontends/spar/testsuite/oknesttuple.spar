@@ -1,0 +1,17 @@
+// File: oknesttuple.spar
+// Test the expansion of unary and binary operations on of nested tuples.
+
+public class oknesttuple {
+    public static void main(){
+	[[int^3],int,int] a = 2*[[1,2,3],4,5];
+	__println( 1, a[0][0], ' ', a[0][1], ' ', a[0][2], ' ', a[1], ' ', a[2] );
+	a = a + 2;
+	__println( 1, a[0][0], ' ', a[0][1], ' ', a[0][2], ' ', a[1], ' ', a[2] );
+	a = a + a;
+	__println( 1, a[0][0], ' ', a[0][1], ' ', a[0][2], ' ', a[1], ' ', a[2] );
+	[[int^3],int,int] b = -a;
+
+	a = a + b;
+	__println( 1, a[0][0], ' ', a[0][1], ' ', a[0][2], ' ', a[1], ' ', a[2] );
+    }
+}

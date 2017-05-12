@@ -1,0 +1,15 @@
+// File: errbadconsname.spar
+//
+// Test the detection of constructors with a different name than the
+// class they live in.
+//
+// The generated error does not put it like that: it says that the
+// return type of the method is missing. This is because that's
+// the most likely reason for this error.
+
+public class errbadconsname {
+    bla() { }		// Error: not the name of the class.
+    public static void main(){
+	t x = new t();
+    }
+}

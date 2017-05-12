@@ -1,0 +1,8 @@
+errambiffield.spar:17: Field reference 'BLACK' in 'spar.testsuite.ColorsAndSeparates' is ambiguous:
+errambiffield.spar:9: This is a candidate (in spar.testsuite.Colors)
+errambiffield.spar:13: This is a candidate (in spar.testsuite.Separates)
+You can resolve this by qualifying the name.
+errambiffield.spar:17: Field reference 'BLACK' in 'spar.testsuite.ColorsAndSeparates' is ambiguous:
+errambiffield.spar:9: This is a candidate (in spar.testsuite.Colors)
+errambiffield.spar:13: This is a candidate (in spar.testsuite.Separates)
+You can resolve this by qualifying the name.

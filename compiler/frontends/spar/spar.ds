@@ -1,0 +1,390 @@
+|| File: spar.ds
+||
+|| Author: Kees van Reeuwijk
+|| Copyright (c) Delft University of Technology, 1997-2002
+||
+|| Datastructures for the representation of Spar/Java programs. These
+|| definitions are only used in the Spar frontend, although some care
+|| has been taken to make the representation generic.
+||
+|| However, actual use of these data structures for the communication
+|| of programs to/from other tools would require some work.
+||
+|| As far as reasonable, it has been tried to adhere to the concepts
+|| and terms of the grammar in the Java Language Specification.
+
+|| The aliases below are used to distinguish between the name spaces the
+|| various symbols are in.
+||
+|| A 'tmsymbol' is a primitive type provided by the Tm runtime library.
+|| When two strings are converted to symbols, it is guaranteed that the
+|| same pointer to a symbol structure is returned if, and only if the
+|| two strings are the same.
+PackageName -> origsymbol;
+TypeName -> origsymbol;
+VariableName -> origsymbol;
+MethodName -> origsymbol;
+PragmaName -> origsymbol;
+LabelName -> origsymbol;
+ScopeName -> tmsymbol;
+FileName -> tmsymbol;
+FieldName -> origsymbol;
+
+|| Pragmas can be added to most language constructs. Their value, if any,
+|| represented by a special pragma expression.
+Pragma = { name:PragmaName } +
+    FlagPragma: {} |                || Being there is enough
+    ValuePragma: { x:PragmaExpression }
+    ;
+
+PragmaExpression ~= {};
+
+|| Various types of literals
+LiteralPragmaExpression = PragmaExpression +
+    NumberPragmaExpression: { v:vnus_double } |
+    StringPragmaExpression: { s:vnus_string } |
+    BooleanPragmaExpression: { b:vnus_boolean }
+    ;
+
+SymbolPragmaExpression = PragmaExpression +
+    NamePragmaExpression: { name:origsymbol } |
+    ExternalNamePragmaExpression: { name:VariableName }
+    ;
+
+ListPragmaExpression = PragmaExpression + { l:[PragmaExpression] };
+
+|| One entry in a cardinality list, which represents an iteration range
+|| in a 'for' or 'foreach' statement.
+Cardinality == (
+    name:VariableName,
+    pragmas:[Pragma],
+    lowerbound:expression,
+    upperbound:expression,
+    stride:expression
+);
+
+|| An origin descriptor.
+|| This is tacked on to all sorts of constructs for which it is convenient
+|| to track the origin.
+origin == ( file:FileName, line:int );
+
+|| A symbol with its origin.
+origsymbol == ( sym:tmsymbol, org:origin );
+
+|| An entry in the list of program units of a Spar program.
+|| packagename is used to find this unit.
+SparProgramUnit == (
+    packagename:PackageName,
+    pragmas:[Pragma],
+    definitions:[tmsymbol],		|| List of types defined in this unit
+    directimports:[TypeName],
+    demandimports:[PackageName],
+    decls:[statement],
+    typebindings:[TypeBinding],
+    path:tmstring
+);
+
+|| A statement block. Equivalent to a Java/Spar { ... } statement block.
+Block == ( scope:ScopeName, pragmas:[Pragma], statements:[statement] );
+
+|| One entry in a 'wait' statement.
+WaitCase = { body:[statement], org:origin } +
+    WaitCaseValue: { cond:expression } |
+    WaitCaseTimeout: { time:expression }
+    ;
+
+|| One entry in a 'switch' statement.
+SwitchCase = { body:[statement], org:origin } +
+    SwitchCaseValue: { cond:expression } |
+    SwitchCaseDefault: {}
+    ;
+
+|| A catch clause in a try { .. } catch (..) {..} construct.
+Catch == ( org:origin, parm:FormalParameter, body:Block );
+
+MethodInvocation == (
+    vtab:expression,		|| Who has the vtable?
+    name:MethodName,
+    thisparameters:[expression],
+    parameters:[expression],
+    flags:invocationflags
+);
+
+|| Statements and declarations. As in the JLS Java grammar, a declaration
+|| is a special case of a statement.
+statement ~= { org:origin, pragmas:[Pragma], labels:[LabelName] };
+
+StaticInitializer = statement + { body:Block };
+
+InstanceInitializer = statement + { body:Block };
+
+declaration ~= statement + {
+    flags:modflags,		|| 'static', 'private', etc. Coding as in JVM
+    used:bool 			|| Is the declaration used?
+};
+
+MethodDeclaration = declaration + {
+    name:MethodName,
+    parameters:[FormalParameter],
+    throws:[type]
+} +
+    FunctionDeclaration: { rettype:type, body:Block } |
+    AbstractFunctionDeclaration: { rettype:type } |
+    NativeFunctionDeclaration: { rettype:type } |
+    ConstructorDeclaration: { body:Block }
+    ;
+
+VariableDeclaration = declaration + { name:VariableName } +
+    FieldDeclaration: { t:type, init:optexpression }
+    ;
+
+TypeDeclaration = declaration + {
+    name:origsymbol,
+    formals:[FormalParameter],	|| The parameters of a generic type
+    interfaces:[type],
+    body:[statement],		|| The member declarations
+    dynInit:tmsymbol,		|| Name of the dynamic init function
+    staticInit:tmsymbol,	|| Name of the static init function
+    staticInitNeed:tmsymbol,	|| The bool variable that records init done
+    staticInitTrivial:bool	|| Is the local initialization trivial?
+} +
+    ClassDeclaration: {
+	hiddenparms:[HiddenParameter],	|| Hidden parms of constructors (for local cl)
+	super:type		|| The superclass of this class
+    } |
+    InterfaceDeclaration: {}
+    ;
+
+ImperativeStatement = statement +
+    AssignStatement: { op:ASSIGN_OP, lhs:expression, rhs:expression } |
+    MethodInvocationStatement: {
+	invocation:MethodInvocation
+    } |
+    FieldInvocationStatement: {
+	var:expression,
+	field:MethodName,
+	parameters:[expression]
+    } |
+    TypeInvocationStatement: {
+	t:type,
+	field:MethodName,
+	parameters:[expression]
+    } |
+    SuperInvocationStatement: {
+	field:MethodName,
+	parameters:[expression]
+    } |
+    OuterSuperInvocationStatement: {
+	t:type,
+	field:MethodName,
+	parameters:[expression]
+    } |
+    ThisConstructorInvocationStatement: {
+	parameters:[expression]
+    } |
+    SuperConstructorInvocationStatement: {
+	parameters:[expression]
+    } |
+    OuterSuperConstructorInvocationStatement: {
+	outer:expression,
+	parameters:[expression]
+    } |
+    || An expression that is merely evaluated for its sideeffect
+    ExpressionStatement: { x:expression }
+    ;
+
+ControlStatement = statement +
+    WhileStatement: { cond:expression, body:Block, update:[statement] } |
+    DoWhileStatement: { cond:expression, body:Block, update:[statement] } |
+    ForStatement: { inlined:bool, cards:[Cardinality], body:Block } |
+    ClassicForStatement: {
+	inits:[statement],
+	cond:optexpression,
+	update:[statement],
+	body:Block
+    } |
+    IfStatement: { compileboth:bool, cond:expression, thenbody:Block, elsebody:Block } |
+    BlockStatement: { body:Block } |
+    WaitStatement: { cases:[WaitCase] } |
+    SwitchStatement: { cond:expression, cases:[SwitchCase] } |
+    TryStatement: { body:Block, catches:[Catch], finally:Block }
+    ;
+
+|| Statements that implement abrupt termination of execution
+TerminationStatement = statement +
+    ReturnStatement: {} |
+    ValueReturnStatement: { v:expression } |
+    GotoStatement: { target:LabelName } |
+    BreakStatement: { target:LabelName } |
+    ContinueStatement: { target:LabelName } |
+    ThrowStatement: { x:expression }
+    ;
+
+Parallelization = statement +
+    ForeachStatement: { cards:[Cardinality], body:Block } |
+    EachStatement: { statements:[statement] } |
+    SynchronizedStatement: { on:expression, body:Block }
+    ;
+
+MemoryManagement = statement +
+    DeleteStatement: { adr:expression }
+    ;
+
+Support = statement +
+    EmptyStatement: {} |
+    PrintStatement: { argv:[expression] } |
+    PrintLineStatement: { argv:[expression] }
+    ;
+
+FormalParameter == (
+    name:VariableName,
+    pragmas:[Pragma],
+    flags:modflags,
+    t:type
+);
+
+|| Helper structure used during parsing. It represents a 'Dim' type
+|| suffix. Such a type expression is almost immedately rewritten to
+|| an array type.
+FormalDim == ( rnk:expression, pragmas:[Pragma] );
+
+|| An actual dimension expression. It only occurs in the 'new' expression
+|| of an array type.
+ActualDim == ( vector:expression, pragmas:[Pragma] );
+
+|| A type
+type =
+    PrimitiveType: { base:BASETYPE } |
+    TypeType: {} |
+    TupleType: { fields:[type] } |
+    VectorType: { elmtype:type, power:expression } |
+    NullType: {} |
+    FunctionType: { thisformals:[type], formals:[type], rettype:type } |
+    TypeOf: { x:expression } |
+    TypeOfIf: { thenval:expression, elseval:expression, org:origin } |
+    VoidType: {} |
+    PragmaType: { pragmas:[Pragma], t:type }
+    ;
+
+ReferenceType = type +
+    PrimArrayType: { elmtype:type } |
+    ArrayType: { elmtype:type, rank:expression } |
+    ObjectType: { name:TypeName } |
+    GenericObjectType: { name:TypeName, parameters:[expression] }
+    ;
+
+|| An optional expression. It is used for initializers.
+optexpression =
+    OptExprNone: {} |
+    OptExpr: { x:expression }
+    ;
+
+|| An expression.
+expression ~= {};
+
+LiteralExpression = expression +
+    ByteExpression: { v:vnus_byte } |
+    ShortExpression: { v:vnus_short } |
+    IntExpression: { v:vnus_int } |
+    LongExpression: { v:vnus_long } |
+    FloatExpression: { v:vnus_float } |
+    DoubleExpression: { v:vnus_double } |
+    CharExpression: { c:vnus_char } |
+    BooleanExpression: { b:vnus_boolean } |
+    StringExpression: { s:vnus_string } |
+    NullExpression: {} |
+    SizeofExpression: { t:type }
+    ;
+
+AccessExpression = expression +
+    VariableNameExpression: { name:VariableName, flags:varflags } |
+    SubscriptExpression: { array:expression, subscripts:expression } |
+    FieldExpression: { rec:expression, field:FieldName } |
+    TypeFieldExpression: { t:type, field:FieldName } |
+    ClassExpression: { t:type } |
+    SuperFieldExpression: { org:origin, field:FieldName } |
+    OuterSuperFieldExpression: { t:type, org:origin, field:FieldName } |
+    OuterThisExpression: { t:type }
+    ;
+
+SideEffectExpression = expression +
+    MethodInvocationExpression: {
+	invocation:MethodInvocation
+    } |
+    FieldInvocationExpression: {
+	var:expression,
+	field:MethodName,
+	parameters:[expression]
+    } |
+    TypeInvocationExpression: {
+	org:origin,
+	t:type,
+	field:MethodName,
+	parameters:[expression]
+    } |
+    SuperInvocationExpression: {
+	org:origin,
+	field:MethodName,
+	parameters:[expression]
+    } |
+    OuterSuperInvocationExpression: {
+	t:type,
+	org:origin,
+	field:MethodName,
+	parameters:[expression]
+    } |
+    AssignOpExpression: { left:expression, op:ASSIGN_OP, right:expression } |
+    PostIncrementExpression: { x:expression } |
+    PostDecrementExpression: { x:expression } |
+    PreIncrementExpression: { x:expression } |
+    PreDecrementExpression: { x:expression }
+    ;
+
+ConstructorExpression = expression +
+    ComplexExpression: { re:expression, im:expression } |
+    TypeExpression: { t:type } |
+    VectorExpression: { fields:[expression] } |
+    ArrayInitExpression: { t:type, elements:[expression] }
+    ;
+
+CreationExpression = expression +
+    || Representation of expressions such as 'new int[3,4]'.
+    NewArrayExpression: {
+	t:type,			|| Element type
+	sizes:[ActualDim],	|| Actual dimensions
+	initval:optexpression	|| initial value for each element
+    } |
+    || Representation of expressions such as 'new int[] { 1, 2, 3 }'
+    NewInitArrayExpression: { t:type, init:expression } |
+    NewClassExpression: {
+	outer:expression,	|| May be null for outer class.
+        cl:type,
+	parameters:[expression],
+	body:[statement]
+    } 
+    ;
+
+OperatorExpression = expression +
+    CastExpression: { t:type, x:expression } |
+    IfExpression: { cond:expression, thenval:expression, elseval:expression, org:origin } |
+    WhereExpression: { scope:ScopeName, defs:[statement], x:expression } |
+    UnopExpression: { optor:UNOP, operand:expression } |
+    BinopExpression: { left:expression, optor:BINOP, right:expression } |
+    ShortopExpression: { left:expression, optor:SHORTOP, right:expression } |
+    InstanceOfExpression: { x:expression, t:type } |
+    TypeInstanceOfExpression: { left:type, right:type }  |
+    GetBufExpression: { array:expression }
+    ;
+
+ArrayInfoExpression = expression +
+    GetSizeExpression: { array:expression, dim:expression } |
+    GetLengthExpression: { array:expression }
+    ;
+
+MiscellaneousExpression ~= expression +
+    AnnotationExpression: { pragmas:[Pragma], x:expression } |
+    BracketExpression: { x:expression }
+    ;
+
+|| A mapping of an unqualified type to a qualified type.
+TypeBinding == ( shortname:tmsymbol, longname:tmsymbol );

@@ -1,0 +1,18 @@
+// Minimal class in a subpackage.
+
+package spar.testsuite.subpack;
+
+public class hello {
+    public static int staticfield;
+    public static actor announcer = new actor();
+    private hello( int n ){ }
+    private static int nofield;
+    private static void nosay()
+    {
+	__println( 1, "Hello world from private method of subpackage??" );
+    }
+    public static void say()
+    {
+	__println( 1, "Hello world from subpackage" );
+    }
+}

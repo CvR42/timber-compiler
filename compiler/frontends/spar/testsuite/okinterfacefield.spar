@@ -1,0 +1,13 @@
+//package spar.testsuite;
+
+import java.io.*;
+
+interface Hello {
+    int N = 42;
+}
+
+public class okinterfacefield implements Hello {
+    public static void main(){
+	__println( 1, N );
+    }
+}

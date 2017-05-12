@@ -1,0 +1,250 @@
+.. File: isgc.ct
+..
+.. Tree analyzer to determine wethere the given statement may need
+.. the use of the garbage collector. Typically this is because it
+.. may need to 'new' something.
+..
+.set reduction_type bool
+.set neutral_element false
+.set analysis_name isgc
+..
+.macro generate_formal_parameters nm t
+.return "( const_Entry_list symtab, const_$t $(nm) )"
+.endmacro
+..
+.macro generate_actual_parameters nm should_type is_type
+.if ${eq $(should_type) $(is_type)}
+.return "( symtab, $(nm) )"
+.else
+.return "( symtab, (const_$(should_type)) $(nm) )"
+.endif
+.endmacro
+..
+.macro generate_reduction_operation a b
+.return "($a)||($b)"
+.endmacro
+..
+.. Generate a test expression that evaluates to true iff there is
+.. no point in continuing the analyzis.
+.macro generate_termination_test v
+.return "($v)"
+.endmacro
+..
+.macro generate_empty_analyzer_body indent t
+$(indent)(void) symtab;
+.endmacro
+..
+.macro generate_setup_code t indent elm res
+.if ${member ${metatype $t} list class constructor constructorbase}
+$(indent)if( $(elm) == $tNIL ){
+$(indent)$(indent)return $(neutral_element);
+$(indent)}
+.endif
+.endmacro
+..
+.. For which types are there actions defines?
+.set actors
+.append actors ${nonvirtual expression statement ${subclasses expression statement}}
+..
+.. Actions for all visited types
+.set analyze_action_FormalParameter_list ignore
+.set analyze_action_type ignore
+.set analyze_action_BooleanExpression constant false
+.set analyze_action_ByteExpression constant false
+.set analyze_action_CharExpression constant false
+.set analyze_action_ClassIdExpression constant false
+.set analyze_action_DefaultValueExpression constant false
+.set analyze_action_DoubleExpression constant false
+.set analyze_action_FloatExpression constant false
+.set analyze_action_IntExpression constant false
+.set analyze_action_LongExpression constant false
+.set analyze_action_NullExpression constant false
+.set analyze_action_OuterSuperFieldExpression constant false
+.set analyze_action_OuterThisExpression constant false
+.set analyze_action_ShortExpression constant false
+.set analyze_action_SizeofExpression constant false
+.set analyze_action_SuperFieldExpression constant false
+.set analyze_action_TypeExpression constant false
+.set analyze_action_TypeFieldExpression constant false
+.set analyze_action_TypeInstanceOfExpression constant false
+.set analyze_action_VariableNameExpression constant false
+.set analyze_action_InterfaceInstanceOfExpression reduction
+.set analyze_action_ClassInstanceOfExpression reduction
+.set analyze_action_GetLengthExpression reduction
+.set analyze_action_GetSizeExpression reduction
+.set analyze_action_GetBufExpression reduction
+.set analyze_action_InstanceOfExpression reduction
+.set analyze_action_ArrayInitExpression constant true
+.set analyze_action_AssignOpExpression constant true
+.set analyze_action_ClassExpression constant true
+.set analyze_action_ConstructorInvocationStatement constant true
+.set analyze_action_FieldInvocationExpression constant true
+.set analyze_action_NewArrayExpression constant true
+.set analyze_action_NewClassExpression constant true
+.set analyze_action_NewInitArrayExpression constant true
+.set analyze_action_NewInnerClassExpression constant true
+.set analyze_action_NewRecordExpression constant true
+.set analyze_action_OuterSuperInvocationExpression constant true
+.set analyze_action_TypeInvocationExpression constant true
+.set analyze_action_SuperInvocationExpression constant true
+.set analyze_action_MethodInvocationExpression reduction
+.set analyze_action_InternalizeExpression constant true
+.set analyze_action_CastExpression reduction
+.set analyze_action_AnnotationExpression reduction
+.set analyze_action_BracketExpression reduction
+.set analyze_action_ComplexExpression reduction
+.set analyze_action_IfExpression reduction
+.set analyze_action_UnopExpression reduction
+.set analyze_action_BinopExpression reduction
+.set analyze_action_ShortopExpression reduction
+.. TODO: have a better look
+.set analyze_action_WhereExpression constant true
+.. At the point we are looking at this, string init is already
+.. explicit. String constants themselves don't cause GC.
+.set analyze_action_StringExpression constant false
+.set analyze_action_VectorSubscriptExpression reduction
+.set analyze_action_FieldExpression reduction
+.set analyze_action_PreIncrementExpression reduction
+.set analyze_action_PreDecrementExpression reduction
+.set analyze_action_PostIncrementExpression reduction
+.set analyze_action_PostDecrementExpression reduction
+.set analyze_action_ForcedCastExpression reduction
+.. TODO: have a closer look
+.set analyze_action_TryStatement constant true
+.. TODO: have a closer look
+.set analyze_action_SimpleTryStatement constant true
+.set analyze_action_OuterSuperInvocationStatement constant true
+.set analyze_action_TypeInvocationStatement constant true
+.set analyze_action_FieldInvocationStatement constant true
+.set analyze_action_SuperConstructorInvocationStatement constant true
+.set analyze_action_SuperInvocationStatement constant true
+.set analyze_action_OuterSuperConstructorInvocationStatement constant true
+.set analyze_action_ThisConstructorInvocationStatement constant true
+.set analyze_action_StaticInitializer constant true
+.set analyze_action_MethodInvocationStatement reduction
+.set analyze_action_ValueReturnStatement reduction
+.set analyze_action_InternalThrowStatement reduction
+.set analyze_action_SynchronizedStatement reduction
+.set analyze_action_ThrowStatement reduction
+.set analyze_action_IfStatement reduction
+.set analyze_action_DoWhileStatement reduction
+.set analyze_action_WhileStatement reduction
+.. TODO: have a closer look.
+.set analyze_action_WaitStatement constant true
+.. TODO: have a closer look.
+.set analyze_action_SwitchStatement constant true
+.set analyze_action_ExpressionStatement reduction
+.set analyze_action_DeleteStatement reduction
+.set analyze_action_AssignStatement reduction
+.set analyze_action_FieldDeclaration reduction
+.set analyze_action_PrintStatement reduction
+.set analyze_action_PrintLineStatement reduction
+.set analyze_action_ForStatement reduction
+.set analyze_action_ForeachStatement reduction
+.. I could have a better look, but they are rewritten
+.. almost immediately anyway.
+.set analyze_action_ClassicForStatement constant true
+.set analyze_action_ClassDeclaration constant false
+.set analyze_action_InterfaceDeclaration constant false
+.set analyze_action_FunctionDeclaration constant false
+.set analyze_action_NativeFunctionDeclaration constant false
+.set analyze_action_AbstractFunctionDeclaration constant false
+.set analyze_action_GotoStatement constant false
+.set analyze_action_ReturnStatement constant false
+.set analyze_action_ConstructorDeclaration constant false
+.set analyze_action_EmptyStatement constant false
+.set analyze_action_BreakStatement constant false
+.set analyze_action_ContinueStatement constant false
+.set analyze_action_GCBuildRefChainLinkStatement constant false
+.set analyze_action_GCSetRefChainLinkStatement constant false
+.set analyze_action_GCSetTopRefChainLinkStatement constant false
+.set analyze_action_InstanceInitializer constant false
+.set analyze_action_BlockStatement reduction
+.set analyze_action_EachStatement reduction
+.set analyze_action_MethodInvocation function is_GC_invocation
+.set analyze_action_SubscriptExpression function is_GC_subscript
+.set analyze_action_NotNullAssertExpression function is_GC_notnullassert
+.set analyze_action_VectorExpression reduction
+..
+.insert tmcanalyze.t
+..
+.set visit_types ${call calc_analyzer "statement" "$(actors)"}
+..
+/* File: isgc.c
+ *
+ * Return true iff the given statement might cause garbage collection.
+ */
+
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "symbol_table.h"
+#include "pragma.h"
+#include "global.h"
+#include "isgc.h"
+
+.call generate_analyzer_forwards "$(visit_types)"
+
+// --------- user functions -----------------
+
+static bool is_GC_invocation( const_Entry_list symtab, const_MethodInvocation call )
+{
+    if( call->vtab != NULL ){
+	// this is a virtual call. For the moment we're not going to touch that.
+	return true;
+    }
+    const_MethodEntry e = lookup_MethodEntry( symtab, call->name->sym );
+    if( e == MethodEntryNIL ){
+	return true;
+    }
+    if( get_flag_pragma( Pragma_listNIL, e->pragmas, "noGC" ) ){
+	// The invoked method never causes a GC event, but the actual
+	// parameters still might ...
+	return isgc_expression_list( symtab, call->parameters ) ||
+	    isgc_expression_list( symtab, call->thisparameters );
+    }
+    return true;
+}
+
+static bool is_GC_subscript( const_Entry_list symtab, const_SubscriptExpression sub )
+{
+    bool res;
+
+    if( pref_no_boundscheck || !boundviolation_is_caught ){
+	res = $(analysis_name)_expression( symtab, sub->array ) ||
+	    $(analysis_name)_expression( symtab, sub->subscripts );
+    }
+    else {
+	res = true;	// Because of out-of-bounds exception
+    }
+    return res;
+}
+
+static bool is_GC_notnullassert( const_Entry_list symtab, const_NotNullAssertExpression x )
+{
+    bool res;
+
+    if( nullptr_is_caught ){
+	res = true;	// Because of null ptr exception
+    }
+    else {
+	// The assert doesn't require GC, but the subexpression might.
+	res = $(analysis_name)_expression( symtab, x->x );
+    }
+    return res;
+}
+
+// --------- end user functions -----------------
+
+.call generate_analyzer "$(visit_types)"
+
+bool is_GC_expression( const_Entry_list symtab, const_expression x )
+{
+    return $(analysis_name)_expression${call generate_actual_parameters x expression expression};
+}
+
+bool is_GC_statement( const_Entry_list symtab, const_statement x )
+{
+    return $(analysis_name)_statement${call generate_actual_parameters x statement statement};
+}

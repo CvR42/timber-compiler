@@ -1,0 +1,8 @@
+errmodifiers.spar:7: 'native' modifier not allowed for a class
+errmodifiers.spar:9: 'synchronized' modifier not allowed for a field
+errmodifiers.spar:13: only one of the modifiers `public', `protected', and `private' should be given
+public private class t1 extends t {
+               ^^^^^
+errmodifiers.spar:20: duplicate modifier
+public public class t2 extends t {
+       ^^^^^^

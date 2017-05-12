@@ -1,0 +1,21 @@
+// After JLS2 14.19.1    Execution of try-catch
+
+class BlewIt extends Exception {
+    BlewIt() { }
+    BlewIt(String s) { super(s); }
+}
+
+public class okjlsblewit {
+    static void blowUp() throws BlewIt { throw new BlewIt(); }
+    public static void main(String[] args) {
+	try {
+	    blowUp();
+	}
+	catch (RuntimeException r) {
+	    System.out.println( "RuntimeException:" + r );
+	}
+	catch (BlewIt b) {
+	    System.out.println( "BlewIt" );
+	}
+    }
+}

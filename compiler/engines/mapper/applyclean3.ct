@@ -1,0 +1,90 @@
+/*
+   Applyclean3 engine
+
+   If a SmtBlock contains no scope the statements it contains can be inserted
+   in the surrounding statement_list.
+   */
+
+.. File: applyclean3.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors statement_list
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "applyclean3.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+static statement_list rewrite_statement_list_action(
+    statement_list e, global_context gc )
+{
+.call generate_walker_call "    " e statement_list statement_list
+    for( unsigned i=0; i<e->sz; i++ ){
+	if (e->arr[i]->tag == TAGSmtBlock)
+	{
+	    SmtBlock b = to_SmtBlock(e->arr[i]);
+	    if (b->body == blockNIL ||
+		b->body->scope == tmsymbolNIL &&
+		(b->body->statements == statement_listNIL ||
+		 b->body->statements->sz == 0))
+	    {
+		e = delete_statement_list(e, i);
+		i--;
+		if (warning_level >= WARN_RULE)
+		    fprintf(stderr, "Applyclean3: removed empty SmtBlock\n");
+	    }
+	    else if ((b->pragmas == Pragma_listNIL ||
+		      b->pragmas->sz == 0) &&
+		     (b->on == OwnerExpr_listNIL ||
+		      b->on->sz == 0) &&
+		     b->body->scope == tmsymbolNIL &&
+		     (b->body->pragmas == Pragma_listNIL ||
+		      b->body->pragmas->sz == 0) &&
+		     (b->body->on == OwnerExpr_listNIL ||
+		      b->body->on->sz == 0))
+	    {
+		unsigned sz = b->body->statements->sz;
+		e->arr[i] = rdup_statement(b->body->statements->arr[sz-1]);
+		for (int j=sz-2; j>=0; j--)
+		    e = insert_statement_list(e, i, rdup_statement(b->body->statements->arr[j]));
+		i += sz-1;
+		rfre_statement(b);
+		if (warning_level >= WARN_RULE)
+		    fprintf(stderr, "Applyclean3: inserted non-empty SmtBlock\n");
+	    }
+	}
+    }
+    return e;
+}
+
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_clean3(
+    vnusprog elm, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+    
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}

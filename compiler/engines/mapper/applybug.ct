@@ -1,0 +1,103 @@
+/* Applybug test engine
+
+   Test what the heck is going on with deleting declarations.
+   DONE!
+   See the generated code. Most walkers pass the declaration_list node, because almost
+   everything is part of a declaration, as all functions and procedures are also part of
+   the declaration_list.
+   If something is deleted that is to the left of the declaration currently being visited,
+   the place where the result is to be put will have shifted to the left.
+   There is no clean solution for this.
+   Solution 1:
+     If something is to be replaced, replace it in place. This prevents the shifting problem.
+   Solution 2:
+     If something is to be deleted, put a NULL pointer there. This means that everything that
+     visits declaration_lists should be able to handle NULL pointers.
+     This would also require a call to a cleanup function that would compact the list by
+     removing all the NULL pointers. This call should be done when the walker is finished.
+   */
+
+.. File: applybug.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors DeclProcedure
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+
+.call generate_action_forwards "$(actors)"
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+static DeclProcedure rewrite_DeclProcedure_action(
+  DeclProcedure e, global_context gc )
+{
+#if 1
+    fprintf(stderr,"Suspect list:\n");
+    for (unsigned int i=0; i<gc->prog->declarations->sz; i++)
+        fprintf(stderr,"%s\n",gc->prog->declarations->arr[i]->name->sym->name);
+    fprintf(stderr,"Suspect list:END\n");
+    fprintf(stderr,"decllist sz:%d\n",gc->prog->declarations->sz);
+#endif
+#if 1
+//    for (unsigned i=0; i<gc->prog->declarations->sz; i++)
+    for (unsigned i=0; i<1; i++)
+    {
+        declaration keep = rdup_declaration(gc->prog->declarations->arr[i]);
+        gc->prog->declarations = delete_declaration_list(gc->prog->declarations,i);
+        gc->prog->declarations = append_declaration_list(gc->prog->declarations,keep);
+    }
+#endif
+#if 1
+    fprintf(stderr,"Suspect list:\n");
+    for (unsigned int i=0; i<gc->prog->declarations->sz; i++)
+        fprintf(stderr,"%s\n",gc->prog->declarations->arr[i]->name->sym->name);
+    fprintf(stderr,"Suspect list:END\n");
+    fprintf(stderr,"decllist sz:%d\n",gc->prog->declarations->sz);
+#endif
+.call push_current_parms
+.call set_current_parms
+.call generate_walker_call "    " e DeclProcedure DeclProcedure
+.call pop_current_parms
+    return e;
+}
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_bug( vnusprog elm, global_context gc )
+{
+#if 1
+    fprintf(stderr,"Suspect list:\n");
+    for (unsigned int i=0; i<gc->prog->declarations->sz; i++)
+        fprintf(stderr,"%s\n",gc->prog->declarations->arr[i]->name->sym->name);
+    fprintf(stderr,"Suspect list:END\n");
+    fprintf(stderr,"decllist sz:%d\n",gc->prog->declarations->sz);
+#endif
+.call init_current_parms
+.call generate_descent_call "    " elm vnusprog vnusprog
+#if 1
+    fprintf(stderr,"Suspect list:\n");
+    for (unsigned int i=0; i<gc->prog->declarations->sz; i++)
+        fprintf(stderr,"%s\n",gc->prog->declarations->arr[i]->name->sym->name);
+    fprintf(stderr,"Suspect list:END\n");
+    fprintf(stderr,"decllist sz:%d\n",gc->prog->declarations->sz);
+#endif
+    return elm;
+}
+

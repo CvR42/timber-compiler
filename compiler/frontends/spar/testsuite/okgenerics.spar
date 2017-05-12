@@ -1,0 +1,43 @@
+class t1 {
+    public static void hello() { __println( 1, "Hello from t1" ); }
+}
+
+class t2 {
+    public static void hello() { __println( 1, "Hello from t2" ); }
+}
+
+class GenericArray(|type e,int n|){
+    public GenericArray() {}
+    public static int val = n;
+    public static void hello() { e.hello(); }
+    public static void printn() { __println( 1, "n=", n ); }
+    public static void count() {
+	for( int n=0; n<8; n++ ){
+	    __print( 1, n, " " );
+	}
+	__println( 1 );
+    }
+}
+
+public class okgenerics {
+    public static void main(){
+	GenericArray(|type t1,0|).hello();
+	GenericArray(|type t2,2|).hello();
+	GenericArray(|type t1,0|).printn();
+	GenericArray(|type t2,8|).printn();
+	GenericArray(|type t2,8|).count();
+	__println( 1, GenericArray(|type t1,0|).val );
+	__println( 1, GenericArray(|type t2,8|).val );
+
+	GenericArray(|type t1,3|) a = new GenericArray(|type t1,3|)(); 
+	GenericArray(|type t2,5|) b = new GenericArray(|type t2,5|)(); 
+
+	a.hello();
+	b.hello();
+	a.printn();
+	b.printn();
+	a.count();
+	__println( 1, a.val );
+	__println( 1, b.val );
+    }
+}

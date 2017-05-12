@@ -1,0 +1,14 @@
+// Minimal test program.
+
+globalpragmas <$boundscheck=false$>;
+
+package spar.testsuite;
+
+public class hello 
+{
+    public static void main()
+        {
+	    System.out.println("Hello world\n");
+        }
+}
+

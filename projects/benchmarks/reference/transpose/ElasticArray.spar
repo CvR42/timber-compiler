@@ -1,0 +1,27 @@
+package transpose;
+
+public final class ElasticArray(|type T,int n|)
+{
+  private T arr[*^n];
+  public ElasticArray([int^n] sz){
+    arr = new T@sz;
+  }
+  public inline T getElement([int^n] ix){
+    return arr@ix;
+  }
+  public inline void setElement([int^n] ix,T val){
+    arr@ix = val;
+  }
+  void setSize([int^n] sz){
+    T newarr[*^n] = new T@sz;
+    [int^n] oldsz = arr.getSize();
+
+    [int^n] overlap;
+    inline for( i :- 0:n )
+      overlap[i] = Math.min( oldsz[i], sz[i] );
+    for( v :- 0:overlap )
+      newarr@v = arr@v;
+    arr = newarr;
+  }
+}
+

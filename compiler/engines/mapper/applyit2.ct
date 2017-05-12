@@ -1,0 +1,223 @@
+/*
+   Applyit2 engine
+
+   Insert temporaries for shape references found in if stmt conditions.
+   ALSO: while(it3) and do...while statements
+   */
+
+.. File: applyit2.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors ExprSelection statement_list block SmtIf SmtWhile SmtDoWhile
+.append actors expression
+..append actors SmtForeach
+.append actors ExprWrapper LocWrapper statement RoutineDeclaration
+.append actors LocNotNullAssert ExprNotNullAssert
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "vnusctl.h"
+#include "applyit2.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+.call generate_cutoff_pragma_action SmtForeach reduction
+.call generate_cutoff_pragma_action ExprWrapper resident
+.call generate_cutoff_pragma_action LocWrapper resident
+.call generate_cutoff_pragma_action statement resident
+.call generate_cutoff_pragma_action RoutineDeclaration resident   
+.call generate_admin_prelst_action statement_list
+.call generate_cutoff_dummy_action LocNotNullAssert
+.call generate_cutoff_dummy_action ExprNotNullAssert
+
+/*
+  Only go deeper if necessary
+  This is an optimisation, otherwise all expressions up to all depths
+  would be visited.
+  */
+static expression rewrite_expression_action(
+  expression e, global_context gc )
+{
+    if (!gc->add_to_prelst)
+        return e;
+    
+.call generate_walker_call "    " e expression expression
+
+    return e;
+}
+
+/*
+  Replace reference to shape with a temporary and insert assignment
+  to temporary just before statement the reference occurred in.
+  The temporary is declared inside the current scope.
+  */
+static expression rewrite_ExprSelection_action(
+    ExprSelection elm, global_context gc )
+{
+.call generate_walker_call "    " elm ExprSelection ExprSelection
+    
+#if 0
+    if (elm->shape->tag != TAGExprName) // This necessary?
+        return elm;
+#endif
+    
+.call conditional_init_scope
+.call conditional_init_prelst
+    type t = derive_type_expression(
+        gc->prog->declarations,
+        0, /*origin*/
+        elm);
+    DeclLocalVariable nld = new_DeclLocalVariable(
+        gen_origsymbol("__tmp_it2_"),
+        0,
+        new_Pragma_list(),
+        rdup_tmsymbol(gc->scope),
+        t,
+        new_OptExprNone());
+    SmtAssign nsa = new_SmtAssign(
+        0,
+        gen_origin(),
+        new_Pragma_list(),
+        new_OwnerExpr_list(),
+        new_LocName(
+            rdup_origsymbol(nld->name)),
+        elm);
+    FlagPragma np = new_FlagPragma(add_origsymbol("communication"));
+    nsa->pragmas = append_Pragma_list(nsa->pragmas, np);
+    ExprName nen = new_ExprName(
+        rdup_origsymbol(nld->name));
+    gc->prog->declarations = append_declaration_list(
+        gc->prog->declarations, nld);
+    gc->prelst = append_statement_list(gc->prelst, nsa);
+    return nen;
+}
+
+/*
+  When entering a new block save the previous scope and replace it with
+  the current scope.
+  If the current scope has no name and a temporary was created, the scope
+  got named as well, and this name has to be set.
+  */
+static block rewrite_block_action(
+  block e, global_context gc )
+{
+    if( e == 0 ){
+        return e;
+    }
+.call generate_cutoff_pragma_stmt resident
+.call push_scope    
+.call generate_walker_call "    " e block block
+// If something was done a scope was created, so scope has to be set.
+.call conditional_set_scope e->scope
+.call pop_scope
+    return e;
+}
+
+/*
+  Process the condition
+  Has to be put just before if statement
+  Use gc->add_to_prelst to indicate that only expressions reached from
+  here have to be processed.
+  */
+static SmtIf rewrite_SmtIf_action(
+  SmtIf e, global_context gc )
+{
+.call generate_descent_call "    " e->thenbody block block
+.call generate_descent_call "    " e->elsebody block block
+
+.call push_add_to_prelst
+    gc->add_to_prelst = true;
+    
+.call generate_descent_call "    " e->cond expression expression
+
+.call pop_add_to_prelst
+    return e;
+}
+
+/*
+  Process the condition
+  Has to be put just before while statement and at end of while body
+  */
+static SmtWhile rewrite_SmtWhile_action(
+  SmtWhile e, global_context gc )
+{
+.call generate_descent_call "    " e->body block block
+
+.call push_add_to_prelst
+    gc->add_to_prelst = true;
+    
+.call generate_descent_call "    " e->cond expression expression
+    if (gc->prelst != NULL) 
+    {
+        e->body->statements = concat_statement_list(
+            e->body->statements,
+            rdup_statement_list(gc->prelst));
+    }
+.call pop_add_to_prelst
+    return e;
+}
+
+/*
+  Process the condition
+  Has to be put at end of while body
+  */
+static SmtDoWhile rewrite_SmtDoWhile_action(
+  SmtDoWhile e, global_context gc )
+{
+.call generate_descent_call "    " e->body block block
+
+.call push_add_to_prelst
+    gc->add_to_prelst = true;
+    
+.call generate_descent_call "    " e->cond expression expression
+    if (gc->prelst != NULL)
+    {
+        e->body->statements = concat_statement_list(
+            e->body->statements,
+            gc->prelst);
+    }
+    gc->prelst = 0;
+    
+.call pop_add_to_prelst
+
+    return e;
+}
+
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_it2(
+    vnusprog elm, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+    (void) rewrite_SmtWhile_walker;
+    (void) rewrite_SmtDoWhile_walker;
+    (void) rewrite_SmtIf_walker;
+    (void) rewrite_statement_list_walker;
+    (void) rewrite_ExprNotNullAssert_walker;
+    (void) rewrite_LocNotNullAssert_walker;
+
+.call init_scope
+.call init_prelst
+.call init_add_to_prelst
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}

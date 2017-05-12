@@ -1,0 +1,14 @@
+package spar.testsuite;
+
+class t {
+    t() { __println( 1, "hello from constructor" ); }
+    static void t() { __println( 1, "hello from method" ); }
+}
+
+public class okcons {
+    public static void main()
+    {
+	t x = new t();
+	t.t();
+    }
+}

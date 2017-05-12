@@ -1,0 +1,16 @@
+// After JLS2 7.6    Top Level Type Declarations
+
+
+package test;
+import java.util.Vector;
+class Point {
+    int x, y;
+}
+class Vector { Point[] pts; }        // compile-time error #2
+
+public class errjlsonames1 {
+    public static void main(){
+	Vector v = null;
+	Point p = null;
+    }
+}

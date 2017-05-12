@@ -1,0 +1,221 @@
+/*
+   Applyit1 engine
+
+   Insert temporaries for shape references found in assignment statements.
+   */
+
+.. File: applyit1.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors ExprSelection statement_list block SmtAssign
+.append actors expression
+..append actors SmtForeach
+.append actors ExprWrapper LocWrapper statement RoutineDeclaration
+.append actors LocNotNullAssert ExprNotNullAssert
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "vnusctl.h"
+#include "applyit1.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+.call generate_cutoff_pragma_action SmtForeach reduction
+.call generate_cutoff_pragma_action ExprWrapper resident
+.call generate_cutoff_pragma_action LocWrapper resident
+.call generate_cutoff_pragma_action statement resident
+.call generate_cutoff_pragma_action RoutineDeclaration resident
+.call generate_admin_prelst_action statement_list
+.call generate_cutoff_dummy_action LocNotNullAssert
+.call generate_cutoff_dummy_action ExprNotNullAssert
+
+/*
+  Only go deeper if necessary
+  This is an optimisation, otherwise all expressions up to all depths
+  would be visited.
+  */
+static expression rewrite_expression_action(
+  expression e, global_context gc )
+{
+    if (!gc->add_to_prelst)
+        return e;
+    
+.call generate_walker_call "    " e expression expression
+
+    return e;
+}
+
+/*
+  If a shape is referenced inside an assignment statement,
+  replace that shape with a temporary, and assign that shape to the
+  temporary just before the assignment statement the reference occurred in.
+  */
+static expression rewrite_ExprSelection_action(
+    ExprSelection e, global_context gc )
+{
+    assert(gc->current_ass != NULL);
+
+.call push_is_indirection
+    gc->is_indirection = true;
+.call generate_walker_call "    " e ExprSelection ExprSelection
+.call pop_is_indirection
+    
+#if 0
+    if (e->shape->tag != TAGExprName) // This necessary?
+        return e;
+#endif
+
+.call conditional_init_scope
+.call conditional_init_prelst
+    location lhs = locationNIL;
+    expression ret = expressionNIL;
+    int isStencil = pragma_list_contains_tmsymbol(
+	gc->current_ass->pragmas,
+	add_tmsymbol("isStencil"));
+    if (isStencil)
+    {
+	lhs = expression_to_location(e);
+	ret = rdup_expression(e);
+    }
+    else
+    {
+	type t = derive_type_expression(
+	    gc->prog->declarations,
+	    0, /*origin*/
+	    e);
+	DeclLocalVariable nld = new_DeclLocalVariable(
+	    gen_origsymbol("__tmp_it1_"),
+	    0,
+	    new_Pragma_list(),
+	    rdup_tmsymbol(gc->scope),
+	    t,
+	    new_OptExprNone());
+	gc->prog->declarations = append_declaration_list(
+	    gc->prog->declarations, nld);
+	lhs = new_LocName(
+	    rdup_origsymbol(nld->name));
+	if (! gc->is_indirection)
+	{
+	    FlagPragma np2 = new_FlagPragma(add_origsymbol("isTempo"));
+	    nld->pragmas = append_Pragma_list(nld->pragmas, np2);
+	}
+	ret = new_ExprName(
+	    rdup_origsymbol(nld->name));
+    }
+    SmtAssign nsa = new_SmtAssign(
+        0,
+        gen_origin(),
+        new_Pragma_list(),
+        new_OwnerExpr_list(),
+	lhs,
+        e);
+    FlagPragma np = new_FlagPragma(add_origsymbol("communication"));
+    nsa->pragmas = append_Pragma_list(nsa->pragmas, np);
+    if (isStencil)
+    {
+	np = new_FlagPragma(add_origsymbol("isAssignToSelf"));
+	nsa->pragmas = append_Pragma_list(nsa->pragmas, np);
+    }
+    gc->prelst = append_statement_list(gc->prelst, nsa);
+    if (! gc->is_indirection)
+    {
+        NewDistAlign noo = new_NewDistAlign(rdup_location(gc->current_ass->lhs));
+        DistrExpr_list ndel = new_DistrExpr_list();
+        ndel = append_DistrExpr_list(ndel, noo);
+#if 0
+        nld->t = new_TypeMap(
+            new_NewOwnLocation(expressionNIL,ndel),
+            nld->t);
+#endif
+	OwnerExpr_list noel = new_OwnerExpr_list();
+	noel = append_OwnerExpr_list(
+	    noel,
+	    new_NewOwnLocation(expressionNIL,ndel));
+	nsa->lhs = new_LocWrapper(
+	    Pragma_listNIL,
+	    noel,
+	    nsa->lhs);
+    }
+    return ret;
+}
+
+/*
+  Only rhs should be done, not lhs!
+  And rhs should only be done for computation assignments.
+  */
+static SmtAssign rewrite_SmtAssign_action(
+  SmtAssign e, global_context gc )
+{
+.call generate_cutoff_pragma_stmt communication
+.call generate_descent_call "    " e->lhs location location
+
+.call push_add_to_prelst
+    gc->add_to_prelst = pragma_list_contains_tmsymbol(
+        e->pragmas, add_tmsymbol("computation"));
+.call push_current_ass
+    gc->current_ass = e;
+    
+.call generate_descent_call "    " e->rhs expression expression
+
+.call pop_current_ass
+.call pop_add_to_prelst
+    return e;
+}
+
+
+/*
+  Save the previou scope and replace with current scope.
+  If current scope has no name and a variable is created, then the scope
+  gets a name and this name has to be set.
+  */
+static block rewrite_block_action(
+  block e, global_context gc )
+{
+    if( e == 0 ){
+        return e;
+    }
+.call generate_cutoff_pragma_stmt resident
+.call push_scope
+.call generate_walker_call "    " e block block
+// If something was done a scope was created, so scope has to be set.
+.call conditional_set_scope e->scope
+.call pop_scope
+    return e;
+}
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_it1(
+    vnusprog e, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+    (void) rewrite_statement_list_walker;
+    (void) rewrite_SmtAssign_walker;
+    (void) rewrite_ExprNotNullAssert_walker;
+    (void) rewrite_LocNotNullAssert_walker;
+
+.call init_scope
+.call init_prelst
+.call init_add_to_prelst
+.call init_current_ass
+.call init_is_indirection
+.call generate_descent_call "    " e vnusprog vnusprog
+    return e;
+}

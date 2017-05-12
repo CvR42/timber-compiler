@@ -1,0 +1,352 @@
+.. File: noreturn.ct
+..
+.. Replace a return statement with a goto to a label.
+..
+.. This is used in macro expansion.
+..
+.. Return 'walk' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the datastructure we're walking on, and a type 't', of that variable,
+.. generate a return statement/
+.macro generate_walker_return indent var t
+$(indent)return $(var);
+.endmacro
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+.if ${member ${stemname $t} ${typelist}}
+$(indent)if( $(var) == 0 ){
+$(indent)    return $(var);
+$(indent)}
+.endif
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+static $t noreturn_$t_walker( $t $(var), noreturn_data *ctx )
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we're walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+static $t noreturn_$t_walker( $t $(var), noreturn_data *ctx );
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) noreturn_$(type)_action( $(var), ctx );
+.else
+$(indent)$(var) = ($(type)) noreturn_$(type)_action( to_$(type)( $(var) ), ctx);
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) noreturn_$(type)_walker( $(var), ctx );
+.else
+$(indent)$(var) = ($(type)) noreturn_$(type)_walker( to_$(type)( $(var) ), ctx );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var', and a type 'type', generate
+.. the body of an empty walker function.
+.macro generate_empty_walker_body indent var type
+$(indent)(void) ctx;
+.endmacro
+..
+.. For which types are there actions defines?
+.. Currently we're naive, and assume only VariableNames and TypeNames
+.. are affected. No doubt this overlooks something
+.set actors
+.append actors statement_list
+.append actors ControlStatement
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "Block" "$(actors)"}
+..
+// ->->-> This is a GENERATED FILE <-<-<-
+
+/* File: noreturn.c
+ *
+ * Replace a return with a goto.
+ */
+
+#include <string.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "symbol_table.h"
+#include "typederive.h"
+#include "service.h"
+#include "error.h"
+#include "typename.h"
+#include "exprname.h"
+
+typedef struct str_noreturn_data {
+    const_origin org;
+    tmsymbol label;	// The label of the 'goto' that replaces return
+    tmsymbol retvar;	// The variable that holds the return value
+    bool toplevel;	// Are we in the top level stmt list?
+    bool reach_end;	// The last statement in this block will be able to reach the end 
+} noreturn_data;
+
+.call generate_walker_forwards "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+/* -------- actors ---------- */
+
+/* Action for type ControlStatement. */
+static ControlStatement noreturn_ControlStatement_action(
+ ControlStatement l,
+ noreturn_data *ctx
+)
+{
+    if( l == ControlStatementNIL ){
+	return l;
+    }
+    bool old_reach_end = ctx->reach_end;
+    if(
+	l->tag == TAGIfStatement ||
+	l->tag == TAGBlockStatement ||
+	l->tag == TAGSwitchStatement
+    ){
+	ctx->reach_end = old_reach_end;
+    }
+    else {
+	ctx->reach_end = false;
+    }
+.call generate_walker_call "    " l ControlStatement ControlStatement
+    ctx->reach_end = old_reach_end;
+    return l;
+}
+
+// Given a statement, return true iff it control will never reach the
+// statement after this one.
+static bool is_terminal_statement( const_statement smt )
+{
+    if( smt == statementNIL ){
+        return false;
+    }
+    return
+	smt->tag == TAGGotoStatement ||
+	smt->tag == TAGBreakStatement ||
+	smt->tag == TAGContinueStatement ||
+	smt->tag == TAGReturnStatement ||
+	smt->tag == TAGValueReturnStatement ||
+	smt->tag == TAGThrowStatement;
+}
+
+// Action for Parallelization is not necessary.
+// Action for TryStatement is not necessary.
+
+/* Action for type statement_list. */
+static statement_list noreturn_statement_list_action(
+ statement_list l,
+ noreturn_data *ctx
+)
+{
+    if( l == statement_listNIL ){
+	return l;
+    }
+    unsigned int ix=0;
+    bool oldtoplevel = ctx->toplevel;
+    ctx->toplevel = false;
+    bool old_reach_end = ctx->reach_end;
+
+    (void) noreturn_statement_list_walker;
+    ctx->reach_end = false;
+    while( ix<l->sz ){
+	statement smt = l->arr[ix];
+	GotoStatement goto_smt = GotoStatementNIL;
+	if( is_terminal_statement( smt ) ){
+	    // Zap all statements after this statement until the first
+	    // labeled one, since they won't be reached anyway.
+	    while( ix+1<l->sz && !is_labeled_statement( l->arr[ix+1] ) ){
+		l = delete_statement_list( l, ix+1 );
+	    }
+	}
+	if( ix+1>=l->sz ){
+	    ctx->reach_end = old_reach_end;
+	}
+.call generate_walker_call "	" smt statement statement
+	if( smt == statementNIL ){
+	    ix++;
+	    continue;
+	}
+	if( smt->tag == TAGBlockStatement ){
+	    BlockStatement bsmt = to_BlockStatement( smt );
+	    Block body = bsmt->body;
+	    statement_list bsl = body->statements;
+	    if(
+		(bsmt->pragmas == Pragma_listNIL || smt->pragmas->sz == 0) &&
+		(bsmt->labels == origsymbol_listNIL || smt->labels->sz == 0) &&
+		body->scope == tmsymbolNIL &&
+		(bsl->sz == 0 || !is_declaration( bsl->arr[0] ))
+	    ){
+		// We might as well inline this block.
+		// Make sure 'bsl' is not deleted when the block
+		// statement is deleted.
+		body->statements = statement_listNIL;
+		l = delete_statement_list( l, ix );
+		// We now have the 'bsl' left from the block statement.
+		l = insertlist_statement_list( l, ix, bsl );
+		continue;
+	    }
+	}
+	if( smt->tag == TAGReturnStatement ){
+	    if( !ctx->reach_end ){
+		if( ctx->label == tmsymbolNIL ){
+		    ctx->label = gen_tmsymbol( "return" );
+		}
+		goto_smt = new_GotoStatement(
+		    rdup_origin( smt->org ),
+		    rdup_Pragma_list( smt->pragmas ),
+		    rdup_origsymbol_list( smt->labels ),
+		    new_origsymbol( ctx->label, rdup_origin( smt->org ) )
+		);
+	    }
+	    // Zap the return statement and everything behind it
+	    l = delete_statement_list( l, ix );
+	    // Zap all statements after this statement until the first
+	    // labeled one, since they won't be reached anyway.
+	    while( ix<l->sz && !is_labeled_statement( l->arr[ix] ) ){
+		l = delete_statement_list( l, ix );
+	    }
+	    if( goto_smt != statementNIL ){
+		l = insert_statement_list( l, ix, goto_smt );
+	    }
+	}
+
+	if( smt->tag == TAGValueReturnStatement ){
+	    if( !ctx->reach_end ){
+		if( ctx->label == tmsymbolNIL ){
+		    ctx->label = gen_tmsymbol( "return" );
+		}
+		goto_smt = new_GotoStatement(
+		    rdup_origin( smt->org ),
+		    rdup_Pragma_list( smt->pragmas ),
+		    rdup_origsymbol_list( smt->labels ),
+		    new_origsymbol( ctx->label, rdup_origin( smt->org ) )
+		);
+	    }
+	    ValueReturnStatement vr = to_ValueReturnStatement( smt );
+	    if( ctx->retvar == tmsymbolNIL ){
+		expression retval = vr->v;
+		vr->v = expressionNIL;
+		l = insert_statement_list(
+		    l,
+		    ix,
+		    new_ExpressionStatement(
+			rdup_origin( smt->org ),
+			rdup_Pragma_list( smt->pragmas ),
+			rdup_origsymbol_list( smt->labels ),
+			retval
+		    )
+		);
+		ix++;
+	    }
+	    else {
+		expression retval = vr->v;
+		vr->v = expressionNIL;
+		l = insert_statement_list(
+		    l,
+		    ix,
+		    new_AssignStatement(
+			rdup_origin( smt->org ),
+			rdup_Pragma_list( smt->pragmas ),
+			rdup_origsymbol_list( smt->labels ),
+			ASSIGN,
+			new_VariableNameExpression( add_origsymbol( ctx->retvar ), 0 ),
+			retval
+		    )
+		);
+		ix++;
+	    }
+	    // Zap the return statement and everything behind it
+	    l = delete_statement_list( l, ix );
+	    // Zap all statements after this statement until the first
+	    // labeled one, since they won't be reached anyway.
+	    while( ix<l->sz && !is_labeled_statement( l->arr[ix] ) ){
+		l = delete_statement_list( l, ix );
+	    }
+	    if( goto_smt != statementNIL ){
+		l = insert_statement_list( l, ix, goto_smt );
+	    }
+	}
+	ix++;
+    }
+    ctx->reach_end = old_reach_end;
+    ctx->toplevel = oldtoplevel;
+    return l;
+}
+
+/* -------- End of action functions ---------- */
+
+.call generate_walker "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+/* Given a type declaration, substitute all given parameters. */
+Block noreturn_Block(
+ const_origin org,
+ Block blk,
+ tmsymbol retvar
+)
+{
+    noreturn_data the_ctx;
+    noreturn_data *ctx = &the_ctx;
+    the_ctx.org = org;
+    the_ctx.toplevel = true;
+    the_ctx.label = tmsymbolNIL;
+    the_ctx.retvar = retvar;
+    the_ctx.reach_end = true;
+
+.call generate_descent_call "    " blk Block Block
+    if( the_ctx.label != tmsymbolNIL ){
+	origsymbol lbl = new_origsymbol( the_ctx.label, gen_origin() );
+	origsymbol_list labels = new_origsymbol_list();
+	labels = append_origsymbol_list( labels, lbl );
+	// A jump has been inserted somewhere, so insert the label.
+	EmptyStatement label_smt = new_EmptyStatement(
+	    gen_origin(),
+	    Pragma_listNIL,
+	    labels
+	);
+	blk->statements = append_statement_list(
+	    blk->statements,
+	    label_smt
+	);
+    }
+    return blk;
+}

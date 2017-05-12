@@ -1,0 +1,36 @@
+// Test things you can do wrong wiht superclass method invocation.
+
+package spar.testsuite;
+
+class t1 {
+    static void hello() {
+	__println( 1, "Hi from t1 static method!" );
+    }
+    void dyna_hello() {
+	__println( 1, "Hi from t1 method!" );
+    }
+    int n;
+}
+
+class t extends t1 {
+    static void hello() {
+	super.hello();
+	__println( 1, "Hi from t static method!" );
+    }
+    static void dyna_hello1() {
+	super.dyna_hello();
+	__println( 1, "Hi from t method!" );
+    }
+    int n;
+}
+
+public class errsupermethod {
+    public static void main()
+    {
+	t x = new t();
+	t.hello();
+	x.dyna_hello();
+	t.dyna_hello1();
+	super.hello();		// What superclass
+    }
+}

@@ -1,0 +1,22 @@
+// Test 'this' constructor invocation
+
+package spar.testsuite;
+
+class t {
+    t() {
+	__println( 1, "Hi from t constructor!" );
+    }
+    t( int n ) {
+	this();
+	__println( 1, "Hi from t parameterized constructor!" );
+	this.n = n;
+    }
+    int n;
+}
+
+public class okthiscons {
+    public static void main()
+    {
+	t x = new t( 1 );
+    }
+}

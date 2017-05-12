@@ -1,0 +1,13 @@
+
+public final class oknastyshortand {
+    public static void main(){
+	int a[] = null;
+
+	if( a != null && a[0] != 0 ){
+	    __println( 1, "Yep" );
+	}
+	else {
+	    __println( 1, "Nope" );
+	}
+    }
+}

@@ -1,0 +1,35 @@
+// Test the enforcement of restrictions on modifiers.
+
+package spar.testsuite;
+
+
+// A native class??
+native class t {
+    public int x;
+    synchronized public int y;
+}
+
+// 'public' 'private' is an oxymoron
+public private class t1 extends t {
+    public int y;
+    static public int z;
+    int test( int a ) {}
+}
+
+// 'public' 'public' ??
+public public class t2 extends t {
+    public int y;
+    static public int z;
+}
+
+
+public  class t3 extends t {
+    public int y;
+    static public int z;
+}
+
+public class errmodifiers {
+    public static void main(){
+	t1 x = new t1();
+    }
+}

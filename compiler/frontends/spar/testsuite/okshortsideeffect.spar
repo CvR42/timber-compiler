@@ -1,0 +1,39 @@
+// File: okshortsideeffect.spar
+//
+// This once caused a problem with the evaluation of side-effect expressions.
+
+import java.io.File;
+import java.io.FileInputStream;
+
+public class okshortsideeffect {
+    int n = 3;
+    void pr( okshortsideeffect x, okshortsideeffect val )
+    {
+        if( x != null && x.n <= val.n ){
+	    __println( 1, "Yup" );
+	}
+	else {
+	    __println( 1, "Nope" );
+	}
+    }
+    public static void main( String args[] )
+    {
+	okshortsideeffect x = new okshortsideeffect();
+	okshortsideeffect val = new okshortsideeffect();
+	t1 x1 = new t1();
+        x.pr( x, val );
+	x.pr( null, val );
+    }
+}
+
+class t1 extends okshortsideeffect {
+    void pr( okshortsideeffect x, okshortsideeffect val )
+    {
+        if( x != null && x.n < val.n ){
+	    __println( 1, "Yup" );
+	}
+	else {
+	    __println( 1, "Nope" );
+	}
+    }
+}

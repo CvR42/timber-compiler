@@ -1,0 +1,3 @@
+errdoubleformal.spar:1: duplicate formal parameter: 'n'
+errdoubleformal.spar:10: duplicate formal parameter: 'x'
+errdoubleformal.spar:8: duplicate formal parameter: 'y'

@@ -1,0 +1,13 @@
+// After JLS 6.4.4    The Members of an Array Type
+//
+// Currently does not compile since getClass() is not supported on arrays.
+
+
+public class okjlsamem {
+    public static void main() {
+        int[] ia = new int[3];
+        int[] ib = new int[6];
+        __println(1,ia.getClass() == ib.getClass());
+        __println(1,"ia has length=",ia.length);
+    }
+}

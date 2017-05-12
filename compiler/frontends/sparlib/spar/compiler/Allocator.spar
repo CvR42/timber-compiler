@@ -1,0 +1,13 @@
+// File: Allocator.spar
+
+package spar.compiler;
+
+final public class Allocator
+{
+    private Allocator() { /* this class is not instantiable by the general public */ }    
+
+    protected static native __array(byte) allocate( int nelm, int sz );
+    protected static native __array(byte) reallocate( __array(byte) a, int nelm, int sz );
+    <$ noGC $> protected static native void free( __array(byte) a );
+    <$ noGC $> protected static native void elementcopy( __array(byte) to, __array(byte) from, int nelm, int sz );
+}

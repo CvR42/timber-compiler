@@ -1,0 +1,11 @@
+// Tests the implementation of Double.valueOf, and the underlying
+// native methods that implement it.
+
+public class okvalueof1 {
+    public static void main( String args[] ){
+        Double n = Double.valueOf( "1.2" );
+
+	__println( 1, n.doubleValue() );
+
+    }
+}

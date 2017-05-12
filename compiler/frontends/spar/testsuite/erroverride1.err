@@ -1,0 +1,1 @@
+erroverride1.spar:12: method bla() in t1 cannot be overridden by a private method

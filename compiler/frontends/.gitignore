@@ -1,0 +1,6 @@
+dist.lst
+configure
+config.log
+config.cache
+config.status
+Makefile

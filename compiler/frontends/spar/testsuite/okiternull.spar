@@ -1,0 +1,22 @@
+// A tricky one for our optimizer. The statement a = null
+// will foul up a naive analyzer that doesn't take iterations into
+// account.
+
+public class okiternull {
+    public static void main(){
+	int a[] = new int[] { 1, 2, 3 };
+
+	try {
+	    for( int i=0; i<2; i++ ){
+		a[i] = 2;
+		a = null;
+		System.out.println( "i="+i );
+	    }
+	}
+	catch( Exception e ){
+	    System.out.println( "Exception: " + e );
+	}
+	System.out.println( "Bye!" );
+
+    }
+}

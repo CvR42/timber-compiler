@@ -1,0 +1,459 @@
+.. File: rewrite.ct
+..
+.. Variable name mangling
+..
+.. Return 'walk' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the datastructure we're walking on, and a type 't', of that variable,
+.. generate a return statement/
+.macro generate_walker_return indent var t
+$(indent)return $(var);
+.endmacro
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+.if ${member ${stemname $t} ${typelist}}
+$(indent)if( $(var) == 0 ){
+$(indent)    return $(var);
+$(indent)}
+.endif
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+static $t rewrite_$t_walker( $t $(var) )
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we're walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+static $t rewrite_$t_walker( $t $(var) );
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) rewrite_$(type)_action( $(var) );
+.else
+$(indent)$(var) = ($(type)) rewrite_$(type)_action( to_$(type)( $(var) ) );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) rewrite_$(type)_walker( $(var) );
+.else
+$(indent)$(var) = ($(type)) rewrite_$(type)_walker( to_$(type)( $(var) ) );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.endmacro
+..
+.. For which types are there actions defines?
+.set actors ExprFunctionCall cardinality SizeExpression DistLocal DistBC
+.append actors ExprBinop ExprGetSize ExprSelection ExprGetBlocksize
+.append actors ExprIsOwner ExprIf IfStatement WhileStatement
+.append actors AssignStatement SendStatement ReceiveStatement
+.append actors BlockSendStatement ReceiveStatement SetRoomStatement
+.append actors ProcedureCallStatement ExprPragma ExprComplex
+.append actors VDeclGlobalVariable VDeclLocalVariable
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+/* File: rewrite.c
+ *
+ * Traverse the parse tree and rewrite all statements that are
+ * too powerful for the backend into simpler equivalents.
+ */
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "vnus_types.h"
+#include "global.h"
+#include "tmadmin.h"
+#include "symbol_table.h"
+#include "typederive.h"
+#include "rewrite.h"
+
+.foreach t ${aliases}
+typedef ${alias $t} $t;
+.endforeach
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* Given an expression 'x' and a desired basetype 't', return a new
+ * expression that may contain a cast to convert to the desired type.
+ */
+static expression force_expression_basetype( const expression x, const BASETYPE t )
+{
+    const type actt = derive_type_expression( x );
+    expression ans;
+
+    if( actt->tag == TAGTypeBase && to_TypeBase(actt)->base == t ){
+	ans = x;
+    }
+    else {
+	ans = new_ExprCast( new_TypeBase( t ), x );
+    }
+    rfre_type( actt );
+    return ans;
+}
+
+/* Given an expression 'x' and a desired type 't', return a new
+ * expression that may contain a cast to convert to the desired type.
+ */
+static expression force_expression_type( const expression x, const type t )
+{
+    const type actt = derive_type_expression( x );
+    expression ans;
+
+    if( is_equivalent_type( t, actt ) ){
+	ans = x;
+    }
+    else {
+	ans = new_ExprCast( rdup_type( t ), x );
+    }
+    rfre_type( actt );
+    return ans;
+}
+
+/* Given an expression 'x' and a desired type 't', return a new
+ * expression that may contain a cast to convert to the desired type.
+ */
+static optexpression force_optexpression_type( optexpression x, const type t )
+{
+    switch( x->tag ){
+	case TAGOptExprNone:
+	    break;
+
+	case TAGOptExpr:
+	    to_OptExpr(x)->x = force_expression_type( to_OptExpr(x)->x, t );
+    }
+    return x;
+}
+
+/* Given a list of expressions representing actual parameters, and given
+ * a list of formal parameters, rewrite the actual parameters to the
+ * final form for output.
+ */
+static expression_list force_actualparameter_list(
+ expression_list l,
+ const type_list fl
+)
+{
+    unsigned int ix;
+
+    assert( l->sz == fl->sz );
+    for( ix=0; ix<l->sz; ix++ ){
+	l->arr[ix] = force_expression_type( l->arr[ix], fl->arr[ix] );
+    }
+    return l;
+}
+
+/* Given a list of expressions representing selectors, rewrite them to the
+ * final form for output.
+ */
+static expression_list force_selector_list( expression_list l )
+{
+    unsigned int ix;
+
+    for( ix=0; ix<l->sz; ix++ ){
+        l->arr[ix] = force_expression_basetype( l->arr[ix], BT_INT );
+    }
+    return l;
+}
+
+/* -------- actors ---------- */
+
+/* Action for type DistBC. */
+static DistBC rewrite_DistBC_action( DistBC d )
+{
+    d->blocksize = force_expression_basetype( d->blocksize, BT_INT );
+.call generate_walker_call "    " d DistBC DistBC
+    return d;
+}
+
+/* Action for type DistLocal. */
+static DistLocal rewrite_DistLocal_action( DistLocal d )
+{
+    d->proc = force_expression_basetype( d->proc, BT_INT );
+.call generate_walker_call "    " d DistLocal DistLocal
+    return d;
+}
+
+/* Action for type SizeExpression. */
+static SizeExpression rewrite_SizeExpression_action( SizeExpression sz )
+{
+    sz->x = force_expression_basetype( sz->x, BT_INT );
+.call generate_walker_call "    " sz SizeExpression SizeExpression
+    return sz;
+}
+
+/* Action for type cardinality. */
+static cardinality rewrite_cardinality_action( cardinality elm )
+{
+    elm->bound = force_expression_basetype( elm->bound, BT_INT );
+.call generate_walker_call "    " elm cardinality cardinality
+    return elm;
+}
+
+/* Given a functioncall, rewrite it to the final form for output. */
+static ExprFunctionCall rewrite_ExprFunctionCall_action( ExprFunctionCall elm )
+{
+    const type fntype = derive_type_expression( elm->function );
+
+    assert( fntype->tag == TAGTypeFunction );
+    elm->parameters = force_actualparameter_list( elm->parameters, to_TypeFunction(fntype)->formals );
+.call generate_walker_call "    " elm ExprFunctionCall ExprFunctionCall
+    rfre_type( fntype );
+    return elm;
+}
+
+#define is_shift_operator(op) (((op)==BINOP_SHIFTLEFT)||((op)==BINOP_SHIFTRIGHT)||((op)==BINOP_USHIFTRIGHT))
+
+/* Action for type ExprBinop. */
+static ExprBinop rewrite_ExprBinop_action( ExprBinop elm )
+{
+    const type ta = derive_type_expression( elm->operanda );
+    const type tb = derive_type_expression( elm->operandb );
+
+    if( is_shift_operator( elm->optor ) ){
+	elm->operandb = force_expression_basetype( elm->operandb, BT_INT );
+    }
+    else {
+	const type tx = max_types( ta, tb );
+
+	elm->operanda = force_expression_type( elm->operanda, tx );
+	elm->operandb = force_expression_type( elm->operandb, tx );
+	rfre_type( tx );
+    }
+.call generate_walker_call "    " elm ExprBinop ExprBinop
+    rfre_type( ta );
+    rfre_type( tb );
+    return elm;
+}
+
+/* Action for type ExprPragma. */
+static ExprPragma rewrite_ExprPragma_action( ExprPragma elm )
+{
+    expression x = elm->x;
+
+    /* Fold all nested pragma expressions into one long list. */
+    while( x->tag == TAGExprPragma ){
+	elm->pragmas = concat_pragma_list(
+	    elm->pragmas,
+	    to_ExprPragma(x)->pragmas
+	);
+	elm->x = to_ExprPragma(x)->x;
+	fre_expression( x );
+	x = to_ExprPragma(elm)->x;
+    }
+.call generate_walker_call "    " elm ExprPragma ExprPragma
+    return elm;
+}
+
+/* Action for type ExprComplex. */
+static ExprComplex rewrite_ExprComplex_action( ExprComplex elm )
+{
+    elm->re = force_expression_basetype( elm->re, BT_DOUBLE );
+    elm->im = force_expression_basetype( elm->im, BT_DOUBLE );
+.call generate_walker_call "    " elm ExprComplex ExprComplex
+    return elm;
+}
+
+/* Action for type ExprGetSize. */
+static ExprGetSize rewrite_ExprGetSize_action( ExprGetSize elm )
+{
+    elm->dim = force_expression_basetype( elm->dim, BT_INT );
+.call generate_walker_call "    " elm ExprGetSize ExprGetSize
+    return elm;
+}
+
+/* Action for type ExprSelection. */
+static ExprSelection rewrite_ExprSelection_action( ExprSelection elm )
+{
+    elm->selectors = force_selector_list( elm->selectors );
+.call generate_walker_call "    " elm ExprSelection ExprSelection
+    return elm;
+}
+
+/* Action for type ExprGetBlocksize. */
+static ExprGetBlocksize rewrite_ExprGetBlocksize_action( ExprGetBlocksize elm )
+{
+    elm->dim = force_expression_basetype( elm->dim, BT_INT );
+.call generate_walker_call "    " elm ExprGetBlocksize ExprGetBlocksize
+    return elm;
+}
+
+/* Action for type ExprIsOwner. */
+static ExprIsOwner rewrite_ExprIsOwner_action( ExprIsOwner elm )
+{
+    elm->proc = force_expression_basetype( elm->proc, BT_INT );
+.call generate_walker_call "    " elm ExprIsOwner ExprIsOwner
+    return elm;
+}
+
+/* Action for type ExprIf. */
+static ExprIf rewrite_ExprIf_action( ExprIf elm )
+{
+    const type ta = derive_type_expression( elm->elseval );
+    const type tb = derive_type_expression( elm->thenval );
+    const type tx = max_types( ta, tb );
+
+    elm->cond = force_expression_basetype( elm->cond, BT_BOOLEAN );
+    elm->thenval = force_expression_type( elm->thenval, tx );
+    elm->elseval = force_expression_type( elm->elseval, tx );
+    rfre_type( ta );
+    rfre_type( tb );
+    rfre_type( tx );
+.call generate_walker_call "    " elm ExprIf ExprIf
+    return elm;
+}
+
+/* Action for type IfStatement. */
+static IfStatement rewrite_IfStatement_action( IfStatement elm )
+{
+    elm->cond = force_expression_basetype( elm->cond, BT_BOOLEAN );
+.call generate_walker_call "    " elm IfStatement IfStatement
+    return elm;
+}
+
+/* Action for type WhileStatement. */
+static WhileStatement rewrite_WhileStatement_action( WhileStatement elm )
+{
+    elm->cond = force_expression_basetype( elm->cond, BT_BOOLEAN );
+.call generate_walker_call "    " elm WhileStatement WhileStatement
+    return elm;
+}
+
+/* Action for type SendStatement. */
+static SendStatement rewrite_SendStatement_action( SendStatement elm )
+{
+    elm->me = force_expression_basetype( elm->me, BT_INT );
+    elm->dest = force_expression_basetype( elm->dest, BT_INT );
+.call generate_walker_call "    " elm SendStatement SendStatement
+    return elm;
+}
+
+/* Action for type ReceiveStatement. */
+static ReceiveStatement rewrite_ReceiveStatement_action( ReceiveStatement elm )
+{
+    elm->me = force_expression_basetype( elm->me, BT_INT );
+    elm->src = force_expression_basetype( elm->src, BT_INT );
+.call generate_walker_call "    " elm ReceiveStatement ReceiveStatement
+    return elm;
+}
+
+/* Action for type BlockSendStatement. */
+static BlockSendStatement rewrite_BlockSendStatement_action( BlockSendStatement elm )
+{
+    elm->me = force_expression_basetype( elm->me, BT_INT );
+    elm->dest = force_expression_basetype( elm->dest, BT_INT );
+    elm->nelm = force_expression_basetype( elm->nelm, BT_INT );
+.call generate_walker_call "    " elm BlockSendStatement BlockSendStatement
+    return elm;
+}
+
+/* Action for type AssignStatement. */
+static AssignStatement rewrite_AssignStatement_action( AssignStatement elm )
+{
+    const type tlhs = derive_type_expression( elm->lhs );
+
+    elm->rhs = force_expression_type( elm->rhs, tlhs );
+    rfre_type( tlhs );
+.call generate_walker_call "    " elm AssignStatement AssignStatement
+    return elm;
+}
+
+/* Action for type ProcedureCallStatement. */
+static ProcedureCallStatement rewrite_ProcedureCallStatement_action( ProcedureCallStatement elm )
+{
+    ProcedureCallStatement call = to_ProcedureCallStatement( elm );
+    const type proctype = derive_type_expression( call->proc );
+
+    assert( proctype->tag == TAGTypeProcedure );
+    call->parameters = force_actualparameter_list( call->parameters, to_TypeProcedure(proctype)->formals );
+    rfre_type( proctype );
+.call generate_walker_call "    " elm ProcedureCallStatement ProcedureCallStatement
+    return elm;
+}
+
+/* Action for type SetRoomStatement. */
+static SetRoomStatement rewrite_SetRoomStatement_action( SetRoomStatement elm )
+{
+    elm->sz = force_expression_basetype( elm->sz, BT_INT );
+.call generate_walker_call "    " elm SetRoomStatement SetRoomStatement
+    return elm;
+}
+
+/* Action for type VDeclGlobalVariable. */
+static VDeclGlobalVariable rewrite_VDeclGlobalVariable_action( VDeclGlobalVariable elm )
+{
+    elm->init = force_optexpression_type( elm->init, elm->t );
+.call generate_walker_call "    " elm VDeclGlobalVariable VDeclGlobalVariable
+    return elm;
+}
+
+/* Action for type VDeclLocalVariable. */
+static VDeclLocalVariable rewrite_VDeclLocalVariable_action( VDeclLocalVariable elm )
+{
+    elm->init = force_optexpression_type( elm->init, elm->t );
+.call generate_walker_call "    " elm VDeclLocalVariable VDeclLocalVariable
+    return elm;
+}
+
+/* -------- End of action functions ---------- */
+
+.call generate_walker "$(visit_types)"
+
+/* Given a type, rewrite it to a simpler version. */
+type rewrite_type( type t )
+{
+.call generate_walker_call "    " t type type
+    return t;
+}
+
+/* Given a Sugar Vnus program, rewrite it into a simpler version. */
+vnusprog rewrite_vnusprog( vnusprog prog )
+{
+.call generate_walker_call "    " prog vnusprog vnusprog
+#if 0
+    prog->pragmas = rewrite_pragma_list( prog->pragmas );
+    prog->decls = rewrite_declaration_list( prog->decls );
+    prog->statements = rewrite_statement_list( prog->statements );
+    rfre_vnusdeclaration_list( prog->vnusdecls );
+    prog->vnusdecls = get_symbol_table();
+    prog->vnusdecls = rewrite_vnusdeclaration_list( prog->vnusdecls );
+#endif
+    return prog;
+}

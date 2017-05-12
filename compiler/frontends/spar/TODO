@@ -1,0 +1,4 @@
+- Implement casts like '([double^2]) 2' correctly.
+- When expanding an assignment of the form
+   <lhs> <op>= [ <expr0>, <expr1>, ... ]
+  make sure that the lhs is a tuple with the correct number of fields.

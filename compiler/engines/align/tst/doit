@@ -1,0 +1,11 @@
+#!/bin/csh
+if (-r $2.spar) then
+  rm -f $2.g.v $2.g.tm $2_$1.g.tm
+  ../../../frontends/spar/sparfront --nonotnullassert $2.spar >$2.g.v
+  if ($? == 0) then
+    ../../../backends/vnus/vnus -t $2.g.v > $2.g.tm
+    ../align -l$1 $2.g.tm > $2_$1.g.tm
+#    diff $2.g.tm $2_$1.g.tm
+  endif
+endif
+

@@ -1,0 +1,30 @@
+package spar.testsuite;
+
+class t1 {
+    static void hello() {
+	__println( 1, "Hi from t1 static method!" );
+    }
+    void dyna_hello() {
+	__println( 1, "Hi from t1 method!" );
+    }
+}
+
+class t extends t1 {
+    static void hello() {
+	super.hello();
+	__println( 1, "Hi from t static method!" );
+    }
+    void dyna_hello() {
+	super.dyna_hello();
+	__println( 1, "Hi from t method!" );
+    }
+}
+
+public class oksupermethod {
+    public static void main()
+    {
+	t x = new t();
+	t.hello();
+	x.dyna_hello();
+    }
+}

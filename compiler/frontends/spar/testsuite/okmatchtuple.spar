@@ -1,0 +1,16 @@
+public class okmatchtuple {
+    public static void main(){
+	int a, b;
+	[int^2] v = [0,0];
+
+	[a,b] = [3,4];
+	__println( 1, "a=", a, " b=", b );
+	[a,b] = [b,a];
+	__println( 1, "a=", a, " b=", b );
+	[a,b] = v;
+	__println( 1, "a=", a, " b=", b );
+	[v[0],v[1]] = [12,24];
+	[a,b] = v;
+	__println( 1, "a=", a, " b=", b );
+    }
+}

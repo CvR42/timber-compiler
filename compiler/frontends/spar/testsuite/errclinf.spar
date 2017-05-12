@@ -1,0 +1,13 @@
+// Test of JLS2 9.1
+
+package spar.testsuite;
+
+class Point { int x, y; }
+
+interface Point { void move( int dx, int dy ); }
+
+public class errclinf {
+    public static void main()
+    {
+    }
+}

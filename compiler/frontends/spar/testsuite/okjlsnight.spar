@@ -1,0 +1,21 @@
+// After JLS2 8.4.8.5    Example: Invocation of Hidden Class Methods
+
+
+class Super {
+    static String greeting() { return "Goodnight"; }
+    String name() { return "Richard"; }
+}
+
+
+class Sub extends Super {
+    static String greeting() { return "Hello"; }
+    String name() { return "Dick"; }
+}
+
+
+public class okjlsnight {
+    public static void main(String[] args) {
+        Super s = new Sub();
+        System.out.println(s.greeting() + ", " + s.name());
+    }
+}

@@ -1,0 +1,137 @@
+// File: GC.spar
+//
+// Implementation of the garbage collector.
+//
+// Note that a lot of methods are annotated as <$ no_GC_admin $> to indicate
+// that no GC administration code should be generated for that method.
+
+package spar.compiler;
+
+public final class GC
+{
+    private GC() { /* this class is not instantiable by the general public */ }
+
+    // Methods to access the active element set.
+    //
+    // Return first, resp next element in the root set.
+    // Null elements are not returned. When null is returned, it signifies
+    // that the root set has been exhausted.
+    private static native java.lang.Object firstReference();
+    private static native java.lang.Object nextReference();
+
+    // Return true iff there is a root set at all. If not, don't even
+    // try to do garbage collection.
+    private static native boolean thereIsARootSet();
+
+    // Methods to manipulate the set of memory blocks.
+    private static native java.lang.Object firstBlock();
+    private static native java.lang.Object nextBlock();
+    private static native java.lang.Object firstUnmarkedBlock();
+    private static native java.lang.Object deleteBlock();
+
+    // Methods to manipulate the mark flag of an object.
+    private native static boolean getMark( java.lang.Object obj );
+    private native static void setMark( java.lang.Object obj, boolean val );
+
+    // Methods to manipulate the stack of references
+    private static native void pushRef( java.lang.Object obj );
+    private static native java.lang.Object popRef();
+    private static native boolean wasRefStackOverflow();
+    private static native void clearRefStackOverflow();
+
+    // Invocation methods
+    private static native void invokeMarkingMethod( java.lang.Object obj );
+    private static native void invokeFinalize( java.lang.Object obj );
+
+    // Methods to get or set memory levels of the allocator.
+    <$ noGC $> public static native long freeMemory();
+    <$ noGC $> public static native long totalMemory();
+    <$ noGC $> public static native long memoryLimit();
+    public static native void setTotalMemory( long mem );
+    public static native void setMemoryLimit( long mem );
+
+    <$ no_GC_admin $> private static void drainRefStack()
+    {
+	java.lang.Object obj = popRef();
+	while( obj != null ){
+	    invokeMarkingMethod( obj );	// Push marks of this object instance.
+	    obj = popRef();
+	}
+    }
+
+    // Enumerate the active references, and propagate the marks induced
+    // by each reference.
+    <$ no_GC_admin $> private static void markFromActiveRefs()
+    {
+	java.lang.Object obj = firstReference();
+	while( obj != null ){
+	    pushRef( obj );
+	    drainRefStack();
+	    obj = nextReference();
+	}
+    }
+
+    // Enumerate the active memory blocks, and propagate the marks induced
+    // by each marked memory block. This way of marking the active set
+    // is only used when a stack overflow occurred in the markFromActiveRefs()
+    // method. It is quite slow, since all memory blocks are enumerated,
+    // but repeat this often enough and we'll get there.
+    <$ no_GC_admin $> private static void markFromBlockSet()
+    {
+	java.lang.Object obj = firstBlock();
+	while( obj != null ){
+	    if( getMark( obj ) ){
+		// Push marks of this object instance.
+		invokeMarkingMethod( obj );
+		drainRefStack();
+	    }
+	    obj = nextBlock();
+	}
+    }
+
+    <$ no_GC_admin $> private static int sweepUnmarkedBlocks()
+    {
+	java.lang.Object obj = firstUnmarkedBlock();
+	int delcount = 0;
+	while( obj != null ){
+	    invokeFinalize( obj );
+	    obj = deleteBlock();
+	    delcount++;
+	}
+	return delcount;
+    }
+
+    // Do a garbage collection run, and return true iff we managed to free
+    // up some memory.
+    <$ no_GC_admin $> public static int collect()
+    {
+	if( !thereIsARootSet() ){
+	    return 0;
+	}
+	resetActiveBlockMarks();
+	clearRefStackOverflow();
+	markFromActiveRefs();
+	while( wasRefStackOverflow() ){
+	    // We have a problem, there was a stack overflow during the
+	    // recursive mark phase. We revert to a slow but sure method
+	    // where we mark all fields of all objects that are themselves
+	    // marked.
+	    //
+	    // We know that the set of active refs was marked, since the
+	    // markFromActiveRefs method always drains the stack before
+	    // pushing a new ref from the active refs.
+	    //
+	    // Since in each interation of the while at least *some* elements
+	    // are marked, this while will always terminate.
+	    clearRefStackOverflow();
+	    markFromBlockSet();
+	}
+	return sweepUnmarkedBlocks();
+    }
+
+    // Reset the marks of all active elements.
+    <$ noGC $> private native static void resetActiveBlockMarks();
+
+    // Return the number of active memory blocks.
+    <$ noGC $> public native static int countActiveBlocks();
+}

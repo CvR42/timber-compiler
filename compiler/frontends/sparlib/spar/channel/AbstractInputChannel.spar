@@ -1,0 +1,20 @@
+// File: spar.channel.AbstractInputChannel.spar
+
+package spar.channel;
+
+public class AbstractInputChannel extends AbstractChannel {
+    protected boolean exhausted = false;
+    public boolean isExhausted() {  return exhausted; }
+    public int available() throws java.io.IOException
+    {
+        return spar.compiler.File.available( handle );
+    }
+
+    final public int readByte() throws java.io.IOException {
+        int res = spar.compiler.File.readByte( handle );
+	if( res == spar.compiler.File.IOERRORCODE ){
+	    throw new java.io.IOException();
+	}
+	return res;
+    }
+}

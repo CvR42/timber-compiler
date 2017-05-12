@@ -1,0 +1,44 @@
+throw[throw]+=throw => ArrayReferenceThrow
+throw[throw]+=throw => ArrayReferenceThrow
+throw[throw]+="heh" => ArrayReferenceThrow
+throw[throw]+=12345 => ArrayReferenceThrow
+throw[1]+=throw => ArrayReferenceThrow
+throw[1]+=throw => ArrayReferenceThrow
+throw[1]+="heh" => ArrayReferenceThrow
+throw[1]+=12345 => ArrayReferenceThrow
+
+null[throw]+=throw => IndexThrow
+null[throw]+=throw => IndexThrow
+null[throw]+="heh" => IndexThrow
+null[throw]+=12345 => IndexThrow
+null[1]+=throw => NullPointerException
+null[1]+=throw => NullPointerException
+null[1]+="heh" => NullPointerException
+null[1]+=12345 => NullPointerException
+
+null[throw]+=throw => IndexThrow
+null[throw]+=throw => IndexThrow
+null[throw]+="heh" => IndexThrow
+null[throw]+=12345 => IndexThrow
+null[9]+=throw => NullPointerException
+null[9]+=throw => NullPointerException
+null[9]+="heh" => NullPointerException
+null[9]+=12345 => NullPointerException
+
+Strings[throw]+=throw => IndexThrow
+doubles[throw]+=throw => IndexThrow
+Strings[throw]+="heh" => IndexThrow
+doubles[throw]+=12345 => IndexThrow
+Strings[1]+=throw => RightHandSideThrow
+doubles[1]+=throw => RightHandSideThrow
+Strings[1]+="heh" => Okay!
+doubles[1]+=12345 => Okay!
+
+Strings[throw]+=throw => IndexThrow
+doubles[throw]+=throw => IndexThrow
+Strings[throw]+="heh" => IndexThrow
+doubles[throw]+=12345 => IndexThrow
+Strings[9]+=throw => ArrayIndexOutOfBoundsException
+doubles[9]+=throw => ArrayIndexOutOfBoundsException
+Strings[9]+="heh" => ArrayIndexOutOfBoundsException
+doubles[9]+=12345 => ArrayIndexOutOfBoundsException

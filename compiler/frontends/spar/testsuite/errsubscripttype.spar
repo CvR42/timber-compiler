@@ -1,0 +1,11 @@
+// File: errsubscripttype.spar
+// Test error checking for weird array subscript types.
+public class errsubscripttype {
+    public static void main(String args[])
+    {
+	int a[] = new int[24];
+	long i = 0;
+	a[i] = 3;
+	a[a] = 3;
+    }
+}

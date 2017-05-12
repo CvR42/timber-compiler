@@ -1,0 +1,244 @@
+/*
+   Applyot engine
+
+   Insert owner tests and send/receives
+   */
+
+.. File: applyot.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors statement_list SmtAssign
+.append actors DeclFunction DeclProcedure block
+.append actors RoutineDeclaration
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "vnusctl.h"
+#include "applyot.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+.call generate_admin_prelst_action statement_list
+.call generate_admin_current_parms_action DeclFunction
+.call generate_admin_current_parms_action DeclProcedure
+
+/*
+  Replace a communication statement with conditional
+  send and receive statements.
+  The receive statement is returned while the send statement is put
+  into the prelst.
+  */
+static statement rewrite_communication_action(
+  SmtAssign e, global_context gc )
+{
+    int sendToSelfTest = false;
+    if (e->rhs->tag != TAGExprSelection)
+        return e;
+    assert(gc->current_parms != 0);
+    expression currentProc = build_currentProcessor_expression(gc);
+    location locDest = find_owneron_location(gc->prog->declarations, e->lhs);
+    if (locDest == locationNIL)
+    {
+        fprintf(stderr, "OT: not aligned with something else\n");
+        locDest = e->lhs;
+    }
+    else
+    {
+        fprintf(stderr, "OT: aligned with something else\n");
+    }
+    if (locDest->tag == TAGLocSelection)
+    {
+        fprintf(stderr, "OT: array access\n");
+        type t = derive_type_expression(gc->prog->declarations, 0, to_LocSelection(locDest)->shape);
+        if (t->tag == TAGTypeShape && hasDistribution(t, gc) && !isReplicated(t, gc))
+        {
+            fprintf(stderr, "OT: not replicated, YES, do send-to-self-test\n");
+            sendToSelfTest = true;
+        }
+        rfre_type(t);
+    }
+    
+    fprintf(stderr,"OT: now what?\n");
+    ExprSelection rhs = to_ExprSelection(e->rhs);
+    ExprSender SenderRHS = new_ExprSender(
+        new_LocSelection(
+            rdup_expression(rhs->shape),
+            rdup_expression_list(rhs->indices)));
+    ExprOwner OwnerLHS = new_ExprOwner(
+        rdup_location(locDest));
+    ExprIsOwner IsOwnerLHS = new_ExprIsOwner(
+        rdup_location(locDest),
+        rdup_expression(currentProc));
+    SmtIf ifsend = snew_SmtIf(
+        new_ExprBinop(
+            SenderRHS,
+            BINOP_EQUAL,
+            rdup_expression(currentProc)),
+	snew_block(),
+	snew_block());
+    ifsend->pragmas = new_Pragma_list();
+    SmtSend nssmt = snew_SmtSend(
+        OwnerLHS,
+        rdup_expression(e->rhs));
+    if (!sendToSelfTest)
+    {
+        ifsend->thenbody->statements = append_statement_list(
+            ifsend->thenbody->statements,
+            nssmt);
+    }
+    else
+    {
+        SmtIf ifsendme = snew_SmtIf(
+            new_ExprBinop(
+                rdup_expression(OwnerLHS),
+                BINOP_NOTEQUAL,
+                rdup_expression(currentProc)),
+            snew_block(),
+            snew_block());
+        ifsend->thenbody->statements = append_statement_list(
+            ifsend->thenbody->statements,
+            ifsendme);
+        ifsendme->thenbody->statements = append_statement_list(
+            ifsendme->thenbody->statements,
+            nssmt);
+    }
+    SmtIf ifrecv = snew_SmtIf(
+        IsOwnerLHS,
+        snew_block(),
+        snew_block());
+    ifrecv->pragmas = new_Pragma_list();
+    SmtReceive nrsmt = snew_SmtReceive(
+        rdup_ExprSender(SenderRHS),
+        rdup_location(e->lhs));
+    if (!sendToSelfTest)
+    {
+        ifrecv->thenbody->statements = append_statement_list(
+            ifrecv->thenbody->statements,
+            nrsmt);
+    }
+    else
+    {
+        SmtIf ifrecvme = snew_SmtIf(
+            new_ExprBinop(
+                rdup_expression(SenderRHS),
+                BINOP_NOTEQUAL,
+                rdup_expression(currentProc)),
+            snew_block(),
+            snew_block());
+        ifrecvme->thenbody->statements = append_statement_list(
+            ifrecvme->thenbody->statements,
+            nrsmt);
+        ifrecvme->elsebody->statements = append_statement_list(
+            ifrecvme->elsebody->statements,
+            rdup_statement(e));
+        ifrecv->thenbody->statements = append_statement_list(
+            ifrecv->thenbody->statements,
+            ifrecvme);
+    }
+    SmtWaitPending waitpend = snew_SmtWaitPending();
+        
+    FlagPragma nfp = new_FlagPragma(add_origsymbol("communication"));
+    ifsend->pragmas = append_Pragma_list(ifsend->pragmas, nfp);
+    ifrecv->pragmas = append_Pragma_list(ifrecv->pragmas,
+                                         rdup_FlagPragma(nfp));
+    rfre_SmtAssign(e);
+    rfre_expression(currentProc);
+.call conditional_init_prelst
+    gc->prelst = append_statement_list(gc->prelst, ifsend);
+    gc->prelst = append_statement_list(gc->prelst, ifrecv);
+    return waitpend;
+}
+
+/*
+  Put an if(owner) test around a computation asignment.
+  */
+static statement rewrite_computation_action(
+  SmtAssign e, global_context gc )
+{
+    if (e->lhs->tag != TAGLocSelection)
+        return e;
+    assert(gc->current_parms != 0);
+    SmtIf nsi = snew_SmtIf(
+        new_ExprIsOwner(
+            rdup_location(e->lhs),
+            build_currentProcessor_expression(gc)),
+        snew_block(),
+        snew_block());
+    nsi->thenbody->statements = append_statement_list(
+        nsi->thenbody->statements,
+        e);
+    return nsi;
+}
+
+/*
+  Discern between 'communication' and 'computation' statements
+  */
+static statement rewrite_SmtAssign_action(
+  SmtAssign e, global_context gc )
+{
+    if (pragma_list_contains_tmsymbol(e->pragmas,
+                                      add_tmsymbol("communication")))
+        return rewrite_communication_action(e, gc);
+    if (pragma_list_contains_tmsymbol(e->pragmas,
+                                      add_tmsymbol("computation")))
+        return rewrite_computation_action(e, gc);
+    return e;
+}
+
+/*
+  Cut-off all non-valid descends.
+  */
+static block rewrite_block_action(
+  block e, global_context gc )
+{
+    if (!gc->do_statements)
+        return e;
+.call generate_walker_call "    " e block block
+    return e;
+}
+
+/*
+  Only descend for Routine bodies.
+  */
+static RoutineDeclaration rewrite_RoutineDeclaration_action(
+  RoutineDeclaration e, global_context gc )
+{
+.call push_do_statements
+    gc->do_statements = true;
+.call generate_walker_call "    " e RoutineDeclaration RoutineDeclaration
+.call pop_do_statements
+    return e;
+}
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_ot(
+    vnusprog elm, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+    (void) rewrite_statement_list_walker;
+    (void) rewrite_SmtAssign_walker;
+    
+.call init_do_statements
+.call init_current_parms
+.call init_prelst
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}

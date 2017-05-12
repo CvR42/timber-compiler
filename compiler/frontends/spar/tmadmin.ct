@@ -1,0 +1,138 @@
+.. file: tmadmin.ct
+/* file: tmadmin.c
+
+   template file:      tmcode.ct
+   datastructure file: ${dsfilename}
+   tm version:         $(tmvers) 
+ */
+
+/* Standard UNIX libraries */
+#include <stdio.h>
+#include <string.h>
+
+/* Standard tm library */
+#include <tmc.h>
+
+/* Local definitions */
+#include "defs.h"
+#include "tmadmin.h"
+
+
+#define isequal_bool(a,b) ((a)==(b))
+
+static inline void print_bool( TMPRINTSTATE *st, bool b )
+{
+    tm_printword( st, (b ? "true" : "false") );
+}
+
+static inline void print_vnus_boolean( TMPRINTSTATE *st, vnus_boolean b )
+{
+    tm_printword( st, (b ? "TRUE" : "FALSE") );
+}
+
+static tmbool isequal_vnus_boolean( vnus_boolean a, vnus_boolean b )
+{
+    return (tmbool) (a == b);
+}
+
+static void print_BASETYPE( TMPRINTSTATE *st, BASETYPE t )
+{
+    switch( t )
+    {
+        case BT_STRING:		tm_printword( st, "STRING" );	break;
+        case BT_BOOLEAN:	tm_printword( st, "BOOLEAN" );	break;
+        case BT_BYTE:		tm_printword( st, "BYTE" );	break;
+        case BT_SHORT:		tm_printword( st, "SHORT" );	break;
+        case BT_INT:		tm_printword( st, "INT" );	break;
+        case BT_LONG:		tm_printword( st, "LONG" );	break;
+        case BT_FLOAT:		tm_printword( st, "FLOAT" );	break;
+        case BT_DOUBLE:		tm_printword( st, "DOUBLE" );	break;
+        case BT_COMPLEX:	tm_printword( st, "COMPLEX" );	break;
+        case BT_CHAR:		tm_printword( st, "CHAR" );	break;
+    }
+} 
+
+#define isequal_BASETYPE(a,b) ((a)==(b))
+
+static void print_BINOP( TMPRINTSTATE *st, const BINOP t )
+{
+    switch( t ){
+        case BINOP_AND:			tm_printword( st, "AND" );	break;
+        case BINOP_OR:			tm_printword( st, "OR" );	break;
+        case BINOP_MOD:			tm_printword( st, "MOD" );	break;
+        case BINOP_PLUS:		tm_printword( st, "PLUS" );	break;
+        case BINOP_MINUS:		tm_printword( st, "MINUS" );	break;
+        case BINOP_TIMES:		tm_printword( st, "TIMES" );	break;
+        case BINOP_DIVIDE:		tm_printword( st, "DIVIDE" );	break;
+        case BINOP_EQUAL:		tm_printword( st, "EQUAL" );	break;
+        case BINOP_NOTEQUAL:		tm_printword( st, "NOTEQUAL" );	break;
+        case BINOP_LESS:		tm_printword( st, "LESS" );	break;
+        case BINOP_LESSEQUAL:		tm_printword( st, "LESSEQUAL" ); break;
+        case BINOP_GREATER:		tm_printword( st, "GREATER" );	break;
+        case BINOP_GREATEREQUAL:	tm_printword( st, "GREATEREQUAL" ); break;
+        case BINOP_XOR:			tm_printword( st, "XOR" );	break;
+        case BINOP_SHIFTLEFT:		tm_printword( st, "SHIFTLEFT" ); break;
+        case BINOP_SHIFTRIGHT:		tm_printword( st, "SHIFTRIGHT" ); break;
+        case BINOP_USHIFTRIGHT:		tm_printword( st, "USHIFTRIGHT" ); break;
+    }
+}
+
+static void print_SHORTOP( TMPRINTSTATE *st, const SHORTOP t )
+{
+    switch( t ){
+        case SHORTOP_AND:		tm_printword( st, "SHORTAND" );	break;
+        case SHORTOP_OR:		tm_printword( st, "SHORTOR" );	break;
+    }
+}
+
+static void print_ASSIGN_OP( TMPRINTSTATE *st, const ASSIGN_OP t )
+{
+    switch( t ){
+        case ASSIGN:			tm_printword( st, "=" );	break;
+        case ASSIGN_PLUS:		tm_printword( st, "+=" );	break;
+        case ASSIGN_MINUS:		tm_printword( st, "-=" );	break;
+        case ASSIGN_TIMES:		tm_printword( st, "*=" );	break;
+        case ASSIGN_DIVIDE:		tm_printword( st, "/=" );	break;
+        case ASSIGN_MOD:		tm_printword( st, "%=" );	break;
+        case ASSIGN_XOR:		tm_printword( st, "^=" );	break;
+        case ASSIGN_AND:		tm_printword( st, "&=" );	break;
+        case ASSIGN_OR:			tm_printword( st, "|=" );	break;
+        case ASSIGN_SHIFTLEFT:		tm_printword( st, "<<=" );	break;
+        case ASSIGN_SHIFTRIGHT:		tm_printword( st, ">>=" ); 	break;
+        case ASSIGN_USHIFTRIGHT:	tm_printword( st, ">>>=" );	break;
+    }
+}
+
+#define isequal_BINOP(a,b) ((a)==(b))
+#define isequal_SHORTOP(a,b) ((a)==(b))
+#define isequal_ASSIGN_OP(a,b) ((a)==(b))
+
+static void print_UNOP( TMPRINTSTATE *st, UNOP t )
+{
+    switch( t )
+    {
+	case UNOP_NOT:		tm_printword( st, "NOT" );	break;
+	case UNOP_PLUS:		tm_printword( st, "PLUS" );	break;
+	case UNOP_NEGATE:	tm_printword( st, "NEGATE" );	break;
+	case UNOP_INVERT:	tm_printword( st, "INVERT" );	break;
+    }
+}
+
+/* Origins are always equal, so that they don't interfere */
+#define isequal_origin(a,b) (true)
+
+#define isequal_UNOP(a,b) ((a)==(b))
+
+static void print_AFLAG( TMPRINTSTATE *st, AFLAG t )
+{
+    switch( t )
+    {
+	case AF_NO:		tm_printword( st, "NO" );	break;
+	case AF_MAYBE:		tm_printword( st, "MAYBE" );	break;
+	case AF_YES:		tm_printword( st, "YES" );	break;
+	case AF_UNKNOWN:	tm_printword( st, "UNKNOWN" );	break;
+    }
+}
+
+.insert tmadmin.t
+.include tmc.ct

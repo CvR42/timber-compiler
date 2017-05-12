@@ -1,0 +1,129 @@
+/*
+   Applymergeloop engine
+
+   Change nested one-dimensional foreach's into a multi-dimensional one.
+   */
+
+.. File: applymergeloop.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtForeach
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "search.h"
+#include "vnusctl.h"
+#include "applymergeloop.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+static bool check_just_independent(Pragma_list pl)
+{
+    return ((pl != Pragma_listNIL) &&
+	    (pl->sz == 1) &&
+	    pragma_list_contains_tmsymbol(pl, add_tmsymbol("independent")));
+}
+
+static bool check_no_pragma(Pragma_list pl)
+{
+    return ((pl == Pragma_listNIL) ||
+	    (pl->sz == 0));
+}
+
+static bool check_no_on(OwnerExpr_list ol)
+{
+    return ((ol == OwnerExpr_listNIL) ||
+	    (ol->sz == 0));
+}
+
+/*
+  If a foreach has a body with only one statement, and that statement
+  is also a foreach, and both foreaches have either no pragmas, or both
+  have just the 'independent' pragma, then merge them.
+  Do this depth first to have the most chance of getting a match that is
+  usefull for comm.aggr. This because of possible dependencies between inner
+  and outer loops.
+
+  Also check that innerloop cardinalities are not dependent on outer loop.
+
+  Also check inner loop has no scope. Otherwise we have to do complicated
+  stuff with the variables in that scope.
+
+  Also: only merge if the inner loop/body have no mapping.
+  These would be discarded otherwise.
+  */
+static SmtForeach rewrite_SmtForeach_action(
+  SmtForeach e, global_context gc )
+{
+.call generate_walker_call "    " e SmtForeach SmtForeach
+    if ((e->body->statements->sz != 1) ||
+	(e->body->statements->arr[0]->tag != TAGSmtForeach))
+	return e;
+
+    SmtForeach il = to_SmtForeach(e->body->statements->arr[0]);
+    if (!((check_just_independent(e->pragmas) &&
+	   check_just_independent(il->pragmas)) ||
+	  (check_no_pragma(e->pragmas) &&
+	   check_no_pragma(il->pragmas))))
+	return e;
+
+    if (!(check_no_on(il->on) &&
+	  check_no_on(il->map) &&
+	  check_no_on(il->body->on)))
+	return e;
+
+    if (il->body->scope != tmsymbolNIL)
+	return e;
+    
+    for (unsigned i=0; i<e->cards->sz; i++)
+    {
+	if (search_cardinality_list(
+	    il->cards,
+	    e->cards->arr[i]->name->sym))
+	    return e;
+	if (e->cards->arr[i]->secondaries != secondary_listNIL)
+	{
+	    for (unsigned j=0; j<e->cards->arr[i]->secondaries->sz; j++)
+		if (search_cardinality_list(
+		    il->cards,
+		    e->cards->arr[i]->secondaries->arr[j]->name->sym))
+		    return e;
+	}
+    }
+
+    e->cards = concat_cardinality_list(
+	e->cards,
+	rdup_cardinality_list(il->cards));
+    statement_list old = e->body->statements;
+    e->body->statements = rdup_statement_list(il->body->statements);
+    rfre_statement_list(old);
+    return e;
+}
+
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_mergeloop(
+    vnusprog elm, global_context gc )
+{
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}

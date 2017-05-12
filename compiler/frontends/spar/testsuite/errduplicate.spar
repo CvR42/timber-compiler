@@ -1,0 +1,12 @@
+// Test error messages about double entries.
+
+package spar.testsuite;
+
+public class errduplicate {
+    int a;
+    int a;
+    void main( String argv[] ){
+    }
+    void main( String argv[] ){
+    }
+}

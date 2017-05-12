@@ -1,0 +1,5 @@
+public class errtupleinit {
+	static public void main(String [] args) {
+		[int^3] foo = {0,0,0};	// Only for arrays..
+	}
+}

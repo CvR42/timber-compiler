@@ -1,0 +1,49 @@
+# Makefile for the spmd engine
+
+# The magical stuff
+include ./Make.vars
+include $(COMPILERSRCROOT)/Makefiles/Make.vars
+MAKEFILE = Make.spmd
+
+EXE	 = spmd
+
+# Various categories of source code files.
+TMCSRCC	= search.ct replace.ct
+TMCSRC	= $(TMCSRCC) \
+	  apply2owned.ct applyresident.ct \
+	  applyfillowner.ct \
+	  applytaskpar.ct \
+	  applyif5.ct applyif6.ct applyif7.ct \
+	  applyit02.ct applyit1.ct applyit2.ct \
+	  applyred1.ct \
+	  applyca1.ct applyca2.ct applymas.ct applyca3.ct \
+	  applyot2.ct \
+	  applyel1.ct applyio3.ct \
+	  applyoa5.ct applybug.ct \
+	  applymergeloop.ct \
+	  applyclean.ct applyclean2.ct applyclean3.ct applyclean4.ct \
+	  applyclean5.ct \
+	  applyremrepl.ct applybreakout.ct \
+	  applyaggr.ct applyaggr2.ct \
+	  applyliftcond.ct applymergecond.ct \
+	  applyclear_on.ct applyselect_on.ct \
+	  # applyot.ct applyopt.ct \
+	  # applypcp0.ct applypcp3.ct
+TMCXTRA	= 
+TMHXTRA	= extradefs.ht
+TMGXTRA	= genwalk.t gensupport.t
+DSEXTRA = varowner.ds
+VSRC	= error.cc
+SRCC	= main.cc service.cc global.cc  parsepragmas.cc $(VSRC) symtable.cc \
+		issubset.cc
+SRC	= $(SRCC) spmd.cc applyif2.cc
+
+GENSRC  = tmadmin.cc $(TMCSRC:%.ct=%-g.cc)
+GENHDR  = tmadmin.h
+
+OBJ	= $(SRC:%.cc=%.o) $(GENSRC:%.cc=%.o)
+
+EXTRAFLAGS += -g
+EXTRAFLAGS += -I$(VNUSLIB) -I$(TMROOT)/include 
+
+include ./Make.rules

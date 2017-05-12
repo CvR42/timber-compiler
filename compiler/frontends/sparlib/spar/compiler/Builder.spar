@@ -1,0 +1,25 @@
+// File: Builder.spar
+//
+// Build and throw exceptions.
+
+package spar.compiler;
+
+final public class Builder {
+    private Builder() { /* this class is not instantiable by the general public */ }    
+
+    <$ noGC $> final public static void nulExit(){
+	DefaultExceptionHandler.exit( "Null pointer dereferenced" );
+    }
+    final public static void nul(){
+	throw new NullPointerException();
+    }
+    <$ noGC $> final public static void boundExit(){
+	DefaultExceptionHandler.exit( "Array bound violated" );
+    }
+    final public static void bound(){
+	throw new ArrayIndexOutOfBoundsException();
+    }
+    final public static void outOfMemory(){
+	throw new OutOfMemoryError();
+    }
+}

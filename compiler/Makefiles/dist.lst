@@ -1,0 +1,15 @@
+Makefile
+Make.dist
+Make.libs
+Make.rules
+Make.tests
+Make.vars.in
+Make.std
+Make.vars.spar
+Make.configure
+configure
+configure.ac
+spar-preamble.in
+get_mpich_cxxflags
+get_mpich_libdirflags
+get_mpich_libsflags

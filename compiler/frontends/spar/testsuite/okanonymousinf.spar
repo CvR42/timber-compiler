@@ -1,0 +1,25 @@
+interface superinf {
+    int superinf_val = 3;
+    int superinf_f();
+}
+
+interface inf extends superinf {
+    int inf_val = 8;
+    int inf_f();
+}
+
+class cl implements inf {
+    public int inf_f() { return 12; }
+    public int superinf_f() { return 42; }
+}
+
+public final class okanonymousinf {
+    public static void main( String args[] ){
+	inf inf1 = new inf(){
+	    public int inf_f() { return 12; }
+	    public int superinf_f() { return 42; }
+	};
+	__println( 1, "inf_val: ", inf1.inf_val, " inf_f(): ", inf1.inf_f() );
+	__println( 1, "superinf_val: ", inf1.superinf_val );
+    }
+}

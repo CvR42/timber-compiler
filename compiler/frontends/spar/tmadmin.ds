@@ -1,0 +1,349 @@
+|| File: tmadmin.ds,
+||
+|| Wrapper on top of spar.ds
+||
+|| Internal data structures and subclasses
+
+%include "spar.ds";
+
+|| An entry in a translation table of names (could be scope names, variable
+|| names).
+NameTranslation == ( from:tmsymbol, to:tmsymbol );
+
+|| An entry in the translation table for use in field name mangling.
+VarTranslation == (
+    from:tmsymbol,	|| Unmangled name
+    to:tmsymbol,	|| mangled name
+    level:int,		|| static scope level
+    classname:tmsymbol	|| Name of the class if is a field of, or NULL
+);
+
+|| An entry in the variable mapping table.
+|| These mappings represent translations from variables to expressions
+|| that are fruitful to do in a high-performance context.
+|| Blind application of these mappings may lead to code bloat, but
+|| in many cases the mapping should be a win.
+VarMapping == (
+    from:tmsymbol,	|| Unmangled name
+    to:expression,	|| mangled name
+    level:int		|| static scope level
+);
+
+|| Description of a field
+Field == ( flags:modflags, name:tmsymbol );
+
+|| Signature of a method
+Signature == ( flags:modflags, name:tmsymbol, parameters:[type] );
+
+|| An entry in the list of generic-to-specific class mappings.
+GenericMapping == (
+    name:tmsymbol,			|| Should be a fully qualified name
+    formals:[FormalParameter],		|| The parameter list of this type
+    bindings:[GenericBinding]		|| A list of pattern->class bindings
+);
+
+|| An entry in a list of bindings for a generic class. Each pattern
+|| should consist of constants. Each entry records the mapping of
+|| pattern of constants to a clas name.
+GenericBinding == ( pattern:[expression], clazz:tmsymbol );
+
+|| An entry in the list of methods of a class or interface. These
+|| entries are used during the search for a method.
+|| All the info is there to decide whether a method is the one we're
+|| looking for.
+|| Constructors are also represented like this. They have as name the
+|| type they construct, but are in a separate list.
+MethodMapping == ( realname:Signature, mangledname:tmsymbol, classname:tmsymbol );
+
+|| An entry in the list of fields of a class or interface. These
+|| entries are used during the search for a field.
+|| All the info is there to decide whether a field is the one we're
+|| looking for.
+FieldMapping == ( realname:Field, mangledname:tmsymbol, classname:tmsymbol );
+
+|| Helper structures used during parsing.
+Import = { name:origsymbol } +
+    DirectImport: {} |
+    OnDemandImport: {}
+    ;
+
+|| A tuple used only during parsing: see the VariableDeclaratorId grammar rules
+varid == ( name:VariableName, wrap:[FormalDim], init:optexpression );
+
+|| A tuple used only during parsing: a method header.
+MethodHeader == (
+    modifiers:modflags,
+    t:type,
+    wrap:[FormalDim],
+    name:TypeName,
+    formals:[FormalParameter],
+    throws:[type]
+);
+
+|| The type of a variable that catches an exception. Will be represented
+|| in Vnus as a pointer to an empty tuple.
+ExceptionVariableType = type;
+
+|| The type of a variable in the active references chain.
+GCRefLinkType = type;
+GCTopRefLinkType = type;
+
+|| An entry in the list of types (classes and interfaces)
+|| Key is the fully qualified name of the type.
+TypeEntry ~= {
+    name:origsymbol,			|| Fully qualified name
+    package:tmsymbol,			|| To which package does it belong?
+    enclosingtype:tmsymbol,		|| who is the enclosing class/package?
+    usecount:tmulong,
+    subclasses:[tmsymbol],
+    pragmas:[Pragma],
+    flags:modflags
+};
+
+ForwardObjectEntry = TypeEntry + {};
+
+ConcreteTypeEntry ~= TypeEntry +
+    {
+	methods:[MethodMapping],	|| which methods do I have
+	fields:[FieldMapping],		|| which fields do I have
+	types:[TypeBinding],		|| Which types do I know
+	is_template:bool,
+	introname:tmsymbol,		|| Name introspection tbl of this class
+	outerthis:tmsymbol,		|| Name of outer this of this class/inf
+	classno:int,
+	last_subclassno:int
+    };
+
+ObjectTypeEntry = ConcreteTypeEntry +
+    {
+	interfaces:[type],
+	vtabname:tmsymbol,		|| Name of the Vtable of this class/inf
+	staticInit:tmsymbol,		|| Static init function
+	staticInitNeed:tmsymbol,	|| The variable that records init done
+	staticInitTrivial:bool		|| The local initializer is trivial?
+    } +
+    ClassEntry: {
+	markMethod:tmsymbol,		|| Name of the mark method.
+	packMethod:tmsymbol,		|| Name of the pack method.
+	unpackMethod:tmsymbol,		|| Name of the unpack method.
+	super:type,
+	constructors:[MethodMapping],
+	hiddenparms:[HiddenParameter],	|| Hidden parms of local class.
+	ivtabname:tmsymbol,		|| Name of the IVtable of this class
+	recordname:tmsymbol		|| Vnus record name for this class
+    } |
+    InterfaceEntry: {
+    };
+
+PackageEntry = ConcreteTypeEntry + {};
+
+|| An declaration in the symbol table.
+Entry ~= {
+    name:tmsymbol,
+    pragmas:[Pragma],
+    flags:modflags,
+    owner:tmsymbol,
+    package:tmsymbol
+};
+
+MethodEntry = Entry + {
+	isvirtuallyused:bool,
+	directusecount:tmuint,
+	isoverridden:bool,
+	realname:Signature,
+	thisparameters:[FormalParameter],
+	parameters:[FormalParameter],
+	throws:[type],
+	t:type
+    } +
+    FunctionEntry: {
+	noescape_formals:[tmsymbol],
+	retval:AbstractValue,
+	body:Block
+    } |
+    ExternalFunctionEntry: {} |
+    AbstractFunctionEntry: {} |
+    ForwardFunctionEntry: {
+	mangled:bool			|| This function is being mangled.
+    }
+;
+
+VariableEntry = Entry + {
+	isused:bool,
+	realname:origsymbol
+    } +
+    FieldEntry: { t:type, init:optexpression } |
+    GlobalVariableEntry: { t:type, init:optexpression } |
+    LocalVariableEntry: { scope:tmsymbol, t:type, init:optexpression } |
+    FormalParameterEntry: { scope:tmsymbol, t:type } |
+    CardinalityVariableEntry: {} |
+    GCLinkEntry: { scope:tmsymbol } |
+    GCTopLinkEntry: { scope:tmsymbol } |
+    ForwardFieldEntry: { t:type }
+;
+
+InitMethod -> tmsymbol;
+MainMethod -> tmsymbol;
+
+SparProgram == (
+    pragmas:[Pragma],
+    units:[SparProgramUnit],
+    inits:[InitMethod],		|| List of initialization methods to invoke
+    generics:[GenericMapping],	|| List of generic bindings
+    main:MainMethod,		|| Main method to invoke
+    exceptor:MainMethod,	|| Exception handler
+    boundsviolator:MainMethod,	|| Bounds violation handler
+    outofmemory:MainMethod,	|| Out of memory handler
+    nullpointer:MainMethod,	|| Null pointer handler
+    garbagecollector:MainMethod,	|| Garbage collection handler
+    typelist:[TypeEntry],
+    symtab:[Entry],
+    typebindings:[TypeBinding]
+);
+
+|| This expresses the index of a class in the introspection table
+ClassIdExpression = LiteralExpression +
+{
+    cl:TypeName			|| Which class?
+};
+
+DefaultValueExpression = LiteralExpression + { t:type };
+
+VectorSubscriptExpression = AccessExpression + 
+{
+    vector:expression,
+    subscript:tmuint
+};
+
+|| Assert expressions
+AssertExpression = expression +
+    NotNullAssertExpression: { x:expression }
+    ;
+
+
+|| This is what a new of a class is converted to.
+ConstructorInvocationStatement = ImperativeStatement + 
+{
+    rec:expression,
+    t:type,
+    outerthis:expression,
+    parameters:[expression]
+};
+
+SimpleTryStatement = ControlStatement +
+{
+    body:Block,
+    catchvar:FormalParameter,
+    caught:[type],		|| The types caught by the try block
+    catches:Block		|| The block that implements the handlers
+};
+
+InternalThrowStatement = TerminationStatement +
+{
+    x:expression
+};
+
+InternalizeExpression = OperatorExpression +
+{
+    fnname:tmsymbol,
+    x:expression
+};
+
+|| Statements to maintain links in the linked list of active references.
+GCRefChainLinkStatement = statement +
+    GCBuildRefChainLinkStatement: {
+	candidates:[tmsymbol],	|| Candidate elements in the chain.
+	linkname:tmsymbol,	|| the local var. holding the link.
+	oldlinkname:tmsymbol	|| the local var. of the previous link.
+    } |
+    GCSetRefChainLinkStatement: {
+	linkname:tmsymbol	|| the local var. holding the link.
+    } |
+    GCSetTopRefChainLinkStatement: {
+	linkname:tmsymbol	|| the local var. holding the original top link.
+    }
+    ;
+
+
+|| 'instanceof' on a type that is known to be a class.
+ClassInstanceOfExpression = OperatorExpression +
+    { x:expression, t:TypeName }
+    ;
+
+|| 'instanceof' on a type that is known to be an interface.
+InterfaceInstanceOfExpression = OperatorExpression +
+    { x:expression, t:TypeName }
+    ;
+
+|| A 'new' of a class with the constructor invocation split off
+NewRecordExpression = CreationExpression + { cl:type };
+
+|| A forced cast expression; this conversion is accepted without complaint.
+ForcedCastExpression = OperatorExpression + { t:type, x:expression };
+
+|| An entry in the method virtual table
+VtableEntry == (
+    virtualname:tmsymbol,	|| The name of the field in the vtable
+    thisparms:[type],
+    t:Signature,
+    rettype:type,
+    realname:tmsymbol,		|| The name of the function that implements it
+    isoverridden:bool		|| is this method ever overridden? sanity check
+);
+
+|| The relevant info of a particular method.
+MethodInfo == ( s:Signature, owner:tmsymbol, throws:[type] );
+
+|| A type abstraction from a generic or macro.
+TypeAbstraction == ( name:tmsymbol, value:type );
+
+|| A value abstraction from a generic or macro.
+ValueAbstraction == ( name:tmsymbol, value:expression );
+
+|| An AFLAG variable may have the values AF_YES, AF_NO, and AF_MAYBE. If
+|| we don't know, the value is AF_MAYBE.
+||
+|| Abstract representation of a value.
+||
+|| We may also want to maintain any constant value that the expression
+|| may have, and perhaps its type to avoid a virtual function call.
+|| Later.
+AbstractValue == (
+    zero:AFLAG,		|| Value is 0/null/false
+    positive:AFLAG,	|| Value is >=0
+    constant:bool,	|| Value always evaluates to the same.
+    value:expression	|| The constant value of the expression, or null
+);
+
+|| The state of an individual variable.
+VarState == (
+    name:tmsymbol,		|| Mangled variable name
+    final:bool,			|| Final variable?
+    escapes:bool,		|| Current value escapes?
+    defassigned:bool,		|| Definitely assigned
+    defunassigned:bool,		|| Definitely unassigned
+    value:AbstractValue
+);
+
+|| An analysis information state descriptor
+|| For analysis purposes this state descriptor is dragged around the
+|| entire program, and is updated with the knowledge gathered from each
+|| statement.
+|| The 'may be used before set' analysis proscribed by the JLS 
+|| also uses this state descriptor.
+ProgramState == (
+    completedStaticInits:[tmsymbol],	|| Which classes have been s-initalized
+    varStates:[VarState],
+    thrown:[tmsymbol],
+    iterated:bool,			|| Is this a loop.
+    throws:AFLAG,			|| statement/block throws exception?
+    jumps:AFLAG,			|| ... does a break or continue?
+    returns:AFLAG			|| ... does a return?
+);
+
+|| An entry in the list of array marker functions.
+arraymarker == ( t:type, fnname:tmsymbol );
+
+|| A hidden parameter of a local class.
+HiddenParameter == ( name:tmsymbol, t:type );
+

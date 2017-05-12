@@ -1,0 +1,8 @@
+#!/bin/sh
+SPAR_MAXMEM=400000000
+JAVA="/usr/share/local/sun-java/j2sdk1.4.0/bin/java"
+echo "running benchmark $3 SPAR_MAXMEM=$SPAR_MAXMEM"
+/usr/bin/time --format %U+%S --output=$3-hotspot-server.time $JAVA -server -Xmx$SPAR_MAXMEM $3 &> $3-hotspot-server.result
+#$JAVA -server -Xms$SPAR_MAXMEM -Xmx$SPAR_MAXMEM $3 &> $3-hotspot-server.result
+echo -n "Completed benchmark $3 in "
+cat $3-hotspot-server.time

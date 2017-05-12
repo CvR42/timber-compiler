@@ -1,0 +1,25 @@
+// File: okindiana.spar
+//
+// Example after JLS2 12.5 that shows method binding during
+// class instance creation.
+//
+// It should produce
+// 0
+// 3
+
+class Super {
+    Super() { printThree(); }
+
+    void printThree() { __println( 1, "three" ); }
+}
+
+public class okindiana extends Super {
+    int indiana = (int) Math.PI;
+
+    public static void main(){
+	okindiana t = new okindiana();
+	t.printThree();
+    }
+
+    void printThree() { __println( 1, indiana ); }
+}

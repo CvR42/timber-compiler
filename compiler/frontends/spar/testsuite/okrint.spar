@@ -1,0 +1,18 @@
+// File: okrint.spar
+
+public class okrint {
+    public static void main(){
+	int a[*] = new int[3];
+
+	System.out.println( Math.rint( 0.0 ) );
+	System.out.println( Math.rint( 12.3 ) );
+	System.out.println( Math.rint( -12.3 ) );
+	System.out.println( Math.rint( -12.99999999999 ) );
+	System.out.println( Math.rint( 12.99999999999 ) );
+	System.out.println( Math.rint( 12 ) );
+	System.out.println( Math.rint( -12 ) );
+	System.out.println( Math.rint( Double.NaN ) );
+	System.out.println( Math.rint( Double.NEGATIVE_INFINITY ) );
+	System.out.println( Math.rint( Double.POSITIVE_INFINITY ) );
+    }
+}

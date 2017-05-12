@@ -1,0 +1,43 @@
+final class ElasticArray(|type T,int n|)
+{
+  private T arr[*^n];
+  public ElasticArray(final [int^n] sz){
+    arr = new T@sz;
+  }
+  public inline T getElement([int^n] ix){
+    return arr@ix;
+  }
+  public inline void setElement([int^n] ix,final T val){
+    arr@ix = val;
+  }
+  void setSize([int^n] sz){
+    T newarr[*^n] = new T@sz;
+    [int^n] oldsz = arr.getSize();
+
+    [int^n] overlap;
+    inline for( i :- 0:n )
+      overlap[i] = Math.min( oldsz[i], sz[i] );
+    for( v :- 0:overlap )
+      newarr@v = arr@v;
+    arr = newarr;
+  }
+}
+
+public class genmat2e {
+    final static int M = 13*13*13;
+    final static int iters = 40;
+
+    public static void main( String args[] ){
+	ElasticArray(|int,2|) A = new ElasticArray(|int,2|)([M,M]);
+	ElasticArray(|int,2|) B = new ElasticArray(|int,2|)([M,M]);
+
+	__println( 1, "Doing ", M*M*iters, " iterations" );
+	for( int iter=0; iter<iters; iter++ ){
+	    for( int i=0; i<M; i++ ){
+		for( int j=0; j<M; j++ ){
+		    A[i,j] = B[j,i];
+		}
+	    }
+	}
+    }
+}

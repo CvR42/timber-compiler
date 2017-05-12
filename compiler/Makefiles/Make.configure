@@ -1,0 +1,13 @@
+# Configure-related rules.
+
+configure: configure.ac
+	autoconf
+
+config.status: configure
+	./config.status --recheck
+
+Makefile: Makefile.in config.status
+	./config.status
+
+JUNK += config.log config.cache
+PRECIOUSJUNK += config.status configure

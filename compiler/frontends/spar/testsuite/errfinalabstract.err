@@ -1,0 +1,3 @@
+errfinalabstract.spar:1: A class cannot be both abstract and final
+final abstract class t1 {
+               ^^^^^

@@ -1,0 +1,5 @@
+x=		3
+super.x=		2
+((T2)this).x=	2
+((T1)this).x=	1
+((I)this).x=	0

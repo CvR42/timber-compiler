@@ -1,0 +1,231 @@
+/* Applyaggr engine
+
+   Generate communication scheme with processor loop, but not with buffering.
+   This should lead eventually to the introduction of Sidney's aggregation
+   primitives.
+   */
+
+.. File: applyaggr.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtForeach
+.append actors DeclFunction DeclProcedure
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "search.h"
+#include "applyaggr.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+.call generate_admin_current_parms_action DeclFunction
+.call generate_admin_current_parms_action DeclProcedure
+
+
+static statement rewrite_SmtForeach_action(
+    SmtForeach e, global_context gc )
+{
+.call generate_walker_call "    " e SmtForeach SmtForeach
+    if (!pragma_list_contains_tmsymbol(
+        e->pragmas,
+        add_tmsymbol("independent")))
+        return e;
+    fprintf(stderr, "AGGR: found independent foreach\n");
+
+    statement_list sl = e->body->statements;
+    if (sl->sz != 1)
+        return e;    
+    if (sl->arr[0]->tag != TAGSmtAssign)
+        return e;
+    fprintf(stderr, "AGGR: found ass.stmt\n");
+
+    SmtAssign as = to_SmtAssign(sl->arr[0]);
+    if (!is2owned(as))
+	return e;
+    fprintf(stderr, "AGGR: found 2-owned statement\n");
+
+    assert (gc->current_parms != 0);
+    location strippedLHS = pierceLocationWrapper(as->lhs);
+    if (strippedLHS->tag != TAGLocSelection)
+        return e;
+    
+    assert (as->rhs->tag == TAGExprWrapper);
+    assert (to_ExprWrapper(as->rhs)->on != OwnerExpr_listNIL);
+    assert (to_ExprWrapper(as->rhs)->on->sz == 1);
+    OwnerExpr rhsOwner = rdup_OwnerExpr(to_ExprWrapper(as->rhs)->on->arr[0]);
+    rfre_OwnerExpr_list(to_ExprWrapper(as->rhs)->on);
+    to_ExprWrapper(as->rhs)->on = OwnerExpr_listNIL;
+
+    assert (as->on != OwnerExpr_listNIL);
+    assert (as->on->sz == 1);
+    OwnerExpr lhsOwner = rdup_OwnerExpr(as->on->arr[0]);
+    rfre_OwnerExpr_list(as->on);
+    as->on = OwnerExpr_listNIL;
+    
+    
+    LocSelection lhs = to_LocSelection(strippedLHS);
+    expression strippedRHS = pierceExprWrapper(as->rhs);
+	// We don't need an array as rhs. I think...
+//    assert (strippedRHS->tag == TAGExprSelection);
+    ExprSelection rhs = to_ExprSelection(strippedRHS);
+    
+    fprintf(stderr, "AGGR: array access\n");
+    
+    SmtWaitPending waitpend = snew_SmtWaitPending();
+    
+    expression currentProc = build_currentProcessor_expression(gc);
+    
+    SmtBlock nb = snew_SmtBlock(
+        snew_block());
+
+    SmtForeach outerSendLoop = snew_SmtForeach(
+	new_cardinality_list(),
+        OwnerExpr_listNIL,
+        snew_block());
+    outerSendLoop->cards = append_cardinality_list(
+        outerSendLoop->cards,
+        new_cardinality(
+	    gen_origsymbol("__aggr_cv_"),
+            new_ExprInt(0),
+            build_numberOfProcessors_expression(gc),
+            new_ExprInt(1),
+            new_secondary_list()));
+    nb->body->statements = append_statement_list(
+        nb->body->statements, outerSendLoop);
+    
+    SmtForeach innerSendLoop = snew_SmtForeach(
+        unique_rdup_cardinality_list(gc, e->cards),
+        OwnerExpr_listNIL,
+        snew_block());
+    outerSendLoop->body->statements = append_statement_list(
+        outerSendLoop->body->statements, innerSendLoop);
+
+    SmtForeach outerRecvLoop = snew_SmtForeach(
+        unique_rdup_cardinality_list(gc, outerSendLoop->cards),
+        OwnerExpr_listNIL,
+        snew_block());
+    nb->body->statements = append_statement_list(
+        nb->body->statements, outerRecvLoop);
+    
+    SmtForeach innerRecvLoop = snew_SmtForeach(
+        unique_rdup_cardinality_list(gc, e->cards),
+        OwnerExpr_listNIL,
+        snew_block());
+    outerRecvLoop->body->statements = append_statement_list(
+        outerRecvLoop->body->statements, innerRecvLoop);
+
+    OwnerExpr lhsOwner1 = rdup_OwnerExpr(lhsOwner);
+    OwnerExpr rhsOwner1 = rdup_OwnerExpr(rhsOwner);
+    SmtIf ifsend = snew_SmtIf(
+        new_ExprBinop(
+            new_ExprIsNewOwner(
+		lhsOwner1,
+		build_procList(
+		    new_ExprName(rdup_origsymbol(outerSendLoop->cards->arr[0]->name)),
+		    lhsOwner1,
+		    gc)),
+            BINOP_SHORTAND,
+            new_ExprIsNewMaster(
+		rhsOwner1,
+		build_procList(
+		    rdup_expression(currentProc),
+		    rhsOwner1,
+		    gc))),
+        snew_block(),
+	snew_block());
+    SmtSend sendElt = snew_SmtSend(
+	new_ExprName(rdup_origsymbol(outerSendLoop->cards->arr[0]->name)),
+	rdup_expression(rhs));
+    ifsend->thenbody->statements = append_statement_list(
+	ifsend->thenbody->statements,
+	sendElt);
+    ifsend = to_SmtIf(replace_statement_indices(gc, ifsend, e->cards, innerSendLoop->cards));
+    innerSendLoop->body->statements = append_statement_list(
+        innerSendLoop->body->statements, ifsend);
+
+    OwnerExpr lhsOwner2 = rdup_OwnerExpr(lhsOwner);
+    OwnerExpr rhsOwner2 = rdup_OwnerExpr(rhsOwner);
+    SmtIf ifrecv = snew_SmtIf(
+        new_ExprBinop(
+            new_ExprIsNewOwner(
+		lhsOwner2,
+		build_procList(
+		    rdup_expression(currentProc),
+		    lhsOwner2,
+		    gc)),
+            BINOP_SHORTAND,
+            new_ExprIsNewMaster(
+		rhsOwner2,
+		build_procList(
+		    new_ExprName(rdup_origsymbol(outerRecvLoop->cards->arr[0]->name)),
+		    rhsOwner2,
+		    gc))),
+        snew_block(),
+	snew_block());
+    SmtReceive recvElt = snew_SmtReceive(
+	new_ExprName(rdup_origsymbol(outerRecvLoop->cards->arr[0]->name)),
+	rdup_location(lhs));
+    ifrecv->thenbody->statements = append_statement_list(
+	ifrecv->thenbody->statements,
+	recvElt);
+    ifrecv = to_SmtIf(replace_statement_indices(gc, ifrecv, e->cards, innerRecvLoop->cards));
+    innerRecvLoop->body->statements = append_statement_list(
+        innerRecvLoop->body->statements, ifrecv);
+
+    add_cardinality_declarations(gc, innerSendLoop->cards);
+    add_cardinality_declarations(gc, innerRecvLoop->cards);
+    add_cardinality_declarations(gc, outerSendLoop->cards);
+    add_cardinality_declarations(gc, outerRecvLoop->cards);
+
+
+// Just to be sure...
+    nb->body->statements = append_statement_list(
+        nb->body->statements, rdup_statement(waitpend));
+
+// Let's not forget that the new loops are independent as well.
+    innerSendLoop->pragmas = new_Pragma_list();
+    innerRecvLoop->pragmas = new_Pragma_list();
+    outerSendLoop->pragmas = new_Pragma_list();
+    outerRecvLoop->pragmas = new_Pragma_list();
+    innerSendLoop->pragmas = append_Pragma_list(innerSendLoop->pragmas, new_FlagPragma(add_origsymbol("independent")));
+    innerRecvLoop->pragmas = append_Pragma_list(innerRecvLoop->pragmas, new_FlagPragma(add_origsymbol("independent")));
+    outerSendLoop->pragmas = append_Pragma_list(outerSendLoop->pragmas, new_FlagPragma(add_origsymbol("independent")));
+    outerRecvLoop->pragmas = append_Pragma_list(outerRecvLoop->pragmas, new_FlagPragma(add_origsymbol("independent")));
+    
+    rfre_OwnerExpr(lhsOwner);
+    rfre_OwnerExpr(rhsOwner);
+    rfre_expression(currentProc);
+    rfre_SmtForeach(e);
+    rfre_statement(waitpend);
+    return nb;
+}
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_aggr( vnusprog elm, global_context gc )
+{
+.call init_current_parms
+.call generate_descent_call "    " elm vnusprog vnusprog
+    gc->prog->declarations = delete_marked_declaration_list(gc->prog->declarations);
+    return elm;
+}
+

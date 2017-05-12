@@ -1,0 +1,789 @@
+/* hoist_on.c engine
+
+   WD: Hoists on clauses in tree
+
+*/
+
+.. File: hoist_on.ct
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "error.h"
+#include "vnusctl.h"
+#include "service.h"
+#include "global.h"
+#include "hoist_on.h"
+
+extern expression replace_expression_hack(
+    expression e, tmsymbol_list findSym_l, expression_list replaceExpr_l);
+
+.set walkpaths statement block size switchCase cardinality secondary expression location
+..
+.. // generates hoist walker over fields of 'c', 
+.. // for which their type 't' is a member of 'walkpaths' and 
+.. // collects all owners of fields in co_l
+..
+.macro default_hoist_fieldwalker indent c
+.foreach f ${allfields $c}
+.set t ${type $c $f}
+.if ${member $t $(walkpaths)}
+.switch ${typelevel $c $f}
+.case 1
+$(indent){
+$(indent)  $t_list e_l = to_$c(*e)->$f;
+
+$(indent)  for (unsigned int i = 0; i < e_l->sz; i++)
+$(indent)    co_l = concat_OwnerExpr_list(co_l, hoist_$t_owner(&(e_l->arr[i])));
+$(indent)}
+.case 0
+$(indent)co_l = concat_OwnerExpr_list(co_l, hoist_$t_owner(&(to_$c(*e)->$f)));
+.default
+.error typelevel == 2 not supported
+.exit 1
+.endswitch
+.endif
+.endforeach
+.endmacro
+..
+..
+.. // generates pop walker over fields of 'c', 
+.. // for which their type 't' is a member of 'walkpaths' and 
+.. // pop all owners of fields using co_l
+..
+.macro default_pop_fieldwalker indent c
+.foreach f ${allfields $c}
+.set t ${type $c $f}
+.if ${member $t $(walkpaths)}
+.switch ${typelevel $c $f}
+.case 1
+$(indent){
+$(indent)  $t_list e_l = to_$c(*e)->$f;
+
+$(indent)  for (unsigned int i = 0; i < e_l->sz; i++)
+$(indent)    pop_$t_owner(&(e_l->arr[i]), po_l);
+$(indent)}
+.case 0
+$(indent)pop_$t_owner(&(to_$c(*e)->$f), po_l);
+.default
+.error typelevel == 2 not supported
+.exit 1
+.endswitch
+.endif
+.endforeach
+.endmacro
+..
+.. collects all subclasses of c which have fieldtypes in $(walkpaths)
+..
+.macro get_leaves p
+.set res
+.foreach c ${subclasses $p}
+.if ${not ${isvirtual $c}}
+.set t ${alltypes $c}
+.if ${len ${comm $t "" $(walkpaths)}}
+.else
+.append res $c
+.endif
+.endif
+.endforeach
+.return $(res)
+.endmacro
+..
+..
+.. collects all subclasses of c which have fieldtypes in $(walkpaths)
+..
+.macro get_nonleaves p
+.set res
+.foreach c ${subclasses $p}
+.if ${not ${isvirtual $c}}
+.set t ${alltypes $c}
+.if ${len ${comm $t "" $(walkpaths)}}
+.append res $c
+.else
+.endif
+.endif
+.endforeach
+.return $(res)
+.endmacro
+..
+.. // calculates parent owner list po_l from childrens ownerlist co_l
+.. // frees co_l if needed
+.macro calculate_parent_owner indent c mustcheck
+.switch $c
+.case SmtAssign
+.default
+.call default_hoist_fieldwalker "$(indent)" $c
+.endswitch
+.switch $c
+.case LocWrapper
+$(indent){
+$(indent)  $c e1 = to_$c(*e);
+
+$(indent)  po_l = e1->on;
+$(indent)  *e   = e1;
+$(indent)  e1->on = OwnerExpr_listNIL;
+$(indent)  if (e1->pragmas == Pragma_listNIL) 
+$(indent)  {
+$(indent)      *e = e1->l;
+$(indent)      e1->l  = locationNIL;
+$(indent)      rfre_LocWrapper(e1);
+$(indent)  }
+$(indent)  rfre_OwnerExpr_list(co_l);
+$(indent)}
+.case ExprWrapper
+$(indent){
+$(indent)  $c e1 = to_$c(*e);
+
+$(indent)  po_l = e1->on;
+$(indent)  *e   = e1;
+$(indent)  e1->on = OwnerExpr_listNIL;
+$(indent)  if (e1->pragmas == Pragma_listNIL) 
+$(indent)  {
+$(indent)      *e = e1->x;
+$(indent)      e1->x  = expressionNIL;
+$(indent)      rfre_ExprWrapper(e1);
+$(indent)  }
+$(indent)  rfre_OwnerExpr_list(co_l);
+$(indent)}
+..case LocSelection ExprSelection
+..$(indent){
+..$(indent)  TypeMap t = get_expression_typemap(to_$c(*e)->shape);
+
+..$(indent)  if (t != TypeMapNIL) {
+..$(indent)    expression_list e_l = to_$c(*e)->indices;
+
+..$(indent)    po_l = append_OwnerExpr_list(new_OwnerExpr_list(), apply_map(e_l, t));
+..$(indent)    rfre_type(t);
+..$(indent)    rfre_OwnerExpr_list(co_l);
+..$(indent)  } else {
+..$(indent)    po_l = reduce_owners(co_l);
+..$(indent)  }
+..$(indent)}
+.case SmtForall SmtForeach SmtForkall. SmtFor
+$(indent)if (po_l == OwnerExpr_listNIL) {
+$(indent)  origsymbol_list os_l = extract_cardinalities(to_$c(*e)->cards);
+
+$(indent)  po_l = reduce_owners(generalize_owners(os_l, reduce_owners(co_l)));
+$(indent)  rfre_origsymbol_list(os_l);
+$(indent)}
+.case SmtProcedureCall ExprFunctionCall
+$(indent)if (po_l == OwnerExpr_listNIL)
+$(indent){
+$(indent)  po_l = new_OwnerExpr_list();
+$(indent)  po_l = append_OwnerExpr_list(po_l, new_NewOwnReplicated());
+$(indent)}
+$(indent)rfre_OwnerExpr_list(co_l);
+$(indent)co_l = OwnerExpr_listNIL;
+.case SmtAssign
+$(indent){
+$(indent)  OwnerExpr_list co_l1 =
+$(indent)    hoist_location_owner(&(to_SmtAssign(*e)->lhs));
+$(indent)  OwnerExpr_list co_l2 =
+$(indent)    hoist_expression_owner(&(to_SmtAssign(*e)->rhs));
+$(indent)  assert (co_l1 != OwnerExpr_listNIL);
+$(indent)  assert (co_l2 != OwnerExpr_listNIL);
+$(indent)  co_l1 = reduce_owners(co_l1);
+$(indent)  co_l2 = reduce_owners(co_l2);
+$(indent)  assert (co_l1 != OwnerExpr_listNIL);
+$(indent)  assert (co_l2 != OwnerExpr_listNIL);
+$(indent)  if (po_l == OwnerExpr_listNIL) 
+$(indent)  {
+$(indent)    bool isol12 = issubset_owner_list(co_l1, co_l2);
+$(indent)    bool isol21 = issubset_owner_list(co_l2, co_l1);
+$(indent)    if (isol21) {
+$(indent)        po_l = co_l1;
+$(indent)        rfre_OwnerExpr_list(co_l2);
+$(indent)    } else {
+$(indent)        po_l = concat_OwnerExpr_list(co_l1,co_l2);
+$(indent)        if (isol12)
+$(indent)            po_l = reduce_owners(po_l);
+$(indent)    }
+$(indent)    assert (po_l != OwnerExpr_listNIL);
+$(indent)  } else {
+$(indent)            rfre_OwnerExpr_list(co_l1);
+$(indent)            rfre_OwnerExpr_list(co_l2);
+$(indent)  }
+$(indent)  rfre_OwnerExpr_list(co_l);
+$(indent)  co_l = OwnerExpr_listNIL;
+$(indent)  assert (po_l != OwnerExpr_listNIL);
+$(indent)}
+.case block
+.if $(mustcheck)
+$(indent)if (po_l == OwnerExpr_listNIL) {
+$(indent)  po_l = co_l;
+$(indent)}
+$(indent)po_l = maximize_owners(po_l);
+.else
+$(indent)po_l = maximize_owners(co_l);
+.endif
+.default
+.if $(mustcheck)
+$(indent)if (po_l == OwnerExpr_listNIL) {
+$(indent)  po_l = co_l;
+$(indent)}
+$(indent)po_l = reduce_owners(po_l);
+.else
+$(indent)po_l = reduce_owners(co_l);
+.endif
+.endswitch
+$(indent)if (po_l->sz == 1) {
+.call default_pop_fieldwalker "$(indent)  " $c
+$(indent)}
+.endmacro
+..
+.macro hoist_walker p
+static OwnerExpr_list hoist_$p_owner($p *e) {
+  OwnerExpr_list po_l = OwnerExpr_listNIL;
+  OwnerExpr_list co_l = new_OwnerExpr_list();
+.if ${member $p block statement}
+  int used_on = 0;
+.endif
+
+  if (*e != $pNIL) {
+.if ${member $p block statement}
+    if ((*e)->on != OwnerExpr_listNIL) {
+      if ((*e)->on->sz == 0) {
+        rfre_OwnerExpr_list((*e)->on);
+      } else {
+        po_l = (*e)->on;
+        used_on = 1;
+      }
+      (*e)->on = OwnerExpr_listNIL;
+    }
+.endif
+.switch ${metatype $p}
+.case tuple
+.call calculate_parent_owner    "    " $p ${eq $p block }
+.case class
+    switch( (*e)->tag) {
+.set    leaves ${call get_leaves    $p}
+.set nonleaves ${call get_nonleaves $p}
+.foreach c $(leaves)
+      case TAG$c:
+.endforeach
+. if ${len $(leaves)}
+        if (po_l == OwnerExpr_listNIL)
+          po_l = append_OwnerExpr_list(co_l, new_NewOwnReplicated());
+      break;
+.endif
+.foreach c $(nonleaves)
+      case TAG$c:
+.call calculate_parent_owner    "        " $c ${eq $p statement}
+      break;
+.endforeach
+      default:
+	tm_badtag(__FILE__,__LINE__,(*e)->tag);
+    }
+.endswitch
+.switch $p
+.case expression
+    *e = new_ExprWrapper(Pragma_listNIL, rdup_OwnerExpr_list(po_l), *e);
+.case location
+    *e = new_LocWrapper(Pragma_listNIL, rdup_OwnerExpr_list(po_l), *e);
+.case block statement
+    if (used_on)
+      rfre_OwnerExpr_list(co_l);
+    (*e)->on = rdup_OwnerExpr_list(po_l);
+.default
+.endswitch
+  } else {
+    po_l = co_l;
+  }
+
+  return po_l;
+}
+
+.endmacro
+..
+.macro pop_walker p
+static void pop_$p_owner($p *e, OwnerExpr_list po_l) {
+  if (*e != $pNIL) {
+.switch $p
+.case statement block
+    if (issubset_owner_list(po_l, (*e)->on) &&
+	!((*e)->on != OwnerExpr_listNIL && (*e)->on->sz >1)) {
+      rfre_OwnerExpr_list((*e)->on);
+      (*e)->on = OwnerExpr_listNIL;
+    }
+.case expression
+    if ((*e)->tag == TAGExprWrapper &&
+        issubset_owner_list(po_l, to_ExprWrapper(*e)->on)) {
+      ExprWrapper e1 = to_ExprWrapper(*e);
+
+      *e = e1->x;
+      e1->x = $tNIL;
+      rfre_ExprWrapper(e1);
+    }
+.case location
+    if ((*e)->tag == TAGLocWrapper &&
+        issubset_owner_list(po_l, to_LocWrapper(*e)->on)) {
+      LocWrapper e1 = to_LocWrapper(*e);
+
+      *e = e1->l;
+      e1->l = locationNIL;
+      rfre_LocWrapper(e1);
+    }
+.default
+.switch ${metatype $p}
+.case tuple
+.call default_pop_fieldwalker "  " $p
+.case class
+    switch( (*e)->tag) {
+.foreach c ${subclasses $p}
+.if ${not ${isvirtual $c}}
+      case TAG$c:
+.call default_pop_fieldwalker "        " $c
+      break;
+.endif
+.endforeach
+      default:
+	tm_badtag(__FILE__,__LINE__,(*e)->tag);
+    }
+.default
+.endswitch
+.endswitch
+  }
+}
+
+.endmacro
+
+/*
+ generates default used walker to search for used variables
+*/
+.macro default_used_walker c
+.foreach f ${allfields $c}
+.set t ${type $c $f}
+.if ${member $t size expression location}
+.switch ${typelevel $c $f}
+.case 1
+      {
+        $t_list e_l = to_$c(e)->$f;
+
+        for (unsigned int i = 0; i < e_l->sz; i++)
+          us_l = concat_origsymbol_list(us_l, used_in_$t(os_l, e_l->arr[i]));
+      }
+.case 0
+      us_l = concat_origsymbol_list(us_l, used_in_$t(os_l, to_$c(e)->$f));
+.default
+.error  typelevel == 2 not supported
+.exit 1
+.endswitch
+.endif
+.endforeach
+.endmacro
+
+.foreach t $(walkpaths)
+static OwnerExpr_list hoist_$t_owner($t *e);
+.endforeach
+
+.foreach t $(walkpaths)
+static void pop_$t_owner($t *e, OwnerExpr_list po_l);
+.endforeach
+
+.foreach c expression location size
+static origsymbol_list used_in_$c(origsymbol_list os_l, $c e);
+.endforeach
+
+static declaration_list d_l;
+
+/*
+  Extract names of all primaries and secondaries.
+  */
+static origsymbol_list extract_cardinalities(cardinality_list c_l) {
+  origsymbol_list os_l = new_origsymbol_list();
+
+  for (unsigned int i = 0; i < c_l->sz; i++) {
+    os_l = append_origsymbol_list(os_l, rdup_origsymbol(c_l->arr[i]->name));
+
+    secondary_list s_l = c_l->arr[i]->secondaries;
+
+    if (s_l != secondary_listNIL) {
+      for (unsigned int i = 0; i < s_l->sz; i++) {
+        os_l = append_origsymbol_list(os_l, rdup_origsymbol(s_l->arr[i]->name));
+      }
+    }
+  }
+
+  return os_l;
+}
+
+/*
+  All DistrExpr containing var's from os_l will be replaced by NewDistReplicated
+  Used to determine owner of loop from owners of ietrations.
+*/
+static OwnerExpr_list generalize_owners(origsymbol_list os_l, OwnerExpr_list o_l) {
+  for (unsigned int i = 0; i < o_l->sz; i++) {
+    if (o_l->arr[i]->tag == TAGNewOwnLocation) {
+      DistrExpr_list de_l  = to_NewOwnLocation(o_l->arr[i])->distr;
+
+      for (unsigned int i = 0; i < de_l->sz; i++) {
+        DistrExpr      de = de_l->arr[i];
+        expression  index = expressionNIL;
+
+        switch (de->tag) {
+          case TAGNewDistBlock:
+            index = to_NewDistBlock(de)->index;
+          break;
+          case TAGNewDistCyclic:
+            index = to_NewDistCyclic(de)->index;
+          break;
+          case TAGNewDistBC:
+            index = to_NewDistBC(de)->index;
+          break;
+          case TAGNewDistLocal:
+            index = to_NewDistLocal(de)->index;
+          break;
+          default:;
+        }
+        if (index != expressionNIL) {
+          origsymbol_list us_l = used_in_expression(os_l, index);
+
+          if (us_l->sz != 0) {
+            rfre_DistrExpr(de);
+            de_l->arr[i] = new_NewDistReplicated();
+          }
+          rfre_origsymbol_list(us_l);
+        }
+      }
+    }
+  }
+
+  return o_l;
+}
+
+/*
+  Which syms from os_l are used in e?
+  */
+static origsymbol_list used_in_location(origsymbol_list os_l, location e) {
+  origsymbol_list us_l = new_origsymbol_list();
+
+  switch (e->tag) {
+.foreach c ${subclasses location}
+.if ${not ${isvirtual $c}}
+    case TAG$c:
+.switch $c
+.case LocName
+    {
+      origsymbol name = to_LocName(e)->name;
+
+      for (unsigned int i = 0; i < os_l->sz; i++) {
+        if (isequal_tmsymbol(os_l->arr[i]->sym, name->sym)) {
+          us_l = append_origsymbol_list(us_l, rdup_origsymbol(os_l->arr[i]));
+          break;
+        } 
+      }
+    }
+.default
+.call default_used_walker $c
+.endswitch
+    break;
+.endif
+.endforeach
+    default:
+      tm_badtag(__FILE__,__LINE__,e->tag);
+  }
+
+  return us_l;
+}
+
+static origsymbol_list used_in_size(origsymbol_list os_l, size e) {
+  origsymbol_list us_l = new_origsymbol_list();
+
+  if (e->tag == TAGSizeExpression) {
+    us_l = concat_origsymbol_list(us_l, used_in_expression(os_l, to_SizeExpression(e)->x));
+  }
+
+  return us_l;
+}
+
+/* copies all variables of os_l which are used in expression e 
+   to the used variable list us_l.
+*/
+static origsymbol_list used_in_expression(origsymbol_list os_l, expression e) {
+  origsymbol_list us_l = new_origsymbol_list();
+
+  switch (e->tag) {
+.foreach c ${subclasses expression}
+.if ${not ${isvirtual $c}}
+    case TAG$c:
+.switch $c
+.case ExprName
+    {
+      origsymbol name = to_ExprName(e)->name;
+
+      for (unsigned int i = 0; i < os_l->sz; i++) {
+        if (isequal_tmsymbol(os_l->arr[i]->sym, name->sym)) {
+          us_l = append_origsymbol_list(us_l, rdup_origsymbol(os_l->arr[i]));
+          break;
+        } 
+      }
+    }
+.default
+.call default_used_walker $c
+.endswitch
+    break;
+.endif
+.endforeach
+    default:
+      tm_badtag(__FILE__,__LINE__,e->tag);
+  }
+
+  return us_l;
+}
+
+/* intersect two distrs
+      \de2  re  dc  bl2 cy2 bc2 lo2
+    de1\
+    re      re  dc  bl2 cy2 bc2 lo2
+    dc      dc  dc  bl2 cy2 bc2 lo2
+    bl1     bl1 bl1 bl3 nil nil nil
+    cy1     cy1 cy1 nil cy3 nil nil
+    bc1     bc1 bc1 nil nil bc3 nil
+    lo1     lo1 lo1 nil nil nil lo2
+
+    **3 = **1 /\ **2
+*/
+static DistrExpr intersect_distrs(DistrExpr de1, DistrExpr de2) {
+  expression index1, index2, size1, size2, extent1, extent2;
+
+  if (de1 == DistrExprNIL || de2 == DistrExprNIL) return DistrExprNIL;
+
+  switch (de1->tag) {
+    case TAGNewDistReplicated:
+      return rdup_DistrExpr(de2);
+    break;
+    case TAGNewDistDontCare:
+      if (de2->tag == TAGNewDistReplicated) {
+        return new_NewDistDontCare();
+      } else {
+        return rdup_DistrExpr(de2);
+      }
+    break;
+    default:;
+  }
+
+  switch (de2->tag) {
+    case TAGNewDistReplicated:
+      return rdup_DistrExpr(de1);
+    break;
+    case TAGNewDistDontCare:
+      if (de1->tag == TAGNewDistReplicated) {
+        return new_NewDistDontCare();
+      } else {
+        return rdup_DistrExpr(de1);
+      }
+    break;
+    default:;
+  }
+
+  if (de1->tag == de2->tag) {
+    switch(de1->tag) {
+      case TAGNewDistBlock:
+        index1 = to_NewDistBlock(de1)->index;
+        index2 = to_NewDistBlock(de2)->index;
+        size1  = to_NewDistBlock(de1)->size;
+        size2  = to_NewDistBlock(de2)->size;
+
+        return is_equivalent_expression(index1, index2) && 
+               is_equivalent_expression(size1, size2)
+             ? new_NewDistBlock(rdup_expression(index1),
+                                rdup_expression(size1))
+             : DistrExprNIL;
+      break;
+      case TAGNewDistCyclic:
+        index1 = to_NewDistCyclic(de1)->index;
+        index2 = to_NewDistCyclic(de2)->index;
+        extent1 = to_NewDistCyclic(de1)->extent;
+        extent2 = to_NewDistCyclic(de2)->extent;
+
+        return is_equivalent_expression(index1, index2) &&
+               is_equivalent_expression(extent1, extent2)
+             ? new_NewDistCyclic(rdup_expression(index1),
+                                 rdup_expression(extent1))
+             : DistrExprNIL;
+      break;
+      case TAGNewDistBC:
+        index1 = to_NewDistBC(de1)->index;
+        index2 = to_NewDistBC(de2)->index;
+        size1  = to_NewDistBC(de1)->size;
+        size2  = to_NewDistBC(de2)->size;
+        extent1  = to_NewDistBC(de1)->extent;
+        extent2  = to_NewDistBC(de2)->extent;
+
+        return is_equivalent_expression(index1, index2) && 
+               is_equivalent_expression(size1, size2) &&
+               is_equivalent_expression(extent1, extent2)
+             ? new_NewDistBC(rdup_expression(index1), 
+                             rdup_expression(size1), 
+                             rdup_expression(extent1))
+             : DistrExprNIL;
+      break;
+      case TAGNewDistLocal:
+        index1 = to_NewDistLocal(de1)->index;
+        index2 = to_NewDistLocal(de2)->index;
+
+        return is_equivalent_expression(index1, index2)
+             ? new_NewDistLocal(rdup_expression(index1))
+             : DistrExprNIL;
+      break;
+      default:;
+    }
+  }
+
+  return DistrExprNIL;
+}
+
+static NewOwnLocation intersect_NewOwnLocations(NewOwnLocation ol1, NewOwnLocation ol2) {
+  NewOwnLocation res = NewOwnLocationNIL; 
+
+  if (ol1 != NewOwnLocationNIL && ol2 != NewOwnLocationNIL &&
+      ol1->distr != DistrExpr_listNIL && ol2->distr != DistrExpr_listNIL && 
+      ol1->distr->sz == ol2->distr->sz &&
+      is_equivalent_expression(ol1->proc, ol2->proc)) {
+    DistrExpr_list nde_l = new_DistrExpr_list();
+
+    for (unsigned int i = 0; i < ol1->distr->sz; i++) {
+      DistrExpr d = intersect_distrs(ol1->distr->arr[i], ol2->distr->arr[i]);
+
+      if (d == DistrExprNIL) {
+        rfre_DistrExpr_list(nde_l);
+        return res;
+      }
+      nde_l = append_DistrExpr_list(nde_l, d);
+    }
+  
+    res = new_NewOwnLocation(rdup_expression(ol1->proc), nde_l);
+  }
+
+  return res;
+}
+
+/* intersect two owners
+      \oe2  re  dc  lo2 ma2
+    oe1\
+    re      re  dc  lo2 nil
+    dc      dc  dc  lo2 nil
+    lo1     lo1 lo1 lo3 nil
+    ma1     nil nil nil nil
+
+    lo3 = lo1 /\ lo2
+*/
+static OwnerExpr intersect_owners(OwnerExpr oe1, OwnerExpr oe2) {
+  OwnerExpr res = OwnerExprNIL;
+
+  if (oe1 != OwnerExprNIL && oe2 != OwnerExprNIL) {
+    switch (oe1->tag) {
+      case TAGNewOwnDontCare:
+        res = (oe2->tag == TAGNewOwnReplicated)
+            ? new_NewOwnDontCare()
+            : rdup_OwnerExpr(oe2);
+      break;
+      case TAGNewOwnReplicated:
+        res = rdup_OwnerExpr(oe2);
+      break;
+      case TAGNewOwnLocation:
+        res = (oe2->tag != TAGNewOwnLocation)
+            ? rdup_OwnerExpr(oe1)
+            : intersect_NewOwnLocations(to_NewOwnLocation(oe1), to_NewOwnLocation(oe2));
+      break;
+      case TAGNewOwnMap:
+      break;
+      default:
+	tm_badtag(__FILE__,__LINE__,oe1->tag);
+    }
+  }
+
+  return res;
+}
+
+/*
+  Reduce owner list to remove all overlaps.
+  */
+static OwnerExpr_list reduce_owners(OwnerExpr_list co_l) {
+  OwnerExpr_list  o_l = new_OwnerExpr_list();
+
+  if (co_l != OwnerExpr_listNIL) {
+    while (co_l->sz > 1) {
+      OwnerExpr co;
+      int       valid, found_overlap = 0;
+
+      co_l = extract_OwnerExpr_list(co_l, 0, &co, &valid);
+
+      if (!valid) {
+	  if (warning_level >= WARN_WARNING)
+	      fprintf(stderr,"|| found invalid element #%d in Ownerlist\n", co_l->sz - 1);
+	  break;
+      }
+
+      for (unsigned int i = 0; i < co_l->sz; i++) {
+        OwnerExpr no = intersect_owners(co, co_l->arr[i]);
+        if (no != OwnerExprNIL) {
+          rfre_OwnerExpr(co_l->arr[i]);
+          co_l->arr[i] = no;
+          found_overlap = 1;
+        }
+      }
+      if (found_overlap) {
+        rfre_OwnerExpr(co);
+      } else {
+        o_l = append_OwnerExpr_list(o_l, co);
+      }
+    }
+    o_l = concat_OwnerExpr_list(o_l, co_l);
+  }
+
+  return o_l;
+}
+
+static OwnerExpr_list maximize_owners(OwnerExpr_list co_l) {
+  OwnerExpr_list  o_l = new_OwnerExpr_list();
+  
+  if (co_l == OwnerExpr_listNIL ||
+      co_l->sz == 0)
+  {
+  }
+  else if (co_l->sz == 1)
+  {
+      o_l = append_OwnerExpr_list(o_l, rdup_OwnerExpr(co_l->arr[0]));
+  }
+  else
+  {
+      o_l = append_OwnerExpr_list(o_l, new_NewOwnReplicated());
+  }
+
+  rfre_OwnerExpr_list(co_l);
+  return o_l;
+}
+
+.foreach t $(walkpaths)
+.call pop_walker $t
+.call hoist_walker $t
+.endforeach
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_hoist_on(vnusprog vp)
+{
+  OwnerExpr_list o_l = new_OwnerExpr_list();
+
+  d_l = vp->declarations;
+  o_l = concat_OwnerExpr_list(o_l, hoist_block_owner(&vp->statements));
+
+  if (vp->declarations != declaration_listNIL) {
+     for (unsigned int i = 0; i < d_l->sz; i++) {
+       switch (d_l->arr[i]->tag) {
+         case TAGDeclFunction:
+           o_l = concat_OwnerExpr_list(o_l, hoist_block_owner(&to_DeclFunction(d_l->arr[i])->body));
+         break;
+         case TAGDeclProcedure:
+           o_l = concat_OwnerExpr_list(o_l, hoist_block_owner(&to_DeclProcedure(d_l->arr[i])->body));
+         break;
+         default:;
+       }
+     }
+  }
+
+  rfre_OwnerExpr_list(o_l);
+
+  return vp;
+}

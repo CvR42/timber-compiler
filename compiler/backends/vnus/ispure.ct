@@ -1,0 +1,146 @@
+.. File: ispure.ct
+..
+.. Tree analyzer
+..
+.set reduction_type bool
+.set neutral_element true
+.set analysis_name ispure
+..
+.macro generate_formal_parameters nm t
+.return "( const_$t $(nm) )"
+.endmacro
+..
+.macro generate_actual_parameters nm should_type is_type
+.if ${eq $(should_type) $(is_type)}
+.return "( $(nm) )"
+.else
+.return "( (const_$(should_type)) $(nm) )"
+.endif
+.endmacro
+..
+.macro generate_reduction_operation a b
+.return "($a)&&($b)"
+.endmacro
+..
+.. Generate a test expression that evaluates to true iff there is
+.. no point in continuing the analyzis.
+.macro generate_termination_test v
+.return "(!$v)"
+.endmacro
+..
+.macro generate_setup_code t indent elm res
+.if ${member ${metatype $t} list class constructor constructorbase}
+$(indent)if( $(elm) == $tNIL ){
+$(indent)$(indent)return $(neutral_element);
+$(indent)}
+.endif
+.endmacro
+..
+.. For which types are there actions defines?
+.set actors
+.append actors ${nonvirtual expression location ${subclasses expression location}}
+..
+.. Actions for all visited types
+.set analyze_action_ExprAddress reduction
+.set analyze_action_ExprAnnotation reduction
+.set analyze_action_ExprArray reduction
+.set analyze_action_ExprBinop reduction
+.set analyze_action_ExprBoolean constant true
+.set analyze_action_ExprBracket reduction
+.set analyze_action_ExprByte constant true
+.set analyze_action_ExprCast reduction
+.set analyze_action_ExprChar constant true
+.set analyze_action_ExprCheckedIndex reduction
+.set analyze_action_ExprComplex reduction
+.set analyze_action_ExprDeref reduction
+.set analyze_action_LocDeref reduction
+.set analyze_action_ExprDouble constant true
+.set analyze_action_ExprFieldNumber reduction
+.set analyze_action_ExprField reduction
+.set analyze_action_ExprFilledNew constant false
+.set analyze_action_ExprFlatSelection reduction
+.set analyze_action_ExprFloat constant true
+.set analyze_action_ExprForcedCast reduction
+.set analyze_action_ExprFunctionCall constant false
+.set analyze_action_ExprGetLength reduction
+.set analyze_action_ExprGetNewMaster reduction
+.set analyze_action_ExprGetNewOwner reduction
+.set analyze_action_ExprGetSize reduction
+.set analyze_action_ExprIf reduction
+.set analyze_action_ExprInt constant true
+.set analyze_action_ExprIsBoundViolated reduction
+.set analyze_action_ExprIsLowerBoundViolated reduction
+.set analyze_action_ExprIsNewMaster reduction
+.set analyze_action_ExprIsNewOwner reduction
+.set analyze_action_ExprIsRaised reduction
+.set analyze_action_ExprIsUpperBoundViolated reduction
+.set analyze_action_ExprLong constant true
+.set analyze_action_ExprLowerCheckedIndex reduction
+.set analyze_action_ExprName constant true
+.set analyze_action_ExprNewArray constant false
+.set analyze_action_ExprNew constant false
+.set analyze_action_ExprNewRecord constant false
+.set analyze_action_ExprNotNullAssert reduction
+.set analyze_action_ExprNull constant true
+.set analyze_action_ExprNulledNew constant false
+.set analyze_action_ExprOuterSuperField reduction
+.set analyze_action_ExprOuterSuperInvocation constant false
+.set analyze_action_ExprOuterThis constant false
+.set analyze_action_ExprRecord reduction
+.set analyze_action_ExprReduction reduction
+.set analyze_action_ExprSelection reduction
+.set analyze_action_ExprShape reduction
+.set analyze_action_ExprShort constant true
+.set analyze_action_ExprShortop reduction
+.set analyze_action_ExprSizeof constant true
+.set analyze_action_ExprString constant true
+.set analyze_action_ExprUnop reduction
+.set analyze_action_ExprUpperCheckedIndex reduction
+.set analyze_action_ExprVector reduction
+.set analyze_action_ExprVectorSubscript reduction
+.set analyze_action_ExprWrapper reduction
+.set analyze_action_LocFieldNumber reduction
+.set analyze_action_LocField reduction
+.set analyze_action_LocFlatSelection reduction
+.set analyze_action_LocName constant true
+.set analyze_action_LocNotNullAssert reduction
+.set analyze_action_LocSelection reduction
+.set analyze_action_LocWrapper reduction
+.set analyze_action_type constant true
+.. TODO: have a better look.
+.set analyze_action_ExprGetBuf constant false
+.set analyze_action_ExprWhere constant false
+.set analyze_action_LocWhere constant false
+..
+.insert tmcanalyze.t
+..
+.set visit_types ${call calc_analyzer "expression location" "$(actors)"}
+..
+/* File: ispure.c
+ *
+ * Return true iff the given expression is pure. That is, if in
+ * a given context the expression always evaluates to the same value.
+ * This is true for most expressions, but a notable exception is
+ * a function invocation.
+ */
+
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "ispure.h"
+
+.call generate_analyzer_forwards "$(visit_types)"
+
+.call generate_analyzer "$(visit_types)"
+
+bool is_pure_expression( const_expression x )
+{
+    return $(analysis_name)_expression${call generate_actual_parameters x expression expression};
+}
+
+bool is_pure_location( const_location x )
+{
+    return $(analysis_name)_location${call generate_actual_parameters x location location};
+}
+

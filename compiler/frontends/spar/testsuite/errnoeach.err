@@ -1,0 +1,7 @@
+errnoeach.spar:9: syntax error
+	each {
+	     ^
+errnoeach.spar:14: syntax error
+}
+^
+cannot recover from earlier parse errors, goodbye

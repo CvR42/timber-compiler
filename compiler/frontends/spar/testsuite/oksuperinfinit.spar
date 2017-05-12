@@ -1,0 +1,26 @@
+// File: oksuperinfinit.spar
+//
+// The static interface initialization example of JLS2 12.4.1
+
+interface I {
+    int i = 1, ii = oksuperinfinit.out( "ii", 2 );
+}
+
+interface J extends I {
+    int j = oksuperinfinit.out( "j", 3 ), jj = oksuperinfinit.out( "jj", 4 );
+}
+
+interface K extends J {
+    int k = oksuperinfinit.out( "k", 5 );
+}
+
+public class oksuperinfinit {
+    public static void main(){
+	__println( 1, J.i );
+	__println( 1, K.j );
+    }
+    static int out( __string s, int i ){
+	__println( 1, s, "=", i );
+	return i;
+    }
+}

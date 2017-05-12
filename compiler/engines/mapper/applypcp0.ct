@@ -1,0 +1,77 @@
+/*
+   Applypcp0 engine
+
+   Check formal variables for distributions. If they have one produce a
+   warning as the rules that insert temporaries don't handle this case
+   correctly at them moment. Nothing is done, so if a shape is passed by
+   reference the distribution of the formal parameter instead of the
+   actual parameter is taken, which is not true.
+   */
+
+.. File: applypcp0.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors DeclFormalVariable
+.append actors LocNotNullAssert ExprNotNullAssert
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "vnusctl.h"
+#include "applypcp0.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+.call generate_cutoff_dummy_action LocNotNullAssert
+.call generate_cutoff_dummy_action ExprNotNullAssert
+
+static DeclFormalVariable rewrite_DeclFormalVariable_action(
+  DeclFormalVariable e, global_context gc )
+{
+.call generate_walker_call "    " e DeclFormalVariable DeclFormalVariable
+
+    switch (e->t->tag)
+    {
+        case TAGTypeShape:
+        {
+            TypeShape ts = to_TypeShape(e->t);
+            if ((ts->distr != distribution_listNIL) && (ts->distr->sz != 0))
+                fprintf(stderr, "PCP0: WARNING: formal shape parameter has distribution(incorrectly supported)!\n");
+            break;
+        }
+        default:
+            break;
+    }
+    return e;
+}
+
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_pcp0(
+    vnusprog elm, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+    (void) rewrite_ExprNotNullAssert_walker;
+    (void) rewrite_LocNotNullAssert_walker;
+    
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}

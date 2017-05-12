@@ -1,0 +1,35 @@
+class t1 {
+    int n = 42;
+    void superhi(){ System.out.println( "Hi from t1" ); }
+    public class inner {
+	int n = -3;
+    }
+}
+
+public final class okinner extends t1 {
+    int n1 = 3;
+    public class inner extends t1.inner {
+	int getn() { return okinner.this.n; }
+	void superhi() { okinner.super.superhi(); }
+	int getsupern() { return okinner.super.n; }
+	int f() { return n; }
+    }
+    public static void main( String args[] ){
+	final int v = 3;
+
+	okinner outer = new okinner();
+	inner x = outer.new inner();
+	class local {
+	    int getv() { return v; }
+	};
+
+	local lc = new local();
+	System.out.println( x.getn() );
+	x.superhi();
+	System.out.println( x.getsupern() );
+	System.out.println( x.f() );
+	System.out.println( lc.getv() );
+	local lc1 = new local() { int getv() { return 10*v; } };
+	System.out.println( lc1.getv() );
+    }
+}

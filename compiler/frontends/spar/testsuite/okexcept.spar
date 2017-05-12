@@ -1,0 +1,74 @@
+//package spar.testsuite;
+
+import java.io.*;
+
+class HardException extends Exception {
+}
+
+class SoftException extends Exception {
+}
+
+class OuterException extends Exception {
+}
+
+class ChainException extends Exception {
+}
+
+class ChainedException extends Exception {
+}
+
+public class okexcept {
+    public static void main(){
+	for( int n=0; n<6; n++ ){
+	    __println( 1, "n=", n );
+	    try {
+		try {
+		    if( n == 0 ){
+			__println( 1, "throwing hard exception" );
+			throw new HardException();
+		    }
+		    if( n == 1 ){
+			__println( 1, "throwing soft exception" );
+			throw new SoftException();
+		    }
+		    if( n == 2 ){
+			__println( 1, "throwing outer exception" );
+			throw new OuterException();
+		    }
+		    if( n == 3 ){
+			__println( 1, "throwing chain exception" );
+			throw new ChainException();
+		    }
+		    __println( 1, "the general case" );
+		}
+		catch( HardException e ){
+		    __println( 1, "caught hard exception" );
+		}
+		catch( SoftException e ){
+		    __println( 1, "caught soft exception" );
+		}
+		catch( ChainException e ){
+		    __println( 1, "caught chain exception; throwing chained exception" );
+			throw new ChainedException();
+		}
+		finally {
+		    __println( 1, "reached inner finally clause" );
+		}
+		__println( 1, "after inner try block" );
+	    }
+	    catch( OuterException e ){
+		__println( 1, "caught soft exception" );
+	    }
+	    catch( ChainedException e ){
+		__println( 1, "caught chained exception" );
+	    }
+	    catch( Exception e ){
+		__println( 1, "caught unknown exception" );
+	    }
+	    finally {
+		__println( 1, "reached outer finally clause" );
+	    }
+	    __println( 1 );
+	}
+    }
+}

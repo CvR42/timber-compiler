@@ -1,0 +1,17 @@
+globalpragmas <$
+    math=1+2*3/4%5-6,
+    largesum= 1+2+3+4+6+b,
+    complicatedsum= (sum a b)+c,
+    logical1= 1==2,
+    logical2= a!=b,
+    logical3= 3<4,
+    logical4= 5<=6,
+    logical5= c>d,
+    logical6= e>=f
+$>;
+
+public class genpragmabinop {
+    public static void main(){
+	__println( 1, "hello world" );
+    }
+}

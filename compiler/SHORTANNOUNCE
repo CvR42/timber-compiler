@@ -1,0 +1,10 @@
+Hello everyone,
+
+We are happy to announce that version 2.0.1 of our Timber compiler,
+a compiler for the Spar/Java superset of Java, is now available for
+downloading from our website:
+
+<http://www.pds.its.tudelft.nl/timber/downloading.html>.
+
+This version contains some bug fixes, some performance improvements,
+and support for MacOS X.

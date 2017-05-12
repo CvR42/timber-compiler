@@ -1,0 +1,9 @@
+// After JLS2 7.4.2    Unnamed Packages
+
+
+public class okfirstcall {
+    public static void main(String[] args) {
+        System.out.println("Mr. Watson, come here. "
+                                    + "I want you.");
+    }
+}

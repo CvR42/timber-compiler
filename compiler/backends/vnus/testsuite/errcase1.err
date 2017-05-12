@@ -1,0 +1,6 @@
+errcase1.v:8: unknown variable: 'java_lang_Object_needstatic_init_Object0_0'
+errcase1.v:13: no such field in this record: 'java_lang_Object_needstatic_init_Object0_0'
+errcase1.v:14: bad parameter: cannot pass a procedure[pointer record commonBlockRecordType,int] to a pointer record commonBlockRecordType parameter
+  declared as java_lang_Object_static_init_Object0_0[pointer record commonBlockRecordType,int]
+  invoked as  java_lang_Object_static_init_Object0_0[procedure[pointer record commonBlockRecordType,int],int]
+errcase1.v:16: unknown variable: 'spar_testsuite_okarrcreate_needstatic_init_okarrcreate0_0'

@@ -1,0 +1,20 @@
+// After JLS2 8.1.2    Inner Classes and Enclosing Instances
+
+
+class HasStatic{
+    static int j = 100;
+}
+class errjlshasstatic {
+    class Inner extends HasStatic{
+        static final int x = 3;        // ok - compile-time constant
+        static int y = 4;         // compile-time error, an inner class
+    }
+    static class NestedButNotInner{
+        static int z = 5;         // ok, not an inner class
+    }
+    interface NeverInner{}        // interfaces are never inner
+    public static void main( String args[] ){
+        Inner x  = null;
+	NestedButNotInner y = new NestedButNotInner();
+    }
+}

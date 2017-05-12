@@ -1,0 +1,10 @@
+// After JLS2 14.4.2    Scope of Local Variable Declarations
+
+
+public class okjlssquare {
+    static int x;
+    public static void main() {
+        int x = (x=2)*2;
+        __println(1,x);
+    }
+}

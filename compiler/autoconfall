@@ -1,0 +1,36 @@
+#!/bin/sh
+# Run autoconf in all the directories in the list below
+TOP=`pwd`
+DIRS=". frontends \
+ frontends/spar \
+ frontends/sparlib \
+ frontends/sparlib/java \
+ frontends/sparlib/java/lang \
+ frontends/sparlib/java/lang/reflect \
+ frontends/sparlib/java/io \
+ frontends/sparlib/java/text \
+ frontends/sparlib/java/util \
+ frontends/sparlib/kaffe \
+ frontends/sparlib/kaffe/io \
+ frontends/sparlib/kaffe/lang \
+ frontends/sparlib/spar \
+ frontends/sparlib/spar/lang \
+ frontends/sparlib/spar/compiler \
+ frontends/sparlib/spar/channel \
+ frontends/sparlib/spar/util \
+ frontends/spar-rtl \
+ driver \
+ backends \
+ backends/vnus \
+ backends/vnus/testsuite \
+ backends/vnuslib \
+ backends/runtime \
+ backends/runtime/glue \
+ backends/runtime/io \
+ engines \
+ engines/align \
+ engines/mapper \
+ Makefiles \
+ "
+
+for i in $DIRS; do cd $TOP/$i; autoconf; done

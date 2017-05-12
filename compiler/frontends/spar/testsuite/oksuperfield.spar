@@ -1,0 +1,42 @@
+package spar.testsuite;
+
+class t1 {
+    int n;
+    static int x;
+}
+
+class t extends t1 {
+    int n;
+    static int x;
+    void set_n( int n ){ this.n = n; }
+    void set_super_n( int n ){ super.n = n; }
+    void set_x( int x ){ this.x = x; }
+    void set_super_x( int x ){ super.x = x; }
+    void report() {
+	__println( 1, "my n: ", n );
+	__println( 1, "my x: ", x );
+	__println( 1, "super n: ", super.n );
+	__println( 1, "super x: ", super.x );
+	__println( 1 );
+    }
+}
+
+public class oksuperfield {
+    public static void main()
+    {
+	t x = new t();
+	x.set_n( 1 );
+	x.set_super_n( 2 );
+	x.set_x( 3 );
+	x.set_super_x( 4 );
+	x.report();
+	x.set_super_x( 5 );
+	x.report();
+	x.set_x( 6 );
+	x.report();
+	x.set_super_n( 7 );
+	x.report();
+	x.set_n( 8 );
+	x.report();
+    }
+}

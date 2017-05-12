@@ -1,0 +1,13 @@
+// File: okdepcard.spar
+//
+// Test the correct treatment of dependent cardinalities.
+// Note that the second cardinality in the for below uses the iterator of
+// the first cardinality (to an extreme extent).
+
+public final class okdepcard {
+    public static void main(){
+	for( i :- 0:10, j :- i:4*i:i ){
+	    __println( 1, "i=", i, ", j=", j );
+	}
+    }
+}

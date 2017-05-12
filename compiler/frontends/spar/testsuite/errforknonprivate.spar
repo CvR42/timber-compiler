@@ -1,0 +1,8 @@
+public class errforknonprivate implements spar.lang.Forkable {
+    int n = 3;
+
+    public static void main()
+    {
+	String s = "";
+    }
+}

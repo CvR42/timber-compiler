@@ -1,0 +1,12 @@
+// After JLS2 6.3.1    Hiding Names
+
+class Vector {
+    int val[] = { 1 , 2 };
+}
+
+public class okjlsmyvec {
+    public static void main(String[] args) {
+        Vector v = new Vector();
+        __println(1,v.val[0]);
+    }
+}

@@ -1,0 +1,169 @@
+.. File: collectscopes.ct
+..
+.. Tree walker to collect the scopes in a statement or block.
+..
+.. Return 'walker' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+$(indent)if( $(var) == $tNIL ){
+$(indent)$(indent)return scopes;
+$(indent)}
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the datastructure we're walking on, and a type 't', of that variable,
+.. generate a return statement.
+.macro generate_walker_return indent var t
+$(indent)return scopes;
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+static tmsymbol_list collectscopes_$t_walker( const_$t $(var), tmsymbol_list scopes )
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we're walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+static tmsymbol_list collectscopes_$t_walker( const_$t $(var), tmsymbol_list scopes );
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)scopes = collectscopes_$(type)_action( $(var), scopes );
+.else
+$(indent)scopes = collectscopes_$(type)_action( to_const_$(type)( $(var) ), scopes );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)scopes = collectscopes_$(type)_walker( $(var), scopes );
+.else
+$(indent)scopes = collectscopes_$(type)_walker( to_const_$(type)( $(var) ), scopes );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var', and a type 'type', generate
+.. the body of an empty walker function.
+.macro generate_empty_walker_body indent var type
+$(indent)(void) $(var);
+$(indent)(void) scopes;
+.endmacro
+..
+.. For which types are there actions defines?
+.set actors
+.append actors LocWhere
+.append actors ExprWhere
+.append actors block
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "block statement" "$(actors)"}
+..
+/* File: collectscopes.c
+ *
+ * Check the correctness of a vnus program.
+ */
+
+#include <stdio.h>
+#include <tmc.h>
+
+//#include "defs.h"
+#include "vnusbasetypes.h"
+#include "tmadmin.h"
+#include "collectscopes.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------------- Action functions -------------------- */
+
+/* Given a block, register its scope. */
+static tmsymbol_list collectscopes_block_action(
+ const_block blk,
+ tmsymbol_list scopes
+)
+{
+    if( blk->scope != tmsymbolNIL ){
+	scopes = append_tmsymbol_list( scopes, blk->scope );
+    }
+.call generate_walker_call "    " blk block block
+    return scopes;
+}
+
+/* Given a where expression, register its scope. */
+static tmsymbol_list collectscopes_ExprWhere_action(
+ const_ExprWhere whr,
+ tmsymbol_list scopes
+)
+{
+    if( whr->scope != tmsymbolNIL ){
+	scopes = append_tmsymbol_list( scopes, whr->scope );
+    }
+.call generate_walker_call "    " whr ExprWhere ExprWhere
+    return scopes;
+}
+
+/* Given a where location, register its scope. */
+static tmsymbol_list collectscopes_LocWhere_action(
+ const_LocWhere whr,
+ tmsymbol_list scopes
+)
+{
+    if( whr->scope != tmsymbolNIL ){
+	scopes = append_tmsymbol_list( scopes, whr->scope );
+    }
+.call generate_walker_call "    " whr LocWhere LocWhere
+    return scopes;
+}
+
+/* ----------------- End of action functions -------------------- */
+
+.call generate_walker "$(visit_types)"
+
+/* Given a block, collect scopenames. */
+tmsymbol_list collectscopes_block( const_block blk )
+{
+    tmsymbol_list scopes = new_tmsymbol_list();
+
+.call generate_descent_call "    " blk block block
+    return scopes;
+}
+
+/* Given a statement, collect scopenames. */
+tmsymbol_list collectscopes_statement( const_statement blk )
+{
+    tmsymbol_list scopes = new_tmsymbol_list();
+
+.call generate_descent_call "    " blk statement statement
+    return scopes;
+}

@@ -1,0 +1,14 @@
+public class oktuplearith {
+    public static void main(){
+	[int^2] t1 = [1,2];
+	[int^2] t2 = [3,4];
+	t2 = 2*t2;
+	t1 *= 2;
+	[int^2] t3 = t1+t2;
+	__println( 1, t3[0], ' ', t3[1] );
+	[int^2] t4 = -t3;
+	__println( 1, t4[0], ' ', t4[1] );
+	[int^2] t5 = -(-t3);
+	__println( 1, t5[0], ' ', t5[1] );
+    }
+}

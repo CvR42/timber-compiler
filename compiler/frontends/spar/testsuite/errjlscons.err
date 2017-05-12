@@ -1,0 +1,2 @@
+errjlscons.spar:20: no constructor in ColoredPoint matches ColoredPoint(int,int)
+errjlscons.spar:21: reset() only matches inaccessible methods in ColoredPoint

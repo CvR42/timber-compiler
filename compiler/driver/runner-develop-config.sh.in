@@ -1,0 +1,23 @@
+#! /bin/sh
+#
+# Driver script for the spar compiler, to make it look like an
+# ordinary compiler such as gcc.
+#
+# See the function 'showusage' for the usage of this command.
+VERSION=": development"
+# Paths
+TMPDIR=${TMP:-/tmp}
+#
+# Places of executables
+FRONT=@SPAR_ROOT@/frontends/spar/sparfront
+VNUS=@SPAR_ROOT@/backends/vnus/vnus
+CXX=@CXX@
+
+SPARRUNTIMELIB=@SPAR_ROOT@/frontends/spar-rtl
+SPARRUNTIMEINCLUDE=@SPAR_ROOT@/frontends/spar-rtl
+VNUSRUNTIMELIB=@SPAR_ROOT@/backends/runtime
+VNUSRUNTIMEINCLUDE=@SPAR_ROOT@/backends/runtime
+INITIAL=@SPAR_ROOT@/engines/mapper/initial
+SPMD=@SPAR_ROOT@/engines/mapper/spmd
+ALIGN=@SPAR_ROOT@/engines/align/align
+SPARLIBPATH=@SPAR_ROOT@/frontends/sparlib

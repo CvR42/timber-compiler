@@ -1,0 +1,22 @@
+b: FALSE TRUE TRUE TRUE
+i: 2 48 53 265 22 -22 -22
+n: 2 7 7 14 9 108 8 48 16
+x: 2.1 -2.1 -2.1 -1.4 -501.4 -60.17 -462.8
+s: test string
+c: (2,3) (2,3) (-2,-3)
+left shifts: int:4 byte:4 short:4 long:4
+right shifts: int:13 byte:13 short:13 long:13
+unsigned right shifts: int:13 byte:13 short:13 long:13
+shifts of negative numbers: left:-44 right:-3 unsigned right:1073741821
+bitwise operations: and:16 or:19 xor:3
+boolean operations: and:FALSE or:TRUE xor:TRUE
+bitwise not:-13 143
+boolean not:TRUE FALSE
+increment and decrement
+ 0 1 2 1 0 1 2 1 0
+ 5 4 24 8 0
+ 1
+ 4 2
+ -1 2147483647
+ 12 15 4 3 10 25 28 29
+b: TRUE TRUE FALSE TRUE

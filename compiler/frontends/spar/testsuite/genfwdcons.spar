@@ -1,0 +1,11 @@
+// Test the binding of methods with the superclass of the expected class
+
+package spar.testsuite;
+
+public class genfwdcons {
+    static void f( genfwdcons x ){ x = x; }
+    public static void main()
+    {
+	genfwdcons.f( new genfwdcons() );
+    }
+}

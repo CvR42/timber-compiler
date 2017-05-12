@@ -1,0 +1,13 @@
+// Minimal class in a subpackage.
+
+package spar.testsuite.subpack;
+
+import spar.testsuite.subpack.mutual2;
+
+public class mutual1 extends mutual2 {
+    static mutual2 v;
+    public static void say()
+    {
+	__println( 1, "Hello world from mutual1" );
+    }
+}

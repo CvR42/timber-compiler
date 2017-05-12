@@ -1,0 +1,40 @@
+/**************************************************************************
+*                                                                         *
+*             Java Grande Forum Benchmark Suite - Version 2.0             *
+*                                                                         *
+*                            produced by                                  *
+*                                                                         *
+*                  Java Grande Benchmarking Project                       *
+*                                                                         *
+*                                at                                       *
+*                                                                         *
+*                Edinburgh Parallel Computing Centre                      *
+*                                                                         *
+*                email: epcc-javagrande@epcc.ed.ac.uk                     *
+*                                                                         *
+*                 Original version of this code by                        *
+*            Florian Doyon (Florian.Doyon@sophia.inria.fr)                *
+*              and  Wilfried Klauser (wklauser@acm.org)                   *
+*                                                                         *
+*      This version copyright (c) The University of Edinburgh, 1999.      *
+*                         All rights reserved.                            *
+*                                                                         *
+**************************************************************************/
+
+
+package sparraytracer; 
+
+
+
+public abstract class Primitive implements java.io.Serializable {
+	public Surface	surf = new Surface();
+
+	public void setColor(double r, double g, double b) {
+		surf.color = [r, g, b];
+	}
+
+	public abstract [double^3] normal([double^3] pnt);
+	public abstract [boolean,double,int,type Primitive,type Surface] intersect(Ray ry);
+	public abstract [double^3] getCenter();
+	public abstract void setCenter([double^3] c);
+}

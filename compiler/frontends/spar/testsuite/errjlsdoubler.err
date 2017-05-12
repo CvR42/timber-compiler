@@ -1,0 +1,8 @@
+errjlsdoubler.spar:14: two(int) only matches inaccessible methods in Doubler
+errjlsdoubler.spar:14: two(int) only matches inaccessible methods in Doubler
+errjlsdoubler.spar:14: Method reference 'println((unknown))' is ambiguous
+Possible method: 'println(boolean)'
+Possible method: 'println(char)'
+Possible method: 'println(char[])'
+Possible method: 'println(java.lang.String)'
+You can resolve this by qualifying the name.

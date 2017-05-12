@@ -1,0 +1,13 @@
+package spar.testsuite;
+
+import java.util.*;
+import java.lang.reflect.*;
+import java.io.*;
+
+public class errsinitscope1 {
+    static { i = j + 2; }
+    static int i, j;
+    static { j = 4; }
+    public static void main(){
+    }
+}

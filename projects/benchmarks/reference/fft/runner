@@ -1,0 +1,107 @@
+#!/bin/sh
+#CFLAGS="-O6 -fstrict-aliasing -funroll-loops -fomit-frame-pointer"
+CFLAGS="-O3 -march=i686 -fomit-frame-pointer"
+JAVACFLAGS="-O"
+RESULTFILE=log$$
+HISTORYFILE=fulllog
+TIME="/usr/bin/time -a -o$RESULTFILE"
+
+echo -n "-------------------- Date: " > $RESULTFILE
+date >> $RESULTFILE
+
+echo Spar compilation
+spar $CFLAGS FTspar.spar -o FTspar
+echo spar $CFLAGS FTspar.spar -o FTspar >> $RESULTFILE
+echo -n Running ...
+$TIME FTspar >> $RESULTFILE
+echo >> $RESULTFILE
+echo 
+
+echo Spar --nonotnullassert compilation
+echo spar $CFLAGS --nonotnullassert FTspar.spar -o FTspar >> $RESULTFILE
+spar --nonotnullassert $CFLAGS FTspar.spar -o FTspar
+echo -n Running ...
+$TIME FTspar >> $RESULTFILE
+echo >> $RESULTFILE
+echo 
+
+echo Spar --noboundscheck compilation
+echo spar --noboundscheck $CFLAGS FTspar.spar -o FTspar >> $RESULTFILE
+spar --noboundscheck $CFLAGS FTspar.spar -o FTspar
+echo -n Running ...
+$TIME FTspar >> $RESULTFILE
+echo >> $RESULTFILE
+echo 
+
+echo Spar --nonotnullassert --noboundscheck compilation
+echo spar --nonotnullassert --noboundscheck $CFLAGS FTspar.spar -o FTspar >> $RESULTFILE
+spar --nonotnullassert --noboundscheck $CFLAGS FTspar.spar -o FTspar
+echo -n Running ...
+$TIME FTspar >> $RESULTFILE
+echo >> $RESULTFILE
+echo 
+rm -f FTspar
+
+echo Java compilation
+spar $CFLAGS FTjava.java -o FTjava
+echo spar $CFLAGS FTjava.java -o FTjava >> $RESULTFILE
+echo -n Running ...
+$TIME FTjava large >> $RESULTFILE
+echo >> $RESULTFILE
+echo 
+
+echo Java --nonotnullassert compilation
+echo spar $CFLAGS --nonotnullassert FTjava.java -o FTjava >> $RESULTFILE
+spar --nonotnullassert $CFLAGS FTjava.java -o FTjava
+echo -n Running ...
+$TIME FTjava >> $RESULTFILE
+echo >> $RESULTFILE
+echo 
+
+echo Java --noboundscheck compilation
+echo spar --noboundscheck $CFLAGS FTjava.java -o FTjava >> $RESULTFILE
+spar --noboundscheck $CFLAGS FTjava.java -o FTjava
+echo -n Running ...
+$TIME FTjava >> $RESULTFILE
+echo >> $RESULTFILE
+echo 
+
+echo Java --nonotnullassert --noboundscheck compilation
+echo spar --nonotnullassert --noboundscheck $CFLAGS FTjava.java -o FTjava >> $RESULTFILE
+spar --nonotnullassert --noboundscheck $CFLAGS FTjava.java -o FTjava
+echo -n Running ...
+$TIME FTjava large >> $RESULTFILE
+echo >> $RESULTFILE
+echo 
+rm -f FTjava
+
+echo javac compilation
+echo javac $JAVACFLAGS FTjava.java >> $RESULTFILE
+javac $JAVACFLAGS FTjava.java
+echo -n Running ...
+$TIME java FTjava >> $RESULTFILE
+echo >> $RESULTFILE
+echo
+rm -f FTjava.class
+
+echo GCC compilation
+echo gcc $CFLAGS FTc.c >> $RESULTFILE
+gcc $CFLAGS FTc.c -o FTc
+echo -n Running...
+$TIME FTc >> $RESULTFILE
+echo >> $RESULTFILE
+echo 
+rm -f FTc
+
+echo G++ compilation
+echo g++ $CFLAGS FTcc.cc >> $RESULTFILE
+gcc $CFLAGS FTcc.cc -o FTcc
+echo -n Running...
+$TIME FTcc >> $RESULTFILE
+echo >> $RESULTFILE
+echo 
+rm -f FTcc
+
+cat $RESULTFILE
+cat $RESULTFILE >> $HISTORYFILE
+rm -f $RESULTFILE

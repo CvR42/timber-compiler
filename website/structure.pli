@@ -1,0 +1,128 @@
+# The structure of the website
+
+%webtree = (
+    "index" => [
+	"news",
+	"downloading",
+	"documents",
+	"people",
+	"implementation",
+	"jacks",
+	"related"
+    ],
+    "related" => [
+	"automap/index",
+    ],
+    "spar/index" => [
+	"spar/overview"
+    ],
+    "implementation" => [
+	"spar/index",
+	"vnus/index",
+	"rotan/index",
+    ],
+    "downloading" => [
+	"spar/licence",
+	"requirements",
+	"spar/newfeatures",
+	"spar/missingfeatures",
+    ],
+    "spar/overview" => [
+	"spar/foreach",
+	"spar/arrays",
+	"spar/array_expressions",
+	"spar/macros",
+	"spar/vectors",
+	"spar/templates",
+	"spar/array_interface",
+	"spar/elastic_array_interface",
+	"spar/simple_array",
+	"spar/sins",
+    ],
+);
+
+$pagename{"automap/index"} = "Automap";
+$pagename{"index"} = "Timber";
+$pagename{"projects"} = "Projects";
+$pagename{"related"} = "Links";
+$pagename{"documents"} = "Information";
+$pagename{"people"} = "People";
+$pagename{"news"} = "News";
+$pagename{"downloading"} = "Downloading";
+$pagename{"jacks"} = "Conformance";
+$pagename{"requirements"} = "Requirements";
+$pagename{"implementation"} = "Implementation";
+$pagename{"rotan/index"} = "Rotan";
+$pagename{"spar/array_expressions"} = "array expressions";
+$pagename{"spar/array_interface"} = "array interface";
+$pagename{"spar/arrays"} = "arrays";
+$pagename{"spar/elastic_array_interface"} = "elastic array interface";
+$pagename{"spar/foreach"} = "foreach";
+$pagename{"spar/index"} = "Spar";
+$pagename{"spar/npb/index"} = "NAS benchmark";
+$pagename{"spar/macros"} = "inline";
+$pagename{"spar/overview"} = "Overview";
+$pagename{"spar/licence"} = "Licence";
+$pagename{"spar/newfeatures"} = "New features";
+$pagename{"spar/missingfeatures"} = "Missing features";
+$pagename{"spar/simple_array"} = "example";
+$pagename{"spar/sins"} = "Sins";
+$pagename{"spar/downloading"} = "Downloading";
+$pagename{"spar/templates"} = "Templates";
+$pagename{"spar/vectors"} = "Vectors";
+$pagename{"vnus/index"} = "Vnus";
+
+%parents = ();
+
+sub check_webtree
+{
+    my $ok = 1;
+
+    foreach $parent (keys %webtree) {
+	my $childref = $webtree{$parent};
+	my @children = @$childref;
+	foreach $child ( @children ) {
+	    if( $parents{$child} ){
+		print "Page '$child' is owned by pages '$parents{$child}' and '$parent'\n";
+		$ok = 0;
+	    }
+	    $parents{$child} = $parent;
+	}
+    }
+    # The top is marked as parent too.
+    $parents{"index"} = "-";
+    foreach $parent (keys %webtree) {
+	if( !$parents{$parent} ){
+	    print "Page '$parent' does not have a parents\n";
+	    $ok = 0;
+	}
+    }
+    foreach $page (keys %parents) {
+	if( !$pagename{$page} ){
+	    print "Page '$page' does not have a title\n";
+	    $ok = 0;
+	}
+    }
+    return $ok;
+}
+
+# Given a page name, return a list of parents.
+sub get_parents($)
+{
+    my ($name) = @_;
+    my @res = ();
+
+    while( $name ne "-" ){
+	my $p = $parents{$name};
+	if( !$p ){
+	    die "Page '$name' does not have a parent, stopped";
+	}
+	if( $p ne "-" ){
+	    unshift( @res, $p );
+	}
+	$name = $p;
+    }
+    return @res;
+}
+
+return &check_webtree;

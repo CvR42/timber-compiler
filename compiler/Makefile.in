@@ -1,0 +1,98 @@
+# Top-level makefile.
+
+@SET_MAKE@
+
+JUNK = dist.lst distlist
+
+SPARVERSION = 2.0.1
+#SPARVERSION = 1.6
+
+DISTRIBUTIONFILES = \
+    timber-$(SPARVERSION).zip \
+    timber-$(SPARVERSION).tar.gz
+
+EXPENSIVEJUNK = $(DISTRIBUTIONFILES)
+
+help:
+	@echo "TIMBER -- Possible make targets:"
+	@echo "--------------------------------------------------------"
+	@echo "all          Compile all targets"
+	@echo "tests        Run all test programs."
+	@echo "check        Run all test programs."
+	@echo "clean        Delete all temporary files."
+	@echo "empty        Make everything spotless."
+	@echo "depend       Update all dependencies."
+	@echo "install      Install all timber software."
+	@echo "--------------------------------------------------------"
+
+all:
+	(cd driver && $(MAKE) all)
+	(cd backends && $(MAKE) all)
+	(cd frontends && $(MAKE) all)
+	(cd engines && $(MAKE) all)
+
+check:
+	@(cd backends && $(MAKE) check && \
+	  cd ../frontends && $(MAKE) check && \
+	  cd ../driver && $(MAKE) check && \
+	  cd ../engines && $(MAKE) check)
+
+tests:
+	@(cd backends && $(MAKE) tests && \
+	  cd ../frontends && $(MAKE) tests && \
+	  cd ../driver && $(MAKE) tests && \
+	  cd ../engines && $(MAKE) tests)
+
+clean:
+	rm -f $(JUNK)
+	(cd backends && $(MAKE) clean)
+	(cd frontends && $(MAKE) clean)
+	(cd engines && $(MAKE) clean)
+	(cd driver && $(MAKE) clean)
+
+empty:
+	rm -f $(JUNK) $(EXPENSIVEJUNK)
+	(cd backends && $(MAKE) empty)
+	(cd frontends && $(MAKE) empty)
+	(cd engines && $(MAKE) empty)
+	(cd driver && $(MAKE) empty)
+
+depend:
+	(cd backends && $(MAKE) depend)
+	(cd frontends && $(MAKE) depend)
+	(cd engines && $(MAKE) depend)
+	(cd driver && $(MAKE) depend)
+
+install:
+	(cd backends && $(MAKE) install)
+	(cd frontends && $(MAKE) install)
+	(cd engines && $(MAKE) install)
+	(cd driver && $(MAKE) install)
+
+uninstall:
+	(cd backends && $(MAKE) uninstall)
+	(cd frontends && $(MAKE) uninstall)
+	(cd engines && $(MAKE) uninstall)
+	(cd driver && $(MAKE) uninstall)
+
+DISTDIR = timber-$(SPARVERSION)
+
+distlist: dist.lst
+	sed -e "s/^/$(DISTDIR)\//" dist.lst > distlist
+
+timber-$(SPARVERSION).zip timber-$(SPARVERSION).tar.gz: distlist
+	rm -f $(DISTDIR)
+	ln -sf . $(DISTDIR)
+	tar cf $(DISTDIR).tar `cat distlist`
+	gzip --best -f $(DISTDIR).tar
+	zip -q -9 $(DISTDIR).zip `cat distlist`
+	rm -f $(DISTDIR)
+
+distribution: $(DISTRIBUTIONFILES)
+
+DISTFILES = .cvsignore install-sh Makefile.in configure configure.ac autoconfall GPL.txt LGPL.txt README README.cvs ChangeLog README.parallel
+
+SUBDIRS = Makefiles backends frontends engines samples driver
+
+include Makefiles/Make.configure
+include Makefiles/Make.dist

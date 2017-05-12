@@ -1,0 +1,19 @@
+// File: okdynamicinit.spar
+//
+// Test of the explicit dynamic initializer block, that was introduced in
+// Java 1.1.
+
+public class okdynamicinit {
+    okdynamicinit() {}
+    okdynamicinit( int n ) {}
+    static {
+	__println( 1, "Hi! I'm a static initializer" );
+    }
+    {
+	__println( 1, "Hi! I'm a dynamic initializer" );
+    }
+    public static void main(){
+	okdynamicinit x = new okdynamicinit();
+	x = new okdynamicinit( 23 );
+    }
+}

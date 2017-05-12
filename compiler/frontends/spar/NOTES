@@ -1,0 +1,74 @@
+This files contains design decisions, random observations and thoughts
+w.r.t. the Spar compiler. It is mainly intended to prevent lengthy
+reverse-engineering of these later on.
+
+
+Wed Oct 18 18:17:24 CEST 2000
+-----------------------------
+
+There is a large problem in analyzing statements such as 
+    int n;
+
+    try {
+	n = 42;
+    }
+    catch( ... ){
+	..
+    }
+
+
+Wed Sep  6 13:21:09 CEST 2000
+-----------------------------
+
+Inlining is now much more robust. The inlining transformation in the
+'rewrite' engine now lowers method invocation statements that look like
+they would be a gain to inline. Unfortunately this is not so simple for
+method invocation expressions, since in the 'rewrite' engine we do not
+have the mechanism to put away the extra statements. Candidate inlining
+in initialization expressions is also a problem.
+
+It is probably not fruitful to implement sufficient stuff to inline
+general method invocation expressions, but it might be interesting to
+inline expressions that are simple enough to represent as expression.
+
+
+Mon Sep  4 18:03:27 CEST 2000
+-----------------------------
+
+directusecount now replaces the flag isdirectlyused. A similar
+transformation of isvirtuallyused is not so simple, since we must take
+usage in a superclass into account.
+
+
+Tue Aug 22 11:14:55 CEST 2000
+-----------------------------
+
+The current code for method inlining works on unmangled methods. However,
+methods *are* mangled. These mangled methods are later used in the
+`check' compiler pass. This means a method can only be inlined as long
+as the mangler has not reached the method to be inlined.
+
+At the moment this is solved by never mangling methods that are labeled
+'inline', but that means that you cannot inline only a part of the
+invocations of a method. That is a restriction, in particular for a
+method that can be invoked virtually.
+
+The best solution would be to let the inliner work on the mangled
+version of a method. This is attractive for several reasons. First,
+it would solve the above problem. Second, it would reduce the amount
+of code in the 'mangle' phase a bit, since at the moment there is some
+overlap between method inlining and method mangling. Finally, it would
+(also) allow inlining later in the compilation process, at which point
+more opportunities for inlining may have revealed themselves. In
+particular, the optimization of invocations to direct calls may
+uncover opportunities for optimization.
+
+Inlining is currently a specialized form of mangling on a copy of the
+method. This is mainly because type parameters must be substituted before
+name mangling occurs. In retrospect it turns out that we can better
+drop type parameters on inline methods, and simplify the implementation
+of inlining.
+
+A significant problem of inlining after name mangling is that scope
+names and the variable declarations associated with them are also
+duplicated. This will takes work to get right.

@@ -1,0 +1,45 @@
+.. file: tmadmin.ct
+/* file: tmadmin.c
+
+   template file:      tmcode.ct
+   datastructure file: ${dsfilename}
+   tm version:         $(tmvers) 
+ */
+
+/* Standard UNIX libraries */
+#include <stdio.h>
+#include <ctype.h>
+#include <string.h>
+
+/* Standard tm library */
+#include <tmc.h>
+
+/* Local definitions */
+#include "defs.h"
+#include "tmadmin.h"
+
+#define rfre_bool(e)
+#define rdup_bool(e) (e)
+
+// We override isequal_origsymbol, since we're not interested in the
+// origin when we compare symbols.
+/* Compare two origsymbol tuple,
+ * and return TMTRUE iff they are equal.
+ */
+tmbool isequal_origsymbol( const const_origsymbol a, const const_origsymbol b )
+{
+    if( a == b ){
+	return TMTRUE;
+    }
+    if( a == origsymbolNIL || b == origsymbolNIL ){
+	return TMFALSE;
+    }
+    if( !isequal_tmsymbol( a->sym, b->sym ) ){
+	return TMFALSE;
+    }
+    return TMTRUE;
+}
+
+
+.insert tmadmin.t
+.include tmc.ct

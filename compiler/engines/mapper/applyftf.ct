@@ -1,0 +1,62 @@
+/* Applyftf test engine
+
+   Replace for statement with forall statement.
+   */
+
+.. File: applyftf.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtFor
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "applyftf.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+/* Rewrite action for 'vnusprog'. */
+static statement rewrite_SmtFor_action(
+    SmtFor elm, global_context gc )
+{
+.call generate_walker_call "    " elm SmtFor SmtFor
+    SmtForall nsmt;
+    nsmt = new_SmtForall(
+        elm->label,
+        gen_origin(),
+        elm->pragmas,
+        elm->on,
+        elm->cards,
+        new_OwnerExpr_list(), // Not in original!
+        elm->body);
+    rfre_origin(elm->orig);
+    fre_SmtFor(elm);
+    return nsmt;
+}
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_ftf( vnusprog elm, global_context gc )
+{
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}
+

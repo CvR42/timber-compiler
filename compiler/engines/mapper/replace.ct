@@ -1,0 +1,136 @@
+/*
+   Replace engine
+
+   Replace use of a variable with appropriate expression or location
+   */
+
+.. File: replace.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors ExprName LocName
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "replace.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+static expression rewrite_ExprName_action(
+    ExprName e, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+    (void) rewrite_ExprName_walker;
+    if (gc->replaceExpr_l == expression_listNIL)
+	return e;
+    assert(gc->findSym_l->sz == gc->replaceExpr_l->sz);
+    for (unsigned i=0; i<gc->findSym_l->sz; i++)
+    {
+	if (e->name->sym == gc->findSym_l->arr[i])
+	{
+	    rfre_expression(e);
+	    return rdup_expression(gc->replaceExpr_l->arr[i]);
+	}
+    }
+    return e;
+}
+
+static location rewrite_LocName_action(
+    LocName e, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+    (void) rewrite_LocName_walker;
+    if (gc->replaceLoc_l == location_listNIL)
+	return e;
+    assert(gc->findSym_l->sz == gc->replaceLoc_l->sz);
+    for (unsigned i=0; i<gc->findSym_l->sz; i++)
+    {
+	if (e->name->sym == gc->findSym_l->arr[i])
+	{
+	    rfre_location(e);
+	    return rdup_location(gc->replaceLoc_l->arr[i]);
+	}
+    }
+    return e;
+}
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given an input, rewrite it to the final form for output. */
+.set replace_defs
+.append replacedefs statement expression location
+.append replacedefs declaration cardinality_list vnusprog
+.append replacedefs OwnerExpr
+.foreach t $(replacedefs)
+$t replace_$t(
+    $t elm,
+    tmsymbol sym, expression r_e, location r_l,
+    global_context gc )
+{
+.call push_findSym_l
+.call push_replaceExpr_l
+.call push_replaceLoc_l
+    assert(sym != tmsymbolNIL);
+    gc->findSym_l = new_tmsymbol_list();
+    gc->findSym_l = append_tmsymbol_list(gc->findSym_l, sym);
+    if (r_e != expressionNIL)
+    {
+	gc->replaceExpr_l = new_expression_list();
+	gc->replaceExpr_l = append_expression_list(gc->replaceExpr_l, r_e);
+    }
+    else
+    {
+	gc->replaceExpr_l = expression_listNIL;
+    }
+    if (r_l != locationNIL)
+    {
+	gc->replaceLoc_l = new_location_list();
+	gc->replaceLoc_l = append_location_list(gc->replaceLoc_l, r_l);
+    }
+    else
+    {
+	gc->replaceLoc_l = location_listNIL;
+    }
+.call generate_descent_call "    " elm $t $t
+    fre_tmsymbol_list(gc->findSym_l);
+    fre_expression_list(gc->replaceExpr_l);
+    fre_location_list(gc->replaceLoc_l);
+.call pop_findSym_l
+.call pop_replaceExpr_l
+.call pop_replaceLoc_l
+    return elm;
+}
+.endforeach
+
+expression replace_expression_hack(
+    expression e, tmsymbol_list findSym_l, expression_list replaceExpr_l)
+{
+    global_context_decl global_context;
+	// Init and destroy not needed here as only the following 3
+	// fields are used.
+//    init_global_context(&global_context);
+    global_context_decl *gc = &global_context;
+    
+    gc->findSym_l = findSym_l;
+    gc->replaceExpr_l = replaceExpr_l;
+    gc->replaceLoc_l = location_listNIL;
+.call generate_descent_call "    " e expression expression
+//    destroy_global_context(&global_context);
+    return e;
+}

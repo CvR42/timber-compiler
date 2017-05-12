@@ -1,0 +1,14 @@
+// File: DefaultExceptionHandler.spar
+//
+// The Spar/Java side of the default exception handler.
+
+package spar.compiler;
+
+final public class DefaultExceptionHandler {
+    <$ noGC $> final protected native static void exit( __string s );
+    <$ noGC $> final public static void handler( Exception x ){
+	int id = spar.compiler.Introspection.getClassId( x );
+	__string s = spar.compiler.Introspection.getClassName( id );
+	exit( s );
+    }
+}

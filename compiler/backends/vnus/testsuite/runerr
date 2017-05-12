@@ -1,0 +1,68 @@
+#!/bin/sh
+#
+# Run a test that is supposed to fail.
+
+TIMBERSRCROOT=../../..
+VNUSFLAGS=
+
+# Places of executables
+VNUS=$TIMBERSRCROOT/backends/vnus/vnus
+VERBOSE=0
+FILE=
+
+for f; do
+    case "$f" in
+	-v)
+	    VERBOSE=1;;
+
+	-*)
+	    echo "unknown option '$f'"; exit 2 ;;
+
+	*)
+	    FILE=$f ;;
+    esac
+done
+
+if [ x$FILE = x ]; then
+    echo "No file specified"
+    exit 2
+fi
+BASENAME=`basename $FILE .v`
+OUTFILE=$BASENAME.c
+ERRFILE=$BASENAME.err
+TESTERRFILE=$BASENAME.testerr
+STATUSFILE=$BASENAME.status
+FLAGSFILE=$BASENAME.flags
+if [ ! -e $ERRFILE ]; then
+    echo "Creating default (=empty) error reference file '$ERRFILE'"
+    touch $ERRFILE
+fi
+if [ ! -e $STATUSFILE ]; then
+    echo "Creating default status file '$STATUSFILE'"
+    echo "1" > $STATUSFILE
+fi
+OKSTATUS=`cat $STATUSFILE`
+if [ -e $FLAGSFILE ]; then
+    VNUSFLAGS="$VNUSFLAGS `cat $FLAGSFILE`"
+fi
+if [ $VERBOSE = 1 ]; then
+    echo vnus $VNUSFLAGS $FILE
+fi
+$VNUS $VNUSFLAGS $FILE -o $OUTFILE 2> $TESTERRFILE
+STATUS=$?
+if [ $STATUS != $OKSTATUS ]; then
+    echo "Compilation returned status code $STATUS instead of $OKSTATUS"
+    exit 1
+fi
+CMD="diff $TESTERRFILE $ERRFILE"
+if [ $VERBOSE = 1 ]; then
+    echo $CMD
+fi
+$CMD
+STATUS=$?
+if [ $STATUS != 0 ]; then
+    echo "To update do: cp $TESTERRFILE $ERRFILE"
+    exit 1
+fi
+rm -f $OUTFILE $TESTERRFILE
+exit 0

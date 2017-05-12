@@ -1,0 +1,432 @@
+/*
+  Select_on engine
+
+  Create a variable owner tree for:
+  - the top block
+  - each function
+  - each procedure
+  and find the best possible owner combinations.
+
+  Originally this was done using Will's full search.
+  Unfortunately this led to an exponential growth in possible
+  solutions for big programs.
+  This is a complete rewrite of Will's version.
+  The only thing remaining is his cost function.
+  
+  This search still uses full search in most cases. However,
+  if the number of possible solutions for a (part of the)
+  parse tree exceeds 64x1024(arbitrary constant), all subtrees
+  are solved before the parent tree is solved.
+  This prevents the exponential explosion, but might in certain
+  cases produce a different result from the full search.
+
+  Another heuristic used to limit the search space is also used:
+  If a node has only one possible owner it means that the nodes
+  below and above it can be solved independently of each other.
+  This happens for example with statement lists where the owner
+  solutions for the different statements (currently) do not
+  affect each other.
+  This heuristic speeds up the search process, while not altering
+  the computed solution.
+*/
+
+.. File: applyselect_on.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.set func_actors DeclFunction DeclProcedure
+.set owner_actors block statement LocWrapper ExprWrapper
+.append actors $(func_actors)
+.append actors $(owner_actors)
+.append actors OwnerExpr
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <limits.h>
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "error.h"
+#include "vnusctl.h"
+#include "service.h"
+#include "global.h"
+#include "issubset.h"
+#include "applyselect_on.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Support ----------- */
+
+#if 0
+static void sanity_check_list(VariableOwner_list vo_l) {
+    fprintf(stderr,"sanity_l\n");
+    for (unsigned i=0; i < vo_l->sz; i++) {
+	assert (vo_l->arr[i]->owners->sz < 256);
+    }
+}
+
+static void sanity_check(VariableOwner vo, unsigned lvl) {
+    fprintf(stderr,"sanity %d %p sz=%x\n",lvl,vo->owners,vo->owners->sz);
+    assert (vo->owners->sz < 256);
+    for (unsigned i=0; i < vo->children->sz; i++) {
+	sanity_check(vo->children->arr[i],lvl+1);
+    }
+}
+
+static void show_pointers(VariableOwner vo, unsigned lvl) {
+    fprintf(stderr,"show %d %p\n",lvl,vo->owners);
+    for (unsigned i=0; i < vo->owners->sz; i++)
+	fprintf(stderr,"show %d %d %p\n",lvl,i,vo->owners->arr[i]);
+    for (unsigned i=0; i < vo->children->sz; i++) {
+	show_pointers(vo->children->arr[i],lvl+1);
+    }
+}
+
+static void show_combinations(VariableOwner vo, unsigned lvl) {
+    for (unsigned i=0; i<lvl; i++)
+	fprintf(stderr," ");
+    fprintf(stderr,"%d\n",vo->owners->sz);
+    for (unsigned i=0; i < vo->children->sz; i++) {
+	show_combinations(vo->children->arr[i],lvl+1);
+    }
+}
+#endif
+
+static int calc_combinations(VariableOwner vo) {
+    int total = vo->owners->sz;
+    for (unsigned i=0; i < vo->children->sz; i++) {
+	total *= calc_combinations(vo->children->arr[i]);
+    }
+    return total;
+}
+
+/*
+  pvo is parent variable owner node
+  cvo is child  variable owner node
+*/
+static int calc_cost(VariableOwner pvo, VariableOwner cvo) {
+    int cost = 0;
+    OwnerExpr poe, coe;
+    
+//    fprintf(stderr,"Comparing %d/%d with %d/%d\n",pvo->guess,pvo->owners->sz,cvo->guess, cvo->owners->sz);
+//    fprintf(stderr,"Pointers: %p %p\n",pvo->owners, cvo->owners);
+    poe = pvo->owners->arr[pvo->guess];
+    coe = cvo->owners->arr[cvo->guess];
+    
+    cost = issubset_owner(poe, coe) ? 0 : 1;
+//  printf("parent\n");
+//  print_OwnerExpr(st, poe);
+//  printf("child\n");
+//  print_OwnerExpr(st, coe);
+//  printf(" %1d", cost);
+
+    return cost;
+}
+
+static int get_cost(VariableOwner vo) {
+    VariableOwner_list cvo_l = vo->children;
+    int cost = 0;
+    
+    for (unsigned i = 0; i < cvo_l->sz; i++) {
+	cost += calc_cost(vo, cvo_l->arr[i]);
+	cost += get_cost(cvo_l->arr[i]);
+    }
+    
+    return cost;
+}
+
+/* full search algorithm */
+static void try_selection(unsigned level, VariableOwner_list vo_l, VariableOwner vo) {
+    static int min_cost;
+
+    if (level == 0) min_cost = INT_MAX;
+    
+    if (level == vo_l->sz) {
+	int cost = get_cost(vo);
+	
+#if 0
+	fprintf(stderr,"|| try_sel["); 
+	for (unsigned i = 0; i < vo_l->sz; i++) 
+	    fprintf(stderr," %d ", vo_l->arr[i]->guess);
+	fprintf(stderr,"] = %d ", cost);
+#endif
+    
+	if (cost < min_cost) {
+	    for (unsigned i = 0; i < vo_l->sz; i++) {
+		vo_l->arr[i]->best = vo_l->arr[i]->guess;
+	    }
+	    min_cost = cost;
+	}
+#if 0
+	fprintf(stderr,"min: %d\n", min_cost);
+#endif
+    } else {
+	unsigned size = vo_l->arr[level]->owners->sz;
+	for (unsigned i = 0; i < size; i++) {
+	    vo_l->arr[level]->guess = i;
+	    try_selection(level + 1, vo_l, vo);
+	}
+    }
+}
+
+static void apply_selection(VariableOwner_list vo_l) {
+//    sanity_check_list(vo_l);
+    for (unsigned i = 0; i < vo_l->sz; i++) {
+	OwnerExpr_list oe_l = vo_l->arr[i]->owners;
+	int             sel = vo_l->arr[i]->best;
+	OwnerExpr        oe;
+	int           valid;
+
+//	fprintf(stderr,"before:%p %p\n",vo_l->arr[i]->owners,oe_l);
+//	fprintf(stderr,"Choosing no.%d from %d\n",sel,oe_l->sz);
+	extract_OwnerExpr_list(oe_l, sel, &oe, &valid);
+//	sanity_check(vo_l->arr[0],5000);
+	
+	assert (valid==1);
+	while (oe_l->sz > 0) {
+//	    fprintf(stderr,"deleting 0/%d = %p\n",oe_l->sz,oe_l->arr[0]);
+	    delete_OwnerExpr_list(oe_l, 0);
+//	    fprintf(stderr,"entries left: %d\n",oe_l->sz);
+//	    sanity_check(vo_l->arr[0],5100);
+	}
+	append_OwnerExpr_list(oe_l, oe);
+	vo_l->arr[i]->best = 0;
+	vo_l->arr[i]->guess = 0;
+//	sanity_check(vo_l->arr[0],5200);
+	if (warning_level >= WARN_RULE)
+	    fprintf(stderr,"SELECT(NEW):applied selection\n");
+    }
+//    sanity_check_list(vo_l);
+}
+
+#if 0
+static void apply_selection2(VariableOwner vo) {
+//    fprintf(stderr,"apply_selection2:entered\n");
+    for (unsigned i=0; i<vo->children->sz; i++)
+    {
+	apply_selection2(vo->children->arr[i]);
+    }
+    
+    {
+	OwnerExpr_list oe_l = vo->owners;
+	int             sel = vo->best;
+	OwnerExpr        oe;
+	int           valid;
+
+//	fprintf(stderr,"before:%p %p\n",vo->owners,oe_l);
+//	fprintf(stderr,"Choosing no.%d from %d\n",sel,oe_l->sz);
+	extract_OwnerExpr_list(oe_l, sel, &oe, &valid);
+//	sanity_check(vo,9000);
+	
+	assert (valid==1);
+	while (oe_l->sz > 0) {
+//	    fprintf(stderr,"deleting 0/%d = %p\n",oe_l->sz,oe_l->arr[0]);
+	    delete_OwnerExpr_list(oe_l, 0);
+//	    fprintf(stderr,"entries left: %d\n",oe_l->sz);
+//	    sanity_check(vo,9100);
+	}
+	append_OwnerExpr_list(oe_l, oe);
+	vo->best = 0;
+	vo->guess = 0;
+//	sanity_check(vo,9200);
+	if (warning_level >= WARN_RULE)
+	    fprintf(stderr,"SELECT(NEW):applied selection\n");
+    }
+//    fprintf(stderr,"apply_selection2:leaving\n");
+}
+#endif
+
+/*
+  Not just a rfre_VariableOwner because owner/owners field are shared
+  with others.
+  */
+static void myrfre_VariableOwner(VariableOwner vo) {
+    if (vo == VariableOwnerNIL) return;
+
+    VariableOwner_list cvo_l = vo->children;
+    
+    for (unsigned i = 0; i < cvo_l->sz; i++)
+	myrfre_VariableOwner(cvo_l->arr[i]);
+    
+    fre_VariableOwner_list(cvo_l);
+    fre_VariableOwner(vo);
+}
+
+static VariableOwner_list get_varowners(VariableOwner vo) {
+//    fprintf(stderr,"get_varowners:entered\n");
+    VariableOwner_list vo_l  = new_VariableOwner_list();
+    VariableOwner_list cvo_l = vo->children;
+    
+    if (vo->owners->sz > 1) {
+	assert (vo->owners->sz < 256);
+	vo_l = append_VariableOwner_list(vo_l, vo);
+    }
+    
+    for (unsigned i = 0; i < cvo_l->sz; i++) {
+	vo_l = concat_VariableOwner_list(vo_l, get_varowners(cvo_l->arr[i]));
+    }
+    
+//    fprintf(stderr,"get_varowners:leaving\n");
+    return vo_l;
+}
+
+static void solve_owner(VariableOwner vo) {
+//    fprintf(stderr,"#combinations = %d\n",calc_combinations(vo));
+    if (calc_combinations(vo) < 2)
+	return;
+    VariableOwner_list vo_l = get_varowners(vo);
+    
+    try_selection(0, vo_l, vo);
+    apply_selection(vo_l);
+    
+    fre_VariableOwner_list(vo_l);    
+}
+
+static void select_owner_depth_first(VariableOwner vo) {
+    for (unsigned i=0; i<vo->children->sz; i++)
+    {
+	select_owner_depth_first(vo->children->arr[i]);
+    }
+    if (calc_combinations(vo) > 1024*64) // Arbitrary not so big number...
+    {
+	if (warning_level >= WARN_RULE)
+	    fprintf(stderr,"SELECT(NEW):heuristically...\n");
+	for (unsigned i=0; i<vo->children->sz; i++)
+	    solve_owner(vo->children->arr[i]);
+    }
+    else if (vo->owners->sz == 1)
+    {
+	solve_owner(vo);
+    }
+}
+
+static void rewrite_varowners(VariableOwner vo) {
+    for (unsigned i=0; i<vo->children->sz; i++)
+    {
+	rewrite_varowners(vo->children->arr[i]);
+    }
+    if (vo->owners->sz == 1 && vo->children->sz > 1)
+    {
+	if (warning_level >= WARN_RULE)
+	    fprintf(stderr,"SELECT(NEW):rewriting varowner tree\n");
+	for (unsigned i=0; i<vo->children->sz; i++)
+	{
+	    VariableOwner tmp = new_VariableOwner(
+		0,
+		0,
+		vo->owners,
+		new_VariableOwner_list());
+	    tmp->children = append_VariableOwner_list(
+		tmp->children,
+		vo->children->arr[i]);
+	    vo->children->arr[i] = tmp;
+	}
+    }
+}
+
+/*
+  !!! uses shared structures !!!
+  on shares OwnerExpr_list nodes from 'body'
+  vo_l shares VariableOwner nodes from 'on'
+  */
+static void select_owner(VariableOwner vo) {
+//    fprintf(stderr,"select_owner:entered\n");
+//    show_combinations(vo,0);
+    rewrite_varowners(vo);
+//    show_combinations(vo,0);
+    select_owner_depth_first(vo);
+    solve_owner(vo);
+//    fprintf(stderr,"select_owner:leaving\n");
+}
+
+/* ----------- Actors ----------- */
+.call generate_cutoff_dummy_action OwnerExpr
+
+.foreach t $(func_actors)
+static $t rewrite_$t_action(
+    $t e, global_context gc )
+{
+    assert(gc->current_varowner == VariableOwnerNIL);
+    OwnerExpr_list tmpOwner = new_OwnerExpr_list();
+    tmpOwner = append_OwnerExpr_list(
+	tmpOwner,
+	new_NewOwnReplicated());
+    VariableOwner wrapper = new_VariableOwner(
+	0,
+	0,
+	tmpOwner,
+	new_VariableOwner_list());
+.call push_current_varowner
+    gc->current_varowner = wrapper;
+.call generate_walker_call "    " e $t $t
+.call pop_current_varowner
+//    show_pointers(wrapper,2000);
+    select_owner(wrapper);
+    myrfre_VariableOwner(wrapper);
+    rfre_OwnerExpr_list(tmpOwner);
+    return e;
+}
+
+.endforeach
+
+.foreach t $(owner_actors)
+static $t rewrite_$t_action(
+    $t e, global_context gc )
+{
+.call push_current_varowner
+    if (e->on != OwnerExpr_listNIL && e->on->sz != 0)
+    {
+	assert(gc->current_varowner != VariableOwnerNIL);
+	VariableOwner wrapper = new_VariableOwner(
+	    0,
+	    0,
+	    e->on,
+	    new_VariableOwner_list());
+	gc->current_varowner->children = append_VariableOwner_list(
+	    gc->current_varowner->children,
+	    wrapper);
+	gc->current_varowner = wrapper;
+    }
+.call generate_walker_call "    " e $t $t
+.call pop_current_varowner
+    return e;
+}
+
+.endforeach
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_select_on(
+    vnusprog e, global_context gc)
+{
+        // A hack to avoid 'unused' warnings
+    (void)rewrite_vnusprog_walker;
+    
+.call init_current_varowner
+    OwnerExpr_list tmpOwner = new_OwnerExpr_list();
+    tmpOwner = append_OwnerExpr_list(
+	tmpOwner,
+	new_NewOwnReplicated());
+    VariableOwner wrapper = new_VariableOwner(
+	0,
+	0,
+	tmpOwner,
+	new_VariableOwner_list());
+    gc->current_varowner = wrapper;
+.call generate_walker_call "    " e->statements block block
+//    show_pointers(wrapper,1000);
+    select_owner(wrapper);
+    myrfre_VariableOwner(wrapper);
+    rfre_OwnerExpr_list(tmpOwner);
+.call init_current_varowner
+.call generate_walker_call "    " e->declarations declaration_list declaration_list
+    return e;
+}

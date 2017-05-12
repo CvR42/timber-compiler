@@ -1,0 +1,24 @@
+// File: Service.spar
+//
+// Access functions for argc and argv
+
+package spar.compiler;
+
+final public class Argv {
+    private Argv() { /* this class is not instantiable by the general public */ }    
+    // Return the argument count.
+    <$ noGC $> final public native static int getArgc();
+    <$ noGC $> final public native static __string getArg( int n );
+    final public static String[] buildArgv()
+    {
+	int argc = getArgc();
+	String res[] = new String[argc-1];
+
+	// Don't put int argv[0] (the name of the program), since
+	// Java doesn't do this either.
+	for( i :- 1:argc ){
+	    res[i-1] = getArg( i );
+	}
+	return res;
+    }
+}

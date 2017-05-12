@@ -1,0 +1,54 @@
+// File: okarrayinf.spar
+//
+// Test the fature that converts subscript expressions to objects to
+// calls to getElement or setElement.
+
+
+//class FullArray(| type t, int rank |) implements spar.lang.Array(| type t, rank |)
+class FullArray(| type t, int rank |)
+{
+    private t elements[];
+    int room;
+    [int^rank] sizes;
+
+    public FullArray( [int^rank] sz ){
+	int rm = 1;
+
+	inline for( i :- 0:rank ){
+	    rm *= sz[i];
+	}
+	elements = new t[rm];
+	room = rm;
+	sizes = sz;
+    }
+    public t getElement( final [int^rank] ix ){
+	int pos = 0;
+
+	inline for( i :- 0:rank ){
+	    if( ix[i]<0 || ix[i]>=sizes[i] ){
+		throw new IndexOutOfBoundsException();
+	    }
+	    pos = pos*sizes[i]+ix[i]; 
+	}
+	return elements[pos];
+    }
+    public void setElement( final [int^rank] ix, final t val ){
+	int pos = 0;
+
+	inline for( i :- 0:rank ){
+	    if( ix[i]<0 || ix[i]>=sizes[i] ){
+		throw new IndexOutOfBoundsException();
+	    }
+	    pos = pos*sizes[i]+ix[i]; 
+	}
+	elements[pos] = val;
+    }
+}
+
+public class okarrayinf {
+    public static void main(){
+	FullArray(| int, 2 |) a = new FullArray(| int, 2 |)( [5,5] );
+	a[0,0] = 42;
+	__println( 1, a[0,0] );
+    }
+}

@@ -1,0 +1,22 @@
+class TheGeneric(| int n |){
+    public static void hello(){
+	__println( 1, n );
+	// Yes, this is sick.
+	{
+	    int n = n+1;
+	    __println( 1, n );
+	}
+	for( n :- :n+2 ){
+	    __print( 1, n, " " );
+	}
+	__println( 1 );
+    }
+}
+
+public class okgenericval {
+    public static void main(String args[])
+    {
+	TheGeneric(| 1 |).hello();
+	TheGeneric(| 4 |).hello();
+    }
+}

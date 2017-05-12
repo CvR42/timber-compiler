@@ -1,0 +1,12 @@
+
+import java.io.*;
+
+interface Hello {
+    void hello();
+}
+
+public class errnoimpl implements Hello {
+    public static void main(){
+	errnoimpl x = new errnoimpl();
+    }
+}

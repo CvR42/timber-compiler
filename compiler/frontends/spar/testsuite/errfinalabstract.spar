@@ -1,0 +1,8 @@
+final abstract class t1 {
+}
+
+public class errfinalabstract extends t1 {
+    public static void main(){
+	__println( 1, 42 );
+    }
+}

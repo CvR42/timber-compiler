@@ -1,0 +1,10 @@
+errjava.spar:9: In Java array types, '*' is not allowed
+    static int n[*];			// Not the Java notation of an array.
+                   ^
+errjava.spar:10: In Java, multidimensional arrays are not allowed
+    static int m[*,*];			// Multi-dim array.
+                     ^
+errjava.spar:14: syntax error
+	for( i <~ :5 ) __println( 1, "huh?" );
+	          ^
+cannot recover from earlier parse errors, goodbye

@@ -1,0 +1,48 @@
+// After JLS 4.2.4    Floating-Point Operations
+
+
+public class okjlsround {
+
+    public static void main(String[] args) {
+
+        // An example of overflow:
+        double d = 1e308;
+        __print(1,"overflow produces infinity: ");
+        __println(1,d , "*10==" , d*10);
+
+        // An example of gradual underflow:
+        d = 1e-305 * Math.PI;
+        __print(1,"gradual underflow: " , d , "\n   ");
+        for (int i = 0; i < 4; i++)
+            __print(1," " , (d /= 100000));
+        __println(1);
+
+        // An example of NaN:
+        __print(1,"0.0/0.0 is Not-a-Number: ");
+        d = 0.0/0.0;
+        __println(1,d);
+
+        // An example of inexact results and rounding:
+        __print(1,"inexact results with float:");
+        for (int i = 0; i < 100; i++) {
+            float z = 1.0f / i;
+            if (z * i != 1.0f)
+                __print(1," " , i);
+        }
+        __println(1);
+
+        // Another example of inexact results and rounding:
+        __print(1,"inexact results with double:");
+        for (int i = 0; i < 100; i++) {
+            double z = 1.0 / i;
+            if (z * i != 1.0)
+                __print(1," " , i);
+        }
+        __println(1);
+
+        // An example of cast to integer rounding:
+        __print(1,"cast to int rounds toward 0: ");
+        d = 12345.6;
+        __println(1,(int)d , " " , (int)(-d));
+    }
+}

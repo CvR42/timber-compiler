@@ -1,0 +1,2 @@
+errshapecons.v:12: Currently, Vnus only supports shape expressions for one-dimensional arrays
+errshapecons.v:12: Cannot assign to a shape (only to a pointer to shape)

@@ -1,0 +1,10 @@
+TCS_PATH=/usr/local/tcs
+TMDRV_PATH=$(HOME)/trimedia/tmdrvsrc_1.0
+CC = tmcc
+CFLAGS = -el -O5
+CPPFLAGS = -I$(TMDRV_PATH)/dsp/include
+
+OBJECTS = ensemble-trimedia.o
+
+libensemble-trimedia.a : $(OBJECTS) 
+	tmar rcv libensemble-trimedia.a ensemble-trimedia.o

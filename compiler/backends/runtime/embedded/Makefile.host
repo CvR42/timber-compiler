@@ -1,0 +1,10 @@
+
+TMDRV_PATH=$(HOME)/trimedia/tmdrvsrc_1.0
+
+CFLAGS = -Wall -ansi -O6 -mcpu=pentium
+CPPFLAGS = -I$(TMDRV_PATH)/linux/include
+
+OBJECTS = get-locked-page.o set-root-privileges.o kickoff.o ensemble-host-i386.o
+
+libensemble-host-i386.a : $(OBJECTS) 
+	$(AR) rcv $@ $^

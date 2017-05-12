@@ -1,0 +1,2 @@
+errjlsconv.spar:8: assigning a char to a short requires an explicit cast
+errjlsconv.spar:7: assigning a short to a char requires an explicit cast

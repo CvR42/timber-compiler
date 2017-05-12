@@ -1,0 +1,14 @@
+// File: ElasticArray.spar
+//
+// It is recommended that implement elastic arrays implement this interface.
+
+package spar.lang;
+
+public interface ElasticArray(| type t, int n |) extends Array(| type t, n |)
+{
+    void setSize( [int^n] sz ) throws NegativeArraySizeException;
+    int getRoom();
+    void setRoom( int rm );
+    void setRoom( [int^n] rm );
+    void fitRoom();
+}

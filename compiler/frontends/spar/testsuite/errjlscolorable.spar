@@ -1,0 +1,17 @@
+// After JLS2 8.1.4    Superinterfaces
+
+
+interface Colorable {
+    void setColor(int color);
+    int getColor();
+}
+class Point { int x, y; };
+class ColoredPoint extends Point implements Colorable {
+    int color;
+}
+
+public class errjlscolorable {
+    public static void main(){
+	ColoredPoint p = new ColoredPoint();
+    }
+}

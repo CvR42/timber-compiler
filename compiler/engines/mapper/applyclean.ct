@@ -1,0 +1,207 @@
+/*
+   Applyclean engine
+
+   Clean out all annotations the backend might barf on:
+   TypeMap, LocNewOwner, ExprNewOwner, [OwnerExpr]
+   New: the 'on' field of the Loc/ExprWrapper is now cleared,
+   this means that Loc/ExprNewOwner nodes are no longer generated.
+
+   Make sure the 'elm' field of a SmtSend is a variable, otherwise
+   introduce a tempo.
+
+   If a distribution list is empty zap it, otherwise the backend performs
+   unnecessary semantic checks.
+   */
+
+.. File: applyclean.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors TypeMap LocWrapper ExprWrapper
+.append actors statement block
+.append actors SmtSend
+..append actors TypeShape
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "vnusctl.h"
+#include "applyclean.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+/*
+  Replace a TypeMap node with the enclosed type.
+  */
+static type rewrite_TypeMap_action(
+    TypeMap elm, global_context gc )
+{
+.call generate_walker_call "    " elm TypeMap TypeMap
+    type t = rdup_type(elm->t);
+    rfre_TypeMap(elm);
+    if (warning_level >= WARN_RULE)
+	fprintf(stderr, "Applyclean: removed TypeMap node\n");
+    return t;
+}
+
+#if 0
+/*
+  Zap empty distribution lists.
+  */
+static type rewrite_TypeShape_action(
+    TypeShape e, global_context gc )
+{
+.call generate_walker_call "    " e TypeShape TypeShape
+    if (e->distr != distribution_listNIL && e->distr->sz == 0)
+    {
+	rfre_distribution_list(e->distr);
+	e->distr = distribution_listNIL;
+	if (warning_level >= WARN_RULE)
+	    fprintf(stderr, "Applyclean: zapped empty distribution list\n");
+    }
+    return e;
+}
+#endif
+
+/*
+  Kill the on field in a LocWrapper node.
+  */
+static LocWrapper rewrite_LocWrapper_action(
+    LocWrapper elm, global_context gc )
+{
+.call generate_walker_call "    " elm LocWrapper LocWrapper
+    if (elm->on != OwnerExpr_listNIL)
+    {
+	rfre_OwnerExpr_list(elm->on);
+	elm->on = OwnerExpr_listNIL;
+	if (warning_level >= WARN_RULE)
+	    fprintf(stderr, "Applyclean: LocWrapper node cleaned up\n");
+    }
+    return elm;
+}
+
+/*
+  Kill the on field in a ExprWrapper node.
+  */
+static ExprWrapper rewrite_ExprWrapper_action(
+    ExprWrapper elm, global_context gc )
+{
+.call generate_walker_call "    " elm ExprWrapper ExprWrapper
+    if (elm->on != OwnerExpr_listNIL)
+    {
+	rfre_OwnerExpr_list(elm->on);
+	elm->on = OwnerExpr_listNIL;
+	if (warning_level >= WARN_RULE)
+	    fprintf(stderr, "Applyclean: ExprWrapper node cleaned up\n");
+    }
+    return elm;
+}
+
+/*
+  Clean out the [OwnerExpr] list in a statement.
+  */
+static statement rewrite_statement_action(
+    statement elm, global_context gc )
+{
+.call generate_walker_call "    " elm statement statement
+    if (elm->on != OwnerExpr_listNIL)
+    {
+	rfre_OwnerExpr_list(elm->on);
+	elm->on = OwnerExpr_listNIL;
+	if (warning_level >= WARN_RULE)
+	    fprintf(stderr, "Applyclean: removed OwnerExpr list\n");
+    }
+    return elm;
+}
+
+/*
+  Clean out the [OwnerExpr] list in a block.
+  */
+static block rewrite_block_action(
+    block elm, global_context gc )
+{
+.call generate_walker_call "    " elm block block
+    if (elm->on != OwnerExpr_listNIL)
+    {
+	rfre_OwnerExpr_list(elm->on);
+	elm->on = OwnerExpr_listNIL;
+	if (warning_level >= WARN_RULE)
+	    fprintf(stderr, "Applyclean: removed OwnerExpr list\n");
+    }
+    return elm;
+}
+
+static bool okidokiTest(expression e)
+{
+    expression pe = pierceExprNotNullAssert(pierceExprWrapper(e));
+    bool res = false;
+    switch (pe->tag)
+    {
+	case TAGExprName:
+	    res = true;
+	    break;
+	case TAGExprSelection:
+	    res = okidokiTest(to_ExprSelection(pe)->shape);
+	    break;
+	case TAGExprDeref:
+	    res = okidokiTest(to_ExprDeref(pe)->ref);
+	    break;
+	default:
+	    break;
+    }
+//    fprintf(stderr,"Applyclean okidokiTest : %s\n",res?"true":"false");
+    return res;
+}
+
+/*
+  If elm field is not a variable name introduce a tempo.
+  */
+static statement rewrite_SmtSend_action(
+    SmtSend e, global_context gc )
+{
+.call generate_walker_call "    " e SmtSend SmtSend
+    if (okidokiTest(e->elm))
+	return e;
+    SmtBlock nsb = snew_SmtBlock(
+	snew_block());
+    nsb->body->scope = gen_tmsymbol("__snd_scope");
+    nsb->body->statements = append_statement_list(nsb->body->statements, e);
+    DeclLocalVariable nd = new_DeclLocalVariable(
+	gen_origsymbol("__snd_tmp"),
+	0,
+	Pragma_listNIL,
+	rdup_tmsymbol(nsb->body->scope),
+	derive_type_expression(gc->prog->declarations, 0, e->elm),
+	new_OptExpr(e->elm));
+    gc->prog->declarations = append_declaration_list(
+	gc->prog->declarations, nd);
+    e->elm = new_ExprName(rdup_origsymbol(nd->name));
+    return nsb;
+}
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_clean(
+    vnusprog elm, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+    
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}

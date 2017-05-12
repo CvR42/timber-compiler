@@ -1,0 +1,1 @@
+errjlshasstatic.spar:10: An inner class may not declare static members, unless they are compile-time constant fields: 'y'

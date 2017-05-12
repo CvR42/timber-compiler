@@ -1,0 +1,31 @@
+// File: genilog2.
+// Test the simplification of trivial statement blocks, and the promotion
+// of trivial inlined expressions to constants.
+import java.io.*;
+
+public class genilog2 {
+    inline static int ILog2(final int n)
+    {
+	if (n<0x0002) return  0;
+	if (n<0x0004) return  1;
+	if (n<0x0008) return  2;
+	if (n<0x0010) return  3;
+	if (n<0x0020) return  4;
+	if (n<0x0040) return  5;
+	if (n<0x0080) return  6;
+	if (n<0x0100) return  7;
+	if (n<0x0200) return  8;
+	if (n<0x0400) return  9;
+	if (n<0x0800) return 10;
+	if (n<0x1000) return 11;
+	if (n<0x2000) return 12;
+	if (n<0x4000) return 13;
+	if (n<0x8000) return 14;
+	return 15;
+    }
+    
+    public static void main(){
+	final int n = ILog2( 42 );
+	__println( 1, n );
+    }
+}

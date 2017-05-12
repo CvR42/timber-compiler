@@ -1,0 +1,2 @@
+errjlsmember.spar:11: type 'int' does not have fields, so `.x' is meaningless
+errjlsmember.spar:13: no method in Point matches nPoints()

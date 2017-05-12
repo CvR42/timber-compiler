@@ -1,0 +1,13 @@
+
+public final class oknewarrreturn {
+    static int[] donothing( int[] a ) { return a; }
+    static int[] build() {
+        int res[] = donothing( new int[] {1,2,3} );
+	return res;
+    }
+    public static void main(){
+        int a[] = build();
+
+	__println( 1, a[0] );
+    }
+}

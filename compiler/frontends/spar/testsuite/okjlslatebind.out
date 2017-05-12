@@ -1,0 +1,8 @@
+p.move(20,20):
+	Point clear
+cp.move(20,20):
+	ColoredPoint clear
+	Point clear
+p.move(20,20), p colored:
+	ColoredPoint clear
+	Point clear

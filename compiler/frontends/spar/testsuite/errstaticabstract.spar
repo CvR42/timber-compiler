@@ -1,0 +1,10 @@
+abstract class t1 {
+    static abstract void foo();
+}
+
+public class errstaticabstract extends t1 {
+    public static void main()
+    {
+	foo();
+    }
+}

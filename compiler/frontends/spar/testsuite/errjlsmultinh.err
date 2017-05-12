@@ -1,0 +1,4 @@
+errjlsmultinh.spar:11: Field reference 'v' in 'errjlsmultinh' is ambiguous:
+errjlsmultinh.spar:5: This is a candidate (in SuperTest)
+errjlsmultinh.spar:3: This is a candidate (in Frob)
+You can resolve this by qualifying the name.

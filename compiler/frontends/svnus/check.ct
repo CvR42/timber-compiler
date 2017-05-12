@@ -1,0 +1,3332 @@
+.. File: check.ct
+..
+.. Enforcement of context sensitive restrictions of Sugar Vnus
+..
+.. Return 'walk' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the datastructure we're walking on, and a type 't', of that variable,
+.. generate a return statement.
+.macro generate_walker_return indent var t
+$(indent)return ok;
+.endmacro
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+$(indent)bool ok = TRUE;
+
+.if ${member ${stemname $t} ${typelist}}
+$(indent)if( $(var) == 0 ){
+$(indent)$(indent)return ok;
+$(indent)}
+.endif
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+static bool check_$t_walker(
+ $t $(var),
+ const origin org,
+ const blockctx ctx,
+ origsymbol_list labels
+)
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we're walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+static bool check_$t_walker(
+ $t $(var),
+ const origin org,
+ const blockctx ctx,
+ origsymbol_list labels
+);
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)ok &= check_$(type)_action( $(var), org, ctx, labels );
+.else
+$(indent)ok &= check_$(type)_action( to_$(type)( $(var) ), org, ctx, labels );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)ok &= check_$(type)_walker( $(var), org, ctx, labels );
+.else
+$(indent)ok &= check_$(type)_walker( to_$(type)( $(var) ), org, ctx, labels );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var', and a type 'type', generate
+.. the body of an empty walker function.
+.macro generate_empty_walker_body indent var type
+$(indent)(void) $(var);
+$(indent)(void) org;
+$(indent)(void) ctx;
+$(indent)(void) labels;
+.endmacro
+..
+.. For which types are there actions defines?
+.set actors varname formalParameter view ExprFunctionCall SizeExpression
+.append actors DistBC DistLocal TypeShape DeclFunction DeclProcedure
+.append actors DeclExternalFunction DeclExternalProcedure
+.append actors switchCase_list cardinality_list SendStatement IfStatement
+.append actors WhileStatement ReceiveStatement BlockReceiveStatement 
+.append actors BlockSendStatement AssignStatement GotoStatement
+.append actors SwitchStatement ReturnStatement ValueReturnStatement
+.append actors PrintStatement PrintLineStatement DeleteStatement
+.append actors FitRoomStatement SetRoomStatement SetSizeStatement
+.append actors ProcedureCallStatement block VDeclLocalVariable
+.append actors VDeclGlobalVariable vnusdeclaration ExprDeref ExprSender
+.append actors ExprGetSize ExprGetRoom ExprIsOwner ExprOwner ExprIsMultidimDist
+.append actors declaration_list ExprAddress ExprField ExprName ExprIf
+.append actors ExprBinop ExprUnop ExprSelection ExprComplex ExprCast
+.append actors vnusdeclaration_list declaration_list VDeclFunction
+.append actors ExprGetBlocksize cardinality field_list formalParameter_list
+.append actors statement declaration VDeclProcedure
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+/* File: check.c
+ *
+ * Check the correctness of a vnus program.
+ */
+
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "vnus_types.h"
+#include "tmadmin.h"
+#include "error.h"
+#include "symbol_table.h"
+#include "global.h"
+#include "check.h"
+#include "collect.h"
+#include "typederive.h"
+#include "service.h"
+
+.foreach t ${aliases}
+typedef ${alias $t} $t;
+.endforeach
+
+typedef enum en_blockctx {
+    CTX_FUNCTION,
+    CTX_PROCEDURE,
+    CTX_GLOBAL
+} blockctx;
+
+.call generate_walker_forwards "$(visit_types)"
+static tmstring type_list_string( const type_list tl );
+static bool is_assignequiv_type_lists( const type_list tlhs, const type_list trhs );
+static bool is_passingequiv_type_lists( const type_list tlhs, const type_list trhs );
+
+/* Given a base type 'bt', return a string containing the name of
+ * that type.
+ */
+static tmstring name_basetype( BASETYPE bt )
+{
+    tmstring ans = tmstringNIL;
+
+    switch( bt ){
+        case BT_BOOLEAN:	ans = new_tmstring( "boolean" );	break;
+        case BT_BYTE:        	ans = new_tmstring( "byte" );		break;
+        case BT_SHORT:        	ans = new_tmstring( "short" );		break;
+        case BT_INT:        	ans = new_tmstring( "int" );		break;
+        case BT_LONG:        	ans = new_tmstring( "long" );		break;
+        case BT_FLOAT:		ans = new_tmstring( "float" );		break;
+        case BT_DOUBLE:		ans = new_tmstring( "double" );		break;
+        case BT_COMPLEX:	ans = new_tmstring( "complex" );	break;
+        case BT_STRING:		ans = new_tmstring( "string" );		break;
+        case BT_CHAR:		ans = new_tmstring( "char" );		break;
+    }
+    return ans;
+}
+
+/* Given a list of fields 'pre' and a list of fields 'l', return TRUE
+ * iff 'pre' is a prefix of 'l'. That is, 'l' may be longer than 'pre',
+ * but all the fields in 'pre' have a type that is equivalent with that
+ * of the corresponding field in 'l'.
+ */
+static bool is_record_prefix( const field_list pre, const field_list l )
+{
+    unsigned int ix;
+
+    if( pre->sz>l->sz ){
+	return FALSE;
+    }
+    for( ix=0; ix<pre->sz; ix++ ){
+	if( !is_equivalent_type( pre->arr[ix]->elmtype, l->arr[ix]->elmtype ) ){
+	    return FALSE;
+	}
+    }
+    return TRUE;
+}
+
+/* Given a size 'f', return a string with this size. */
+static tmstring name_size( size f )
+{
+    char buf[5000];
+
+    switch( f->tag ){
+        case TAGSizeDontcare:
+            strcpy( buf, "*" );
+            break;
+
+        case TAGSizeExpression:
+            strcpy( buf, "<expr>" );
+            break;
+
+    }
+    return new_tmstring( buf );
+}
+
+/* Given a list of sizes 'fl', return a string with these sizes. */
+static tmstring name_size_list( size_list fl )
+{
+    unsigned int ix;
+    char buf[5000];
+    tmstring sizestr;
+
+    strcpy( buf, "[" );
+    for( ix=0; ix<fl->sz; ix++ ){
+        if( ix != 0 ){
+            strcat( buf, "," );
+        }
+        sizestr = name_size( fl->arr[ix] );
+        strcat( buf, sizestr );
+        rfre_tmstring( sizestr );
+    }
+    strcat( buf, "]" );
+    return new_tmstring( buf );
+}
+
+/* Given a type 't', return TRUE if it is type 'boolean'. */
+static bool is_boolean_type( type t )
+{
+    switch( t->tag ){
+        case TAGTypeBase:
+            return to_TypeBase(t)->base == BT_BOOLEAN;
+
+        case TAGTypeView:
+        case TAGTypeShape:
+        case TAGTypePointer:
+        case TAGTypeRecord:
+        case TAGTypeNeutralPointer:
+        case TAGTypeFunction:
+        case TAGTypeProcedure:
+            return FALSE;
+
+    }
+    return FALSE;
+}
+
+
+/* Given a type 't', return a string with the name of that type. */
+static tmstring name_type( const type t )
+{
+    char buf[5000];
+
+    switch( t->tag ){
+        case TAGTypeBase:
+            return name_basetype( to_TypeBase(t)->base );
+
+        case TAGTypeView:
+        {
+            tmstring basenm = name_type( to_TypeView(t)->elmtype );
+
+	    sprintf( buf, "view %u of %s", to_TypeView(t)->rank, basenm );
+            rfre_tmstring( basenm );
+            return new_tmstring( buf );
+        }
+
+        case TAGTypeShape:
+        {
+            tmstring basenm = name_type( to_TypeShape(t)->elmtype );
+            tmstring sizestr = name_size_list( to_TypeShape(t)->sizes );
+
+            strcpy( buf, "shape " );
+            strcat( buf, sizestr );
+            strcat( buf, " of " );
+            strcat( buf, basenm );
+            rfre_tmstring( sizestr );
+            rfre_tmstring( basenm );
+            return new_tmstring( buf );
+        }
+
+	case TAGTypePointer:
+	{
+	    tmstring basenm = name_type( to_TypePointer(t)->elmtype );
+
+	    sprintf( buf, "pointer to %s", basenm );
+            rfre_tmstring( basenm );
+            return new_tmstring( buf );
+	}
+
+	case TAGTypeRecord:
+	    return new_tmstring( "record" );
+
+
+	case TAGTypeNeutralPointer:
+	    return new_tmstring( "neutral pointer" );
+
+	case TAGTypeProcedure:
+	{
+	    tmstring parms = type_list_string( to_TypeProcedure(t)->formals );
+
+	    sprintf( buf, "procedure%s", parms );
+	    rfre_tmstring( parms );
+	    return new_tmstring( buf );
+	}
+
+	case TAGTypeFunction:
+	{
+	    tmstring parms = type_list_string( to_TypeFunction(t)->formals );
+	    tmstring tnm = name_type( to_TypeFunction(t)->retval );
+
+	    sprintf( buf, "function%s returning %s", parms, tnm );
+	    rfre_tmstring( parms );
+	    rfre_tmstring( tnm );
+	    return new_tmstring( buf );
+	}
+    }
+    return tmstringNIL;
+}
+
+/* Given a list of types, return a string containing a bracketed
+ * list of these types.
+ */
+static tmstring type_list_string( const type_list tl )
+{
+    char buf[10000];
+    unsigned int ix;
+    unsigned int pos;
+
+    pos = 0;
+
+    buf[pos++] = '(';
+    if( tl->sz != 0 ){
+	for( ix=0; ix<tl->sz; ix++ ){
+	    tmstring tnm = name_type( tl->arr[ix] );
+
+	    if( ix != 0 ){
+		buf[pos++] = ',';
+	    }
+	    strcpy( buf+pos, tnm );
+	    pos += strlen( tnm );
+	    rfre_tmstring( tnm );
+	}
+    }
+    buf[pos++] = ')';
+    return new_tmstring( buf );
+}
+
+/* Given a basetype 't', return TRUE if it is a integral type. */
+static bool is_integral_basetype( const BASETYPE t )
+{
+    switch( t ){
+	case BT_BYTE:
+	case BT_SHORT:
+	case BT_INT:
+	case BT_LONG:
+	case BT_CHAR:
+	    return TRUE;
+
+	case BT_COMPLEX:
+	case BT_FLOAT:
+	case BT_DOUBLE:
+	case BT_STRING:
+	case BT_BOOLEAN:
+	    break;
+    }
+    return FALSE;
+}
+
+/* Given a type 't', return TRUE if it is a integral type. */
+static bool is_integral_type( const type t )
+{
+    if( t == typeNIL ){
+        return TRUE;
+    }
+    switch( t->tag ){
+        case TAGTypeBase:
+            return is_integral_basetype( to_TypeBase(t)->base );
+
+        case TAGTypeView:
+        case TAGTypeShape:
+        case TAGTypePointer:
+        case TAGTypeRecord:
+        case TAGTypeNeutralPointer:
+        case TAGTypeFunction:
+        case TAGTypeProcedure:
+            return FALSE;
+
+    }
+    return FALSE;
+}
+
+/* Given a basetype 't', return TRUE if it is a numeric type. */
+static bool is_numeric_basetype( const BASETYPE t )
+{
+    switch( t ){
+	case BT_BYTE:
+	case BT_SHORT:
+	case BT_INT:
+	case BT_LONG:
+	case BT_FLOAT:
+	case BT_DOUBLE:
+	case BT_CHAR:
+	case BT_COMPLEX:
+	    return TRUE;
+
+	case BT_STRING:
+	case BT_BOOLEAN:
+	    break;
+    }
+    return FALSE;
+}
+
+/* Given a type 't', return TRUE if it is a numeric type. */
+static bool is_numeric_type( const type t )
+{
+    if( t == typeNIL ){
+        return TRUE;
+    }
+    switch( t->tag ){
+        case TAGTypeBase:
+            return is_numeric_basetype( to_TypeBase(t)->base );
+
+        case TAGTypeView:
+        case TAGTypeShape:
+        case TAGTypePointer:
+        case TAGTypeRecord:
+        case TAGTypeNeutralPointer:
+        case TAGTypeFunction:
+        case TAGTypeProcedure:
+            return FALSE;
+
+    }
+    return FALSE;
+}
+
+/* Given two basetypes 'tlhs' and 'trhs', return TRUE if they are
+ * assignment equivalent.
+ */
+static bool is_assignequiv_basetypes( const BASETYPE tlhs, const BASETYPE trhs )
+{
+    if( trhs == tlhs ){
+	return TRUE;
+    }
+    switch( tlhs ){
+	case BT_STRING:
+	case BT_BOOLEAN:
+	    break;
+
+        case BT_COMPLEX:
+	    break;
+
+	case BT_BYTE:
+	case BT_SHORT:
+	case BT_INT:
+	case BT_LONG:
+	case BT_FLOAT:
+	case BT_DOUBLE:
+	case BT_CHAR:
+	    if( is_numeric_basetype( trhs ) || trhs == BT_CHAR ){
+		return TRUE;
+	    }
+	    break;
+
+    }
+    return FALSE;
+}
+
+/* Given the type of the lhs and the type of the rhs, return TRUE if they are
+ * assignment compatible.
+ */
+static bool is_assignequiv_types( const type tlhs, const type trhs )
+{
+    bool ans;
+
+    ans = FALSE;
+    if( tlhs == typeNIL || trhs == typeNIL ){
+	return TRUE;
+    }
+    if( tlhs->tag == TAGTypeNeutralPointer && trhs->tag == TAGTypePointer ){
+	return TRUE;
+    }
+    if( tlhs->tag != trhs->tag ){
+	return FALSE;
+    }
+    switch( tlhs->tag ){
+	case TAGTypeBase:
+	    ans = is_assignequiv_basetypes(
+		to_TypeBase(tlhs)->base,
+		to_TypeBase(trhs)->base
+	    );
+	    break;
+
+	case TAGTypeView:
+	    if( to_TypeView(tlhs)->rank != to_TypeView(trhs)->rank ){
+		return FALSE;
+	    }
+	    ans = is_assignequiv_types(
+		to_TypeView(tlhs)->elmtype,
+		to_TypeView(trhs)->elmtype
+	    );
+	    break;
+
+	case TAGTypeShape:
+	    if( to_TypeShape(tlhs)->sizes->sz != to_TypeShape(trhs)->sizes->sz ){
+		return FALSE;
+	    }
+	    ans = is_assignequiv_types(
+		to_TypeShape(tlhs)->elmtype,
+		to_TypeShape(trhs)->elmtype
+	    );
+	    break;
+
+	case TAGTypePointer:
+	    ans = is_assignequiv_types(
+		to_TypePointer(tlhs)->elmtype,
+		to_TypePointer(trhs)->elmtype
+	    );
+	    break;
+
+	case TAGTypeRecord:
+	    ans = is_record_prefix(
+		to_TypeRecord(tlhs)->fields,
+		to_TypeRecord(trhs)->fields
+	    );
+	    break;
+
+	case TAGTypeNeutralPointer:
+	    ans = TRUE;
+	    break;
+
+	case TAGTypeFunction:
+	    ans = is_assignequiv_type_lists(
+		to_TypeFunction(tlhs)->formals,
+		to_TypeFunction(trhs)->formals
+	    ) &&
+	    is_assignequiv_types(
+		to_TypeFunction(tlhs)->retval,
+		to_TypeFunction(trhs)->retval
+	    );
+	    break;
+
+	case TAGTypeProcedure:
+	    ans = is_assignequiv_type_lists(
+		to_TypeProcedure(tlhs)->formals,
+		to_TypeProcedure(trhs)->formals
+	    );
+	    break;
+
+    }
+    return ans;
+}
+
+/* Given the type of the lhs and the type of the rhs, return TRUE if they are
+ * assignment compatible.
+ */
+static bool is_assignequiv_type_lists( const type_list tlhs, const type_list trhs )
+{
+    unsigned int ix;
+
+    if( tlhs->sz != trhs->sz ){
+	return FALSE;
+    }
+    for( ix=0; ix<trhs->sz; ix++ ){
+	if( !is_assignequiv_types( tlhs->arr[ix], trhs->arr[ix] ) ){
+	    return FALSE;
+	}
+    }
+    return TRUE;
+}
+
+/* Given two basetypes 'tformal' and 'tactual', return TRUE if they are
+ * passing equivalent.
+ */
+static bool is_passingequiv_basetypes( const BASETYPE tformal, const BASETYPE tactual )
+{
+    if( tformal == tactual ){
+	return TRUE;
+    }
+    switch( tactual ){
+	case BT_STRING:
+	case BT_BOOLEAN:
+        case BT_COMPLEX:
+	    break;
+
+	case BT_BYTE:
+	case BT_SHORT:
+	case BT_LONG:
+	case BT_INT:
+	case BT_FLOAT:
+	case BT_DOUBLE:
+	case BT_CHAR:
+	    if( is_numeric_basetype( tformal ) || tformal == BT_CHAR ){
+		return TRUE;
+	    }
+	    break;
+
+    }
+    return FALSE;
+}
+
+/* Given two sizes belonging to shapes, check if they are passing
+ * compatible.
+ */
+static bool is_passingequiv_shape_sizes( const size formal, const size actual )
+{
+    switch( formal->tag ){
+	case TAGSizeDontcare:
+	    return TRUE;
+
+	case TAGSizeExpression:
+	    switch( actual->tag ){
+		case TAGSizeExpression:
+		    /* This might be right. Then again, it might be wrong. */
+		    return TRUE;
+
+		case TAGSizeDontcare:
+		    /* A shape is not supposed to have this. */
+		    return FALSE;
+
+	    }
+	    break;
+    }
+    return TRUE;
+}
+
+/* Given two size lists belonging to shapes, check if they are passing
+ * compatible.
+ */
+static bool is_passingequiv_shape_size_lists( const size_list formal, const size_list actual )
+{
+    unsigned int ix;
+
+    if( formal->sz != actual->sz ){
+	return FALSE;
+    }
+    for( ix=0; ix<formal->sz; ix++ ){
+	if( !is_passingequiv_shape_sizes( formal->arr[ix], actual->arr[ix] ) ){
+	    return FALSE;
+	}
+    }
+    return TRUE;
+}
+
+/* Given the type of the formal and the type of the actual parameter, return
+ * TRUE if they are compatible.
+ */
+static bool is_passingequiv_types( const type tformal, const type tactual )
+{
+    bool ans;
+
+    ans = FALSE;
+    if( tformal == typeNIL || tactual == typeNIL ){
+	/* Things are going wrong anyway; don't bother them with more. */
+	return TRUE;
+    }
+    if( tactual->tag == TAGTypeNeutralPointer && tformal->tag == TAGTypePointer ){
+	return TRUE;
+    }
+    if( tformal->tag != tactual->tag ){
+	return FALSE;
+    }
+    switch( tformal->tag ){
+	case TAGTypeBase:
+	    ans = is_passingequiv_basetypes(
+		to_TypeBase(tformal)->base,
+		to_TypeBase(tactual)->base
+	    );
+	    break;
+
+	case TAGTypeView:
+	    if( to_TypeView(tformal)->rank != to_TypeView(tactual)->rank ){
+		return FALSE;
+	    }
+	    ans = is_passingequiv_types(
+		to_TypeView(tformal)->elmtype,
+		to_TypeView(tactual)->elmtype
+	    );
+	    break;
+
+	case TAGTypeShape:
+	    if(
+		!is_passingequiv_shape_size_lists(
+		    to_TypeShape(tformal)->sizes,
+		    to_TypeShape(tactual)->sizes
+		)
+	    ){
+		return FALSE;
+	    }
+	    ans = is_passingequiv_types(
+		to_TypeShape(tformal)->elmtype,
+		to_TypeShape(tactual)->elmtype
+	    );
+	    break;
+
+	case TAGTypePointer:
+	    ans = is_passingequiv_types(
+		to_TypePointer(tformal)->elmtype,
+		to_TypePointer(tactual)->elmtype
+	    );
+	    break;
+
+	case TAGTypeRecord:
+	    ans = is_record_prefix(
+		to_TypeRecord(tformal)->fields,
+		to_TypeRecord(tactual)->fields
+	    );
+	    break;
+
+	case TAGTypeNeutralPointer:
+	    ans = TRUE;
+	    break;
+
+	case TAGTypeFunction:
+	    ans = is_passingequiv_type_lists(
+		to_TypeFunction(tformal)->formals,
+		to_TypeFunction(tactual)->formals
+	    ) &&
+	    is_passingequiv_types(
+		to_TypeFunction(tformal)->retval,
+		to_TypeFunction(tactual)->retval
+	    );
+	    break;
+
+	case TAGTypeProcedure:
+	    ans = is_passingequiv_type_lists(
+		to_TypeProcedure(tformal)->formals,
+		to_TypeProcedure(tactual)->formals
+	    );
+	    break;
+
+    }
+    return ans;
+}
+
+/* Given the type of the lhs and the type of the rhs, return TRUE if they are
+ * passing compatible.
+ */
+static bool is_passingequiv_type_lists( const type_list tlhs, const type_list trhs )
+{
+    unsigned int ix;
+
+    if( tlhs->sz != trhs->sz ){
+	return FALSE;
+    }
+    for( ix=0; ix<trhs->sz; ix++ ){
+	if( !is_passingequiv_types( tlhs->arr[ix], trhs->arr[ix] ) ){
+	    return FALSE;
+	}
+    }
+    return TRUE;
+}
+
+/* Given the type of the lhs and the type of the rhs, check if they are
+ * assignment compatible.
+ */
+static bool assigncompare_types( const origin org, const type tlhs, const type trhs )
+{
+    tmstring typenm_rhs;
+    tmstring typenm_lhs;
+
+    if( is_assignequiv_types( tlhs, trhs ) ){
+	return TRUE;
+    }
+    typenm_rhs = name_type( trhs );
+    typenm_lhs = name_type( tlhs );
+    sprintf( errarg, "cannot assign a %s to a %s", typenm_rhs, typenm_lhs );
+    orig_errpos( org );
+    error( "bad assignment" );
+    rfre_tmstring( typenm_rhs );
+    rfre_tmstring( typenm_lhs );
+    return FALSE;
+}
+
+/* Given the type of the formal parameter and the type of the actual
+ * parameter, check if they are compatible.
+ */
+static bool parametercompare_types( const origin org, const type tformal, const type tactual )
+{
+    tmstring typenm_formal;
+    tmstring typenm_actual;
+
+    if( is_passingequiv_types( tformal, tactual ) ){
+	return TRUE;
+    }
+    typenm_actual = name_type( tactual );
+    typenm_formal = name_type( tformal );
+    sprintf( errarg, "cannot pass a %s to a %s parameter", typenm_actual, typenm_formal );
+    orig_errpos( org );
+    error( "bad parameter" );
+    rfre_tmstring( typenm_actual );
+    rfre_tmstring( typenm_formal );
+    return FALSE;
+}
+
+/* Given a type 'to' and a type 'from', return TRUE iff it is allowed
+ * to cast type 'from' to type 'to'.
+ */
+static bool is_valid_cast( const type to, const type from )
+{
+    if( is_equivalent_type( from, to ) ) return TRUE;
+    if( from->tag == TAGTypeNeutralPointer && to->tag == TAGTypePointer ){
+	return TRUE;
+    }
+    if( to->tag != from->tag ) return FALSE;
+    switch( to->tag ){
+	case TAGTypeBase:
+	{
+	    const BASETYPE bt_to = to_TypeBase(to)->base;
+	    const BASETYPE bt_from = to_TypeBase(from)->base;
+
+	    /* We only have to find converting casts that we accept. */
+	    switch( bt_to ){
+		case BT_BYTE:
+		case BT_SHORT:
+		case BT_INT:
+		case BT_LONG:
+		case BT_FLOAT:
+		case BT_DOUBLE:
+		case BT_CHAR:
+		    if(
+			(is_numeric_basetype( bt_from ) && bt_from != BT_COMPLEX) ||
+			bt_from == BT_CHAR
+		    ) return TRUE;
+		    break;
+
+		case BT_BOOLEAN:
+		case BT_STRING:
+		case BT_COMPLEX:
+		    break;
+
+	    }
+	    break;
+	}
+
+	case TAGTypeShape:
+	case TAGTypeView:
+	    break;
+
+	case TAGTypePointer:
+	    if( to_TypePointer(to)->elmtype->tag==TAGTypeRecord && to_TypePointer(from)->elmtype->tag==TAGTypeRecord ){
+		return is_valid_cast(
+		    to_TypePointer(to)->elmtype,
+		    to_TypePointer(from)->elmtype
+		);
+	    }
+	    break;
+
+	case TAGTypeRecord:
+	    return is_record_prefix(
+		to_TypeRecord(to)->fields,
+		to_TypeRecord(from)->fields
+	    );
+	    break;
+
+	case TAGTypeNeutralPointer:
+	    return TRUE;
+
+	case TAGTypeFunction:
+	    if(
+		is_passingequiv_type_lists(
+		    to_TypeFunction(to)->formals,
+		    to_TypeFunction(from)->formals
+		) &&
+		is_passingequiv_types(
+		    to_TypeFunction(to)->retval,
+		    to_TypeFunction(from)->retval
+		)
+	    ){
+		return TRUE;
+	    }
+	    break;
+
+	case TAGTypeProcedure:
+	    if(
+		is_passingequiv_type_lists(
+		    to_TypeProcedure(to)->formals,
+		    to_TypeProcedure(from)->formals
+		)
+	    ){
+		return TRUE;
+	    }
+	    break;
+
+
+    }
+    return FALSE;
+}
+
+/* Given an origin 'org', a formal parameter 'formal', and an actual
+ * parameter 'actual', check whether it is correct to pass the actual
+ * parameter can be passed to this formal parameter.
+ */
+static bool check_parm( const origin org, const type formal_type, const expression actual )
+{
+    type actual_type;
+    bool ok;
+
+    if( formal_type == typeNIL ){
+	return FALSE;
+    }
+    actual_type = derive_type_expression( actual );
+    if( actual_type == typeNIL ){
+	return FALSE;
+    }
+    ok = parametercompare_types( org, formal_type, actual_type );
+    rfre_type( actual_type );
+    return ok;
+}
+
+/* Given a list of declarations 'decls', a function or procedure expression
+ * 'routine' and an actual parameter list 'actuals', check that the function
+ * is invoked with the correct number and type of parameters.
+ */
+static bool check_parmlist(
+ const origin org,
+ const expression routine,
+ const expression_list actuals
+)
+{
+    bool ok = TRUE;
+    unsigned int ix;
+    type routinetype;
+    type_list formals = type_listNIL;
+
+    routinetype = derive_type_expression( routine );
+    if( routinetype == typeNIL ){
+	return FALSE;
+    }
+    orig_errpos( org );
+    switch( routinetype->tag ){
+	case TAGTypeBase:
+	    error( "cannot invoke a base type" );
+	    return FALSE;
+
+	case TAGTypeView:
+	    error( "cannot invoke a view" );
+	    return FALSE;
+
+	case TAGTypeShape:
+	    error( "cannot invoke a shape" );
+	    return FALSE;
+
+	case TAGTypePointer:
+	case TAGTypeNeutralPointer:
+	    error( "cannot invoke a pointer" );
+	    return FALSE;
+
+	case TAGTypeRecord:
+	    error( "cannot invoke a record" );
+	    return FALSE;
+
+	case TAGTypeFunction:
+	    formals = to_TypeFunction(routinetype)->formals;
+	    break;
+
+	case TAGTypeProcedure:
+	    formals = to_TypeProcedure(routinetype)->formals;
+	    break;
+
+    }
+    if( actuals->sz<formals->sz ){
+	error( "function or procedure called with too few parameters" );
+	ok = FALSE;
+    }
+    if( actuals->sz>formals->sz ){
+	error( "function or procedure called with too many parameters" );
+	ok = FALSE;
+    }
+    if( ok ){
+	for( ix=0; ix<actuals->sz; ix++ ){
+	    ok &= check_parm( org, formals->arr[ix], actuals->arr[ix] );
+	}
+    }
+    rfre_type( routinetype );
+    return ok;
+}
+
+static bool check_retval_symbol( origsymbol s )
+{
+    vnusdeclarationdata d;
+
+    if( s == origsymbolNIL ){
+	return FALSE;
+    }
+    d = search_vnusdeclaration( s->sym );
+    if( d == vnusdeclarationdataNIL ){
+	origin_error( s, "unknown return variable" );
+	return FALSE;
+    }
+    switch( d->tag ){
+        case TAGVDeclReturnVariable:
+	    break;
+
+        case TAGVDeclCardinalityVariable:
+        case TAGVDeclLocalVariable:
+        case TAGVDeclFormalVariable:
+	case TAGVDeclProcedure:
+	case TAGVDeclExternalProcedure:
+        case TAGVDeclGlobalVariable:
+        case TAGVDeclFunction:
+        case TAGVDeclExternalVariable:
+        case TAGVDeclExternalFunction:
+	    origin_error( s, "not a return variable" );
+	    return FALSE;
+    }
+    return TRUE;
+}
+
+static bool check_cardinality_symbol( origsymbol s )
+{
+    vnusdeclarationdata d;
+
+    d = search_vnusdeclaration( s->sym );
+    if( d == vnusdeclarationdataNIL ){
+	origin_error( s, "unknown cardinality variable" );
+	return FALSE;
+    }
+    switch( d->tag ){
+        case TAGVDeclCardinalityVariable:
+	    break;
+
+        case TAGVDeclLocalVariable:
+        case TAGVDeclFormalVariable:
+	case TAGVDeclProcedure:
+	case TAGVDeclExternalProcedure:
+        case TAGVDeclReturnVariable:
+        case TAGVDeclGlobalVariable:
+        case TAGVDeclFunction:
+        case TAGVDeclExternalVariable:
+        case TAGVDeclExternalFunction:
+	    origin_error( s, "not a cardinality variable" );
+	    return FALSE;
+    }
+    return TRUE;
+}
+
+static bool check_vnusdeclaration_symbol( const origsymbol s )
+{
+    vnusdeclarationdata d;
+
+    d = search_vnusdeclaration( s->sym );
+    if( d == vnusdeclarationdataNIL ){
+	origin_error( s, "unknown symbol table declaration" );
+	return FALSE;
+    }
+    return TRUE;
+}
+
+/*  Given a symbol, check that it is sensible to use in an expression. */
+static bool check_expression_symbol( const origsymbol s )
+{
+    vnusdeclarationdata d;
+
+    d = search_vnusdeclaration( s->sym );
+    if( d == vnusdeclarationdataNIL ){
+	origin_error( s, "unknown variable" );
+	/* Think up an declaration for it, to keep the error messages in
+	 * check.
+	 */
+	add_symtab_globalvar(
+	    s,
+	    new_pragma_list(),
+	    new_TypeBase( BT_INT ),
+	    new_OptExprNone()
+	);
+	return FALSE;
+    }
+    return TRUE;
+}
+
+/* Given a description 'desc' and a list of symbols 'l', check
+ * that the given list of symbols does not contain duplicate entries.
+ */
+static bool check_double_symbols( const char *desc, const origsymbol_list l )
+{
+    unsigned int ixa;
+    unsigned int ixb;
+    origsymbol sa;
+    origsymbol sb;
+    bool ok = TRUE;
+
+    for( ixa=0; ixa<l->sz; ixa++ ){
+	sa = l->arr[ixa];
+	for( ixb=ixa+1; ixb<l->sz; ixb++ ){
+	    sb = l->arr[ixb];
+	    if( sa->sym == sb->sym ){
+		sprintf(
+		    errarg,
+		    "%s: %s(%d) and %s(%d): in '%s'",
+		    desc,
+		    sa->orig->file->name,
+		    sa->orig->line,
+		    sb->orig->file->name,
+		    sb->orig->line,
+		    sa->sym->name
+		);
+		error( "double declaration" );
+		ok = FALSE;
+	    }
+	}
+    }
+    return ok;
+}
+
+/* Given a symbol 's', ensure that it is a valid function name. */
+static bool check_function_symbol( origsymbol s )
+{
+    vnusdeclarationdata d;
+    bool ok = TRUE;
+
+    d = search_vnusdeclaration( s->sym );
+    if( d == vnusdeclarationdataNIL ){
+	origin_error( s, "unknown function" );
+        return FALSE;
+    }
+    switch( d->tag ){
+	case TAGVDeclExternalFunction:
+        case TAGVDeclFunction:
+	    break;
+
+        case TAGVDeclReturnVariable:
+        case TAGVDeclGlobalVariable:
+        case TAGVDeclLocalVariable:
+        case TAGVDeclFormalVariable:
+        case TAGVDeclCardinalityVariable:
+        case TAGVDeclProcedure:
+        case TAGVDeclExternalVariable:
+        case TAGVDeclExternalProcedure:
+	    origin_error( s, "not a function" );
+	    ok = FALSE;
+	    break;
+    }
+    return ok;
+}
+
+/* Given a tmsymbol 's', ensure that it is a valid procedure name. */
+static bool check_procedure_symbol( origsymbol s )
+{
+    vnusdeclarationdata d;
+
+    d = search_vnusdeclaration( s->sym );
+    if( d == vnusdeclarationdataNIL ){
+	origin_error( s, "unknown procedure" );
+	return FALSE;
+    }
+    switch( d->tag ){
+	case TAGVDeclProcedure:
+	case TAGVDeclExternalProcedure:
+	    break;
+
+        case TAGVDeclReturnVariable:
+        case TAGVDeclGlobalVariable:
+        case TAGVDeclLocalVariable:
+        case TAGVDeclFormalVariable:
+        case TAGVDeclCardinalityVariable:
+        case TAGVDeclFunction:
+        case TAGVDeclExternalVariable:
+        case TAGVDeclExternalFunction:
+	    origin_error( s, "not a procedure" );
+	    return FALSE;
+    }
+    return TRUE;
+}
+
+/* Given a function or procedure name, and an formalParameter list, compare
+ * this formalParameter list with the one in the symbol table. Since we just
+ * derived the symbol tabel entries ourselves, there shouldn't be any
+ * difference.
+ */
+static bool compare_declaration_with_symboltable( origsymbol s, formalParameter_list parms )
+{
+    formalParameter_list st_args;
+    vnusdeclarationdata d;
+    bool ok = TRUE;
+
+    d = search_vnusdeclaration( s->sym );
+    if( d == vnusdeclarationdataNIL ){
+	origin_error( s, "unknown function" );
+        return FALSE;
+    }
+    st_args = formalParameter_listNIL;
+    switch( d->tag ){
+	case TAGVDeclReturnVariable:
+	case TAGVDeclGlobalVariable:
+	case TAGVDeclFormalVariable:
+	case TAGVDeclLocalVariable:
+	case TAGVDeclCardinalityVariable:
+	case TAGVDeclExternalVariable:
+	    origin_error( s, "the symboltable does not store this as a function" );
+	    return FALSE;
+
+	case TAGVDeclFunction:
+	    st_args = to_VDeclFunction(d)->parms;
+	    break;
+
+	case TAGVDeclProcedure:
+	    st_args = to_VDeclProcedure(d)->parms;
+	    break;
+
+	case TAGVDeclExternalFunction:
+	    st_args = to_VDeclExternalFunction(d)->parms;
+	    break;
+
+	case TAGVDeclExternalProcedure:
+	    st_args = to_VDeclExternalProcedure(d)->parms;
+	    break;
+
+    }
+    if( st_args != formalParameter_listNIL && cmp_formalParameter_list( st_args, parms ) != 0 ){
+	origin_error( s, "declaration and symbol table vnusdeclaration differ" );
+	ok = FALSE;
+    }
+    return ok;
+}
+
+/* Given an origin 'org', a size 'frm' describing one subscript of a
+ * shape or view, and an expression that is the real subscription
+ * expression, check that these agree with eachother.
+ */
+static bool check_selector( origin org, const expression sub )
+{
+    type t = derive_type_expression( sub );
+    bool ok = TRUE;
+
+    if( !is_numeric_type( t ) ){
+	orig_errpos( org );
+	error( "a subscript must be of a numeric type" );
+	ok = FALSE;
+    }
+    rfre_type( t );
+    return ok;
+}
+
+/* Given an origin 'org', a list of sizes describing the subscribed
+ * shape or view, and a list of expressions that are the real subscription
+ * expressions, check that these lists agree with eachother.
+ */
+static bool check_selector_list(
+ const origin org,
+ const unsigned int rank,
+ const expression_list subs
+)
+{
+    bool ok = TRUE;
+    unsigned int ix;
+
+    if( rank<subs->sz ){
+	orig_errpos( org );
+	error( "too many subscripts" );
+	return FALSE;
+    }
+    if( rank>subs->sz ){
+	orig_errpos( org );
+	error( "too few subscripts" );
+	return FALSE;
+    }
+    for( ix=0; ix<subs->sz; ix++ ){
+	ok &= check_selector( org, subs->arr[ix] );
+    }
+    return ok;
+}
+
+/* Given an origin 'org' and a type 't', check that it is a sensible type for
+ * a selection.
+ */
+static bool check_selection_type(
+ const origin org,
+ const type t,
+ const expression_list selectors
+)
+{
+    bool ok = TRUE;
+
+    switch( t->tag ){
+	case TAGTypeBase:
+	    orig_errpos( org );
+	    error( "cannot select elements of a scalar" );
+	    ok = FALSE;
+	    break;
+
+	case TAGTypePointer:
+	case TAGTypeNeutralPointer:
+	    orig_errpos( org );
+	    error( "cannot select elements of a pointer" );
+	    ok = FALSE;
+	    break;
+
+	case TAGTypeRecord:
+	    orig_errpos( org );
+	    error( "cannot select elements of a record" );
+	    ok = FALSE;
+	    break;
+
+	case TAGTypeView:
+	    ok = check_selector_list( org, to_TypeView(t)->rank, selectors );
+	    break;
+
+	case TAGTypeShape:
+	    ok = check_selector_list( org, to_TypeShape(t)->sizes->sz, selectors );
+	    break;
+
+	case TAGTypeFunction:
+	    orig_errpos( org );
+	    error( "cannot select elements of a function" );
+	    ok = FALSE;
+	    break;
+
+	case TAGTypeProcedure:
+	    orig_errpos( org );
+	    error( "cannot select elements of a procedure" );
+	    ok = FALSE;
+	    break;
+
+    }
+    return ok;
+}
+
+/* Given an origin 'org' and an expression 'loc', ensure that it is
+ * a valid expression, and that it represents a location.
+ */
+static bool check_location_expression( const expression loc, const origin org )
+{
+    bool ok = TRUE;
+
+    switch( loc->tag ){
+	case TAGExprByte:
+	case TAGExprShort:
+	case TAGExprInt:
+	case TAGExprLong:
+	case TAGExprFloat:
+	case TAGExprDouble:
+	case TAGExprChar:
+	case TAGExprString:
+	case TAGExprBoolean:
+	case TAGExprComplex:
+	case TAGExprGetSize:
+	case TAGExprGetRoom:
+	case TAGExprIsMultidimDist:
+	case TAGExprFunctionCall:
+	case TAGExprView:
+	case TAGExprUnop:
+	case TAGExprBinop:
+	case TAGExprGetBlocksize:
+	case TAGExprIsOwner:
+	case TAGExprOwner:
+	case TAGExprSender:
+	case TAGExprNull:
+	case TAGExprAddress:
+	case TAGExprRecord:
+	    orig_errpos( org );
+	    error( "expression does not describe a location" );
+	    ok = FALSE;
+	    break;
+
+	case TAGExprIf:
+	    ok = check_location_expression( to_ExprIf(loc)->thenval, org );
+	    ok &= check_location_expression( to_ExprIf(loc)->thenval, org );
+	    break;
+
+	case TAGExprCast:
+	    ok = check_location_expression( to_ExprCast(loc)->x, org );
+	    break;
+
+	case TAGExprPragma:
+	    ok = check_location_expression( to_ExprPragma(loc)->x, org );
+	    break;
+
+	case TAGExprNew:
+	case TAGExprSelection:
+	case TAGExprField:
+	case TAGExprDeref:
+	case TAGExprName:
+	    break;
+
+    }
+    return ok;
+}
+
+/* Given an origin 'org', an unary operator, and an operand, check
+ * that the expression is sensible.
+ */
+static bool check_unop( const origin org, const UNOP optor, const expression operand )
+{
+    type t = derive_type_expression( operand );
+    bool ok = TRUE;
+
+    switch( optor  ){
+	case UNOP_NOT:
+	    if( !is_boolean_type( t ) && !is_integral_type( t ) ){
+		orig_errpos( org );
+		error( "the 'not' operator requires a boolean or integral operand" );
+		ok = FALSE;
+	    }
+	    break;
+
+	case UNOP_PLUS:
+	    if( !is_numeric_type( t ) ){
+		orig_errpos( org );
+		error( "the unary '+' operator requires a numeric operand" );
+		ok = FALSE;
+	    }
+	    break;
+
+	case UNOP_NEGATE:
+	    if( !is_numeric_type( t ) ){
+		orig_errpos( org );
+		error( "the negation operator requires a numeric operand" );
+		ok = FALSE;
+	    }
+	    break;
+
+    }
+    rfre_type( t );
+    return ok;
+}
+
+#define is_equalitycompare_operator(op) (((op)==BINOP_EQUAL)||((op)==BINOP_NOTEQUAL))
+
+/* Given an origin 'org', a binary operator, and two operands, check
+ * that the expression is sensible.
+ */
+static bool check_binop( origin org, expression opa, BINOP optor, expression opb )
+{
+    type ta;
+    type tb;
+    bool ok = TRUE;
+
+    if( !ok ){
+	return FALSE;
+    }
+    ta = derive_type_expression( opa );
+    tb = derive_type_expression( opb );
+    if( is_equalitycompare_operator( optor ) ){
+	if(
+	    (ta->tag == TAGTypePointer && tb->tag == TAGTypeNeutralPointer) ||
+	    (tb->tag == TAGTypePointer && ta->tag == TAGTypeNeutralPointer) ||
+	    (ta->tag == TAGTypeNeutralPointer && tb->tag == TAGTypeNeutralPointer)
+	){
+	    ok = TRUE;
+	}
+	else if( (ta->tag == TAGTypePointer || ta->tag == TAGTypeBase) && is_equivalent_type( ta, tb ) ){
+	    ok = TRUE;
+	}
+	else {
+	    tmstring nma;
+	    tmstring nmb;
+
+	    orig_errpos( org );
+	    nma = name_type( ta );
+	    nmb = name_type( tb );
+	    sprintf( errarg, "types are: %s, and %s", nma, nmb );
+	    rfre_tmstring( nma );
+	    rfre_tmstring( nmb );
+	    error( "cannot compare these expressions" );
+	    ok = FALSE;
+	}
+	rfre_type( ta );
+	rfre_type( tb );
+	return ok;
+    }
+    switch( optor ){
+	/* Boolean operators. */
+	case BINOP_AND:
+	case BINOP_OR:
+	case BINOP_XOR:
+	    if( is_integral_type( ta ) && is_integral_type( tb ) ){
+		break;
+	    }
+	    if( !is_boolean_type( ta ) || !is_boolean_type( tb ) ){
+		tmstring nma;
+		tmstring nmb;
+
+		nma = name_type( ta );
+		nmb = name_type( tb );
+		sprintf( errarg, "actual types are: %s and %s", nma, nmb );
+		rfre_tmstring( nma );
+		rfre_tmstring( nmb );
+		orig_errpos( org );
+		error( "a boolean operator requires boolean or integral operands" );
+		ok = FALSE;
+	    }
+	    break;
+
+	/* numeric operators. */
+	case BINOP_MOD:
+	case BINOP_PLUS:
+	case BINOP_MINUS:
+	case BINOP_TIMES:
+	case BINOP_DIVIDE:
+	    if( !is_numeric_type( ta ) || !is_numeric_type( tb ) ){
+		tmstring nma;
+		tmstring nmb;
+
+		nma = name_type( ta );
+		nmb = name_type( tb );
+		sprintf( errarg, "actual types are: %s and %s", nma, nmb );
+		rfre_tmstring( nma );
+		rfre_tmstring( nmb );
+		orig_errpos( org );
+		error( "a numeric operator requires numeric operands" );
+		ok = FALSE;
+	    }
+	    break;
+
+
+	/* comparison operators. */
+	case BINOP_EQUAL:
+	case BINOP_NOTEQUAL:
+	case BINOP_LESS:
+	case BINOP_LESSEQUAL:
+	case BINOP_GREATER:
+	case BINOP_GREATEREQUAL:
+	    /* TODO: complex numbers and strings have no order. */
+	    if( !is_assignequiv_types( ta, tb ) ){
+		tmstring nma = name_type( ta );
+		tmstring nmb = name_type( tb );
+
+		orig_errpos( org );
+		sprintf( errarg, "cannot compare %s with %s", nma, nmb );
+		error( "bad comparison" );
+		rfre_tmstring( nma );
+		rfre_tmstring( nmb );
+		ok = FALSE;
+	    }
+	    break;
+
+	case BINOP_SHIFTLEFT:
+	case BINOP_SHIFTRIGHT:
+	case BINOP_USHIFTRIGHT:
+	    if( !is_integral_type( ta ) ){
+		tmstring nm;
+
+		orig_errpos( org );
+		nm = name_type( ta );
+		sprintf( errarg, "left operand is of type %s", nm );
+		rfre_tmstring( nm );
+		orig_errpos( org );
+		error( "Only integral types can be shifted" );
+		return FALSE;
+	    }
+	    if( !is_numeric_type( tb ) ){
+		tmstring nm;
+
+		orig_errpos( org );
+		nm = name_type( ta );
+		sprintf( errarg, "it is of type %s", nm );
+		rfre_tmstring( nm );
+		orig_errpos( org );
+		error( "Shift amount must be of type int" );
+		return FALSE;
+	    }
+	    break;
+    }
+    rfre_type( ta );
+    rfre_type( tb );
+    return ok;
+}
+
+/* Given a symbol table, return a list of the symbols in it. */
+static origsymbol_list collect_symtab_entries( vnusdeclaration_list l )
+{
+    origsymbol_list ans;
+    unsigned int ix;
+
+    ans = new_origsymbol_list();
+    ans = setroom_origsymbol_list( ans, l->sz );
+    for( ix=0; ix<l->sz; ix++ ){
+	ans = append_origsymbol_list( ans, rdup_origsymbol( l->arr[ix]->name ) );
+    }
+    return ans;
+}
+
+/* Check a list of elements 'l' of type 'distribution' */
+static bool check_distribution_list( const origin org, const distribution_list l, const unsigned int rank )
+{
+    bool ok = TRUE;
+
+    if( l == distribution_listNIL ){
+        return FALSE;
+    }
+    if( l->sz != rank ){
+	orig_errpos( org );
+	error( "there must be distributions for all dimensions of the shape" );
+	return FALSE;
+    }
+    return ok;
+}
+
+/* -------- actors ---------- */
+
+/* Action for a declaration.  */
+static bool check_declaration_action(
+ const declaration decl,
+ const origin oldorg,
+ const blockctx ctx,
+ origsymbol_list labels
+)
+{
+    origin org = decl->org;
+    bool ok = TRUE;
+
+    (void) oldorg;
+.call generate_walker_call "    " decl declaration declaration
+    return ok;
+}
+
+/* Given an formalParameter 'arg', check the given
+ * function or procedure formalParameter. 
+ */
+static bool check_formalParameter_action(
+ const formalParameter arg,
+ const origin org,
+ const blockctx ctx,
+ origsymbol_list labels
+)
+{
+    origsymbol s = arg->name;
+    bool ok = TRUE;
+
+.call generate_walker_call "    " arg formalParameter formalParameter
+    if( ok ){
+	vnusdeclarationdata d = search_vnusdeclaration( s->sym );
+
+	if( d == vnusdeclarationdataNIL ){
+	    origin_error( s, "unknown formal parameter" );
+	    ok = FALSE;
+	}
+	else {
+	    switch( d->tag ){
+		case TAGVDeclFormalVariable:
+		    break;
+
+		case TAGVDeclProcedure:
+		case TAGVDeclExternalProcedure:
+		case TAGVDeclReturnVariable:
+		case TAGVDeclGlobalVariable:
+		case TAGVDeclLocalVariable:
+		case TAGVDeclCardinalityVariable:
+		case TAGVDeclFunction:
+		case TAGVDeclExternalVariable:
+		case TAGVDeclExternalFunction:
+		    origin_error( s, "not a formal parameter" );
+		    ok = FALSE;
+		    break;
+	    }
+	}
+    }
+    return ok;
+}
+
+
+/* Check an element 't' of type 'view' */
+static bool check_view_action(
+ const view t,
+ const origin org,
+ const blockctx ctx,
+ origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " t view view
+    if( ok ){
+	ok &= check_location_expression( t->loc, org );
+    }
+    return ok;
+}
+
+/* Given a symbol, check that it is valid. */
+bool check_varname_action(
+ const varname s,
+ const origin org,
+ const blockctx ctx,
+ origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+    if( s != 0 ){
+	const char *str = s->sym->name;
+	const char *pos = strstr( str, "__" );
+
+	if( pos != NULL && !(pos == str+1 && str[0] == 'v') ){
+	    sprintf( errarg, "'%s'", str );
+	    error( "names containing \"__\" are reserved for internal use" );
+	    ok = FALSE;
+	}
+.call generate_walker_call "        " s varname varname
+    }
+    return ok;
+}
+
+/* Check an element 't' of type 'functioncall' */
+static bool check_ExprFunctionCall_action(
+ const ExprFunctionCall t,
+ const origin org,
+ const blockctx ctx,
+ origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " t ExprFunctionCall ExprFunctionCall
+    if( ok ){
+	ok &= check_parmlist( org, t->function, t->parameters );
+    }
+    return ok;
+}
+
+/* Given an formalParameter list 'l', check the
+ * formalParameter list of the function or procedure. 
+ */
+static bool check_formalParameter_list_action(
+ const formalParameter_list l,
+ const origin org,
+ const blockctx ctx,
+ origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " l formalParameter_list formalParameter_list
+    if( ok ){
+	origsymbol_list anm = collect_formalParameter_names(
+	    new_origsymbol_list(),
+	    l
+	);
+
+	ok = check_double_symbols( "formal parameter list", anm );
+	rfre_origsymbol_list( anm );
+    }
+    return ok;
+}
+
+/* Given a SizeExpression, check it.  */
+static bool check_SizeExpression_action(
+ const SizeExpression x,
+ const origin org,
+ const blockctx ctx,
+ origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " x SizeExpression SizeExpression
+    if( ok ){
+	type t = derive_type_expression( x->x );
+
+	if( !is_numeric_type( t ) ){
+	    orig_errpos( org );
+	    error( "size expression must be of a numeric type" );
+	    ok = FALSE;
+	}
+	rfre_type( t );
+    }
+    return ok;
+}
+
+/* Given a DistBC, check it.  */
+static bool check_DistBC_action(
+ const DistBC d,
+ const origin org,
+ const blockctx ctx,
+ origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " d DistBC DistBC
+    if( ok ){
+	type t = derive_type_expression( d->blocksize );
+
+	if( !is_numeric_type( t ) ){
+	    orig_errpos( org );
+	    error( "size expression must be of a numeric type" );
+	    ok = FALSE;
+	}
+	rfre_type( t );
+    }
+    return ok;
+}
+
+/* Given a DistLocal, check it.  */
+static bool check_DistLocal_action(
+ const DistLocal d,
+ const origin org,
+ const blockctx ctx,
+ origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " d DistLocal DistLocal
+    if( ok ){
+	const type t = derive_type_expression( d->proc );
+
+	if( !is_numeric_type( t ) ){
+	    orig_errpos( org );
+	    error( "a processor number must be an expression of a numeric type" );
+	    ok = FALSE;
+	}
+	rfre_type( t );
+    }
+    return ok;
+}
+
+/* Given a TypeShape, check it.  */
+static bool check_TypeShape_action(
+ const TypeShape l,
+ const origin org,
+ const blockctx ctx,
+ origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " l TypeShape TypeShape
+    if( ok ){
+	ok &= check_distribution_list( org, l->distr, l->sizes->sz );
+    }
+    return ok;
+}
+
+/* Given a field_list, check it.  */
+static bool check_field_list_action(
+ const field_list l,
+ const origin org,
+ const blockctx ctx,
+ origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " l field_list field_list
+    if( ok ){
+	origsymbol_list fieldnames = collect_field_names( l );
+
+	ok = check_double_symbols( "field names", fieldnames );
+	rfre_origsymbol_list( fieldnames );
+    }
+    return ok;
+}
+
+/* Given a DeclFunction, check it.  */
+static bool check_DeclFunction_action(
+ const DeclFunction fn,
+ const origin org,
+ const blockctx oldctx,
+ origsymbol_list oldlabels
+)
+{
+    bool ok = TRUE;
+    const origsymbol_list labels = new_origsymbol_list();
+    blockctx ctx = CTX_FUNCTION;
+
+    (void) oldctx;
+    (void) oldlabels;
+.call generate_walker_call "    " fn DeclFunction DeclFunction
+    rfre_origsymbol_list( labels );
+    if( ok ){
+	ok = check_function_symbol( fn->name );
+	ok &= check_retval_symbol( fn->retval ); /* special */
+	ok &= compare_declaration_with_symboltable( fn->name, fn->parms );
+    }
+    return ok;
+}
+
+/* Given a DeclProcedure, check it.  */
+static bool check_DeclProcedure_action(
+ const DeclProcedure proc,
+ const origin org,
+ const blockctx oldctx,
+ origsymbol_list oldlabels
+)
+{
+    bool ok = TRUE;
+    const origsymbol_list labels = new_origsymbol_list();
+    blockctx ctx = CTX_PROCEDURE;
+
+    (void) oldctx;
+    (void) oldlabels;
+.call generate_walker_call "    " proc DeclProcedure DeclProcedure
+    rfre_origsymbol_list( labels );
+    if( ok ){
+	ok = check_procedure_symbol( proc->name );
+	ok &= compare_declaration_with_symboltable( proc->name, proc->parms );
+    }
+    return ok;
+}
+
+/* Given a DeclExternalFunction, check it.  */
+static bool check_DeclExternalFunction_action(
+ const DeclExternalFunction fn,
+ const origin org,
+ const blockctx ctx,
+ origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " fn DeclExternalFunction DeclExternalFunction
+    if( ok ){
+	ok = check_function_symbol( fn->name );
+	ok &= check_retval_symbol( fn->retval );
+    }
+    return ok;
+}
+
+/* Given a DeclExternalProcedure, check it.  */
+static bool check_DeclExternalProcedure_action(
+ const DeclExternalProcedure proc,
+ const origin org,
+ const blockctx ctx,
+ origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " proc DeclExternalProcedure DeclExternalProcedure
+    if( ok ){
+	ok = check_procedure_symbol( proc->name );
+    }
+    return ok;
+}
+
+/* Check an element 't' of type 'cardinality' */
+static bool check_cardinality_action(
+ const cardinality card,
+ const origin oldorg,
+ const blockctx ctx,
+ origsymbol_list labels
+)
+{
+    bool ok;
+    const origin org = card->name->orig;
+
+    (void) oldorg;
+    ok = check_cardinality_symbol( card->name );
+.call generate_walker_call "    " card cardinality cardinality
+    if( ok ){
+	const type t = derive_type_expression( card->bound );
+
+	if( !is_numeric_type( t ) ){
+	    orig_errpos( org );
+	    error( "cardinality range expression must be of a numeric type" );
+	    ok = FALSE;
+	}
+	rfre_type( t );
+    }
+    return ok;
+}
+
+/* Check a list of elements 'l' of type 'cardinality' */
+static bool check_cardinality_list_action(
+ const cardinality_list l,
+ const origin org,
+ const blockctx ctx,
+ origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " l cardinality_list cardinality_list
+    if( ok ){
+	origsymbol_list cards = collect_cardinality_symbols( l );
+
+	ok = check_double_symbols( "cardinality list", cards );
+	rfre_origsymbol_list( cards );
+    }
+    return ok;
+}
+
+/* Given a list of switch cases, check them. */
+static bool check_switchCase_list_action(
+ const switchCase_list l,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " l switchCase_list switchCase_list
+    if( ok ){
+	unsigned int ix;
+
+	for( ix=0; ix<l->sz; ix++ ){
+	    switchCase vx = l->arr[ix];
+
+	    switch( vx->tag ){
+		case TAGSwitchCaseValue:
+		{
+		    int nx = atoi( to_SwitchCaseValue(vx)->cond );
+		    unsigned int iy;
+
+		    for( iy=ix+1; iy<l->sz; iy++ ){
+			switchCase vy = l->arr[iy];
+
+			if( vy->tag == TAGSwitchCaseValue ){
+			    int ny = atoi( to_SwitchCaseValue(vy)->cond );
+
+			    if( nx == ny ){
+				orig_errpos( org );
+				sprintf( errarg, "value: %d", ny );
+				error( "double entry in switch" );
+				ok = FALSE;
+			    }
+			}
+		    }
+		    break;
+		}
+
+		case TAGSwitchCaseDefault:
+		{
+		    unsigned int iy;
+
+		    for( iy=ix+1; iy<l->sz; iy++ ){
+			switchCase vy = l->arr[iy];
+
+			if( vy->tag == TAGSwitchCaseDefault ){
+			    orig_errpos( org );
+			    error( "double 'default' in switch" );
+			    ok = FALSE;
+			}
+		    }
+		    break;
+		}
+		    
+	    }
+	}
+    }
+    return ok;
+}
+
+/* Action for 'statement' */
+static bool check_statement_action(
+ const statement smt,
+ const origin oldorg,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+    origin org = smt->orig;
+
+    (void) oldorg;
+.call generate_walker_call "    " smt statement statement
+    return ok;
+}
+
+/* Given an if statement, check it. */
+static bool check_IfStatement_action(
+ const IfStatement smt,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " smt IfStatement IfStatement
+    if( ok ){
+	type condtype = derive_type_expression( smt->cond );
+
+	if( !is_boolean_type( condtype ) ){
+	    const tmstring nm = name_type( condtype );
+
+	    sprintf( errarg, "actual type is %s", nm );
+	    rfre_tmstring( nm );
+	    orig_errpos( org );
+	    error( "a condition expression must be of type boolean" );
+	    ok = FALSE;
+	}
+	rfre_type( condtype );
+    }
+    return ok;
+}
+
+/* Given a while statement, check it. */
+static bool check_WhileStatement_action(
+ const WhileStatement smt,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " smt WhileStatement WhileStatement
+    if( ok ){
+	const type condtype = derive_type_expression( smt->cond );
+
+	if( !is_boolean_type( condtype ) ){
+	    orig_errpos( org );
+	    error( "a condition expression must be of type boolean" );
+	    ok = FALSE;
+	}
+	rfre_type( condtype );
+    }
+    return ok;
+}
+
+/* Given a Send statement, check it. */
+static bool check_SendStatement_action(
+ const SendStatement smt,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " smt SendStatement SendStatement
+    if( ok ){
+	type sendtype;
+	type metype;
+
+	/* TODO check type of send element. */
+	sendtype = derive_type_expression( smt->dest );
+	if( !is_numeric_type( sendtype ) ){
+	    orig_errpos( org );
+	    error( "expression for destination must be of a numeric type" );
+	    ok = FALSE;
+	}
+	rfre_type( sendtype );
+	metype = derive_type_expression( smt->me );
+	if( !is_numeric_type( metype ) ){
+	    orig_errpos( org );
+	    error( "expression for 'me' must be of a numeric type" );
+	    ok = FALSE;
+	}
+	rfre_type( metype );
+    }
+    return ok;
+}
+
+/* Given a Receive statement, check it. */
+static bool check_ReceiveStatement_action(
+ const ReceiveStatement smt,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " smt ReceiveStatement ReceiveStatement
+    if( ok ){
+	type srctype;
+	type metype;
+
+	srctype = derive_type_expression( smt->src );
+	if( !is_numeric_type( srctype ) ){
+	    orig_errpos( org );
+	    error( "expression for source must be of a numeric type" );
+	    ok = FALSE;
+	}
+	rfre_type( srctype );
+	metype = derive_type_expression( smt->me );
+	if( !is_numeric_type( metype ) ){
+	    orig_errpos( org );
+	    error( "expression for 'me' must be of a numeric type" );
+	    ok = FALSE;
+	}
+	rfre_type( metype );
+    }
+    return ok;
+}
+
+/* Given a BlockSend statement, check it. */
+static bool check_BlockSendStatement_action(
+ const BlockSendStatement smt,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " smt BlockSendStatement BlockSendStatement
+    if( ok ){
+	type sendtype;
+	type metype;
+
+	sendtype = derive_type_expression( smt->dest );
+	if( !is_numeric_type( sendtype ) ){
+	    orig_errpos( org );
+	    error( "expression for destination must be of a numeric type" );
+	    ok = FALSE;
+	}
+	rfre_type( sendtype );
+	metype = derive_type_expression( smt->me );
+	if( !is_numeric_type( metype ) ){
+	    orig_errpos( org );
+	    error( "expression for 'me' must be of a numeric type" );
+	    ok = FALSE;
+	}
+	rfre_type( metype );
+    }
+    return ok;
+}
+
+/* Given a BlockReceive statement, check it. */
+static bool check_BlockReceiveStatement_action(
+ const BlockReceiveStatement smt,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " smt BlockReceiveStatement BlockReceiveStatement
+    if( ok ){
+	type srctype;
+	type metype;
+	type nelmtype;
+
+	/* TODO check type of receive element. */
+	srctype = derive_type_expression( smt->src );
+	if( !is_numeric_type( srctype ) ){
+	    orig_errpos( org );
+	    error( "expression for source must be of a numeric type" );
+	    ok = FALSE;
+	}
+	rfre_type( srctype );
+	metype = derive_type_expression( smt->me );
+	if( !is_numeric_type( metype ) ){
+	    orig_errpos( org );
+	    error( "expression for 'me' must be of a numeric type" );
+	    ok = FALSE;
+	}
+	rfre_type( metype );
+	nelmtype = derive_type_expression( smt->nelm );
+	if( !is_numeric_type( nelmtype ) ){
+	    orig_errpos( org );
+	    error( "expression for 'me' must be of a numeric type" );
+	    ok = FALSE;
+	}
+	rfre_type( nelmtype );
+    }
+    return ok;
+}
+
+/* Given a Assign statement, check it. */
+static bool check_AssignStatement_action(
+ const AssignStatement smt,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " smt AssignStatement AssignStatement
+    if( ok ){
+	type tlhs;
+	type trhs;
+
+	ok &= check_location_expression( smt->lhs, org );
+	tlhs = derive_type_expression( smt->lhs );
+	trhs = derive_type_expression( smt->rhs );
+	ok = assigncompare_types( org, tlhs, trhs );
+	rfre_type( tlhs );
+	rfre_type( trhs );
+    }
+    return ok;
+}
+
+/* Given a Print statement, check it. */
+static bool check_PrintStatement_action(
+ const PrintStatement smt,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+    const expression_list argv = smt->argv;
+
+.call generate_walker_call "    " smt PrintStatement PrintStatement
+    if( ok ){
+	if( argv->sz<2 ){
+	    orig_errpos( org );
+	    error( "a print must have at least one parameter" );
+	    ok = FALSE;
+	}
+    }
+    if( ok ){
+	const type tf = derive_type_expression( argv->arr[0] );
+
+	if( !is_numeric_type( tf ) ){
+	    orig_errpos( org );
+	    error( "print: the expression for the file must be of a numeric type" );
+	    ok = FALSE;
+	}
+	rfre_type( tf );
+    }
+    return ok;
+}
+
+/* Given a PrintLine statement, check it. */
+static bool check_PrintLineStatement_action(
+ const PrintLineStatement smt,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+    const expression_list argv = smt->argv;
+
+.call generate_walker_call "    " smt PrintLineStatement PrintLineStatement
+    if( ok ){
+	if( argv->sz<2 ){
+	    orig_errpos( org );
+	    error( "a print must have at least one parameter" );
+	    ok = FALSE;
+	}
+    }
+    if( ok ){
+	const type tf = derive_type_expression( argv->arr[0] );
+
+	if( !is_numeric_type( tf ) ){
+	    orig_errpos( org );
+	    error( "println: the expression for the file must be of a numeric type" );
+	    ok = FALSE;
+	}
+	rfre_type( tf );
+    }
+    return ok;
+}
+
+/* Given a ProcedureCall statement, check it. */
+static bool check_ProcedureCallStatement_action(
+ const ProcedureCallStatement smt,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " smt ProcedureCallStatement ProcedureCallStatement
+    if( ok ){
+	ok &= check_parmlist( org, smt->proc, smt->parameters );
+    }
+    return ok;
+}
+
+/* Given a SetSize statement, check it. */
+static bool check_SetSizeStatement_action(
+ const SetSizeStatement smt,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " smt SetSizeStatement SetSizeStatement
+    if( ok ){
+	type ts;
+
+	ok = check_location_expression( smt->shape, org );
+	ts = derive_type_expression( smt->shape );
+	if( ts->tag != TAGTypeShape ){
+	    const tmstring tnm = name_type( ts );
+
+	    sprintf( errarg, "actual type: %s ", tnm );
+	    orig_errpos( org );
+	    error( "only the size of shapes can be set" );
+	    rfre_tmstring( tnm );
+	    ok = FALSE;
+	}
+	else {
+	    unsigned int must_sz = to_TypeShape(ts)->sizes->sz;
+	    unsigned int have_sz = smt->sizes->sz;
+
+	    if( must_sz != have_sz ){
+		sprintf(
+		    errarg,
+		    "rank: %u, number of dimensions provided: %u",
+		    must_sz,
+		    have_sz
+		);
+		orig_errpos( org );
+		if( must_sz>have_sz ){
+		    error( "too few dimensions for a shape of this rank" );
+		}
+		else {
+		    error( "too many dimensions for a shape of this rank" );
+		}
+		ok = FALSE;
+	    }
+	}
+	rfre_type( ts );
+    }
+    return ok;
+}
+
+/* Given a SetRoom statement, check it. */
+static bool check_SetRoomStatement_action(
+ const SetRoomStatement smt,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " smt SetRoomStatement SetRoomStatement
+    if( ok ){
+	type ts;
+
+	ok = check_location_expression( smt->shape, org );
+	ts = derive_type_expression( smt->shape );
+	if( ts->tag != TAGTypeShape ){
+	    const tmstring tnm = name_type( ts );
+
+	    sprintf( errarg, "actual type: %s ", tnm );
+	    orig_errpos( org );
+	    error( "only the room of shapes can be set" );
+	    rfre_tmstring( tnm );
+	    ok = FALSE;
+	}
+	rfre_type( ts );
+	ts = derive_type_expression( smt->sz );
+	if( !is_numeric_type( ts ) ){
+	    const tmstring tnm = name_type( ts );
+
+	    sprintf( errarg, "actual type: %s ", tnm );
+	    orig_errpos( org );
+	    error( "the room must be an expression of a numeric type" );
+	    rfre_tmstring( tnm );
+	    ok = FALSE;
+	}
+	rfre_type( ts );
+    }
+    return ok;
+}
+
+/* Given a FitRoom statement, check it. */
+static bool check_FitRoomStatement_action(
+ const FitRoomStatement smt,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " smt FitRoomStatement FitRoomStatement
+    if( ok ){
+	ok = check_location_expression( smt->shape, org );
+    }
+    if( ok ){
+	type ts;
+
+	ts = derive_type_expression( smt->shape );
+	if( ts->tag != TAGTypeShape ){
+	    const tmstring tnm = name_type( ts );
+	    sprintf( errarg, "actual type: %s ", tnm );
+	    orig_errpos( org );
+	    error( "only the room of shapes can be fit" );
+	    rfre_tmstring( tnm );
+	    ok = FALSE;
+	}
+	rfre_type( ts );
+    }
+    return ok;
+}
+
+/* Given a Delete statement, check it. */
+static bool check_DeleteStatement_action(
+ const DeleteStatement smt,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " smt DeleteStatement DeleteStatement
+    if( ok ){
+	const type pt = derive_type_expression( smt->adr );
+
+	if( pt->tag != TAGTypePointer ){
+	    const tmstring tnm = name_type( pt );
+	    sprintf( errarg, "actual type: %s ", tnm );
+	    orig_errpos( org );
+	    error( "Only pointers can be freed" );
+	    rfre_tmstring( tnm );
+	    ok = FALSE;
+	}
+	rfre_type( pt );
+    }
+    return ok;
+}
+
+/* Given a Return statement, check it. */
+static bool check_ReturnStatement_action(
+ const ReturnStatement smt,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " smt ReturnStatement ReturnStatement
+    if( ok ){
+	switch( ctx ){
+	    case CTX_FUNCTION:
+		orig_errpos( org );
+		error( "in a function, a return statement must have a value" );
+		ok = FALSE;
+		break;
+
+	    case CTX_PROCEDURE:
+		break;
+
+	    case CTX_GLOBAL:
+		orig_errpos( org );
+		error( "a return statement is not allowed in the outer block" );
+		ok = FALSE;
+		break;
+
+	}
+    }
+    return ok;
+}
+
+/* Given a ValueReturn statement, check it. */
+static bool check_ValueReturnStatement_action(
+ const ValueReturnStatement smt,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " smt ValueReturnStatement ValueReturnStatement
+    if( ok ){
+	switch( ctx ){
+	    case CTX_FUNCTION:
+		break;
+
+	    case CTX_PROCEDURE:
+		orig_errpos( org );
+		error( "in a procedure, a return statement should not have a value" );
+		ok = FALSE;
+		break;
+
+	    case CTX_GLOBAL:
+		orig_errpos( org );
+		error( "a return statement is not allowed in the outer block" );
+		ok = FALSE;
+		break;
+
+	}
+    }
+    return ok;
+}
+
+/* Given a Switch statement, check it. */
+static bool check_SwitchStatement_action(
+ const SwitchStatement smt,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " smt SwitchStatement SwitchStatement
+    if( ok ){
+	const type ct = derive_type_expression( smt->cond );
+
+	if( !is_integral_type( ct ) ){
+	    orig_errpos( org );
+	    error( "the value to switch on must be of integral type" );
+	    ok = FALSE;
+	}
+	rfre_type( ct );
+    }
+    return ok;
+}
+
+/* Given a Goto statement, check it. */
+static bool check_GotoStatement_action(
+ const GotoStatement smt,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " smt GotoStatement GotoStatement
+    if( ok ){
+	if( !member_origsymbol_list( labels, smt->target ) ){
+	    origin_error( smt->target, "unknown label" );
+	    ok = FALSE;
+	}
+    }
+    return ok;
+}
+
+/* Check a block. */
+static bool check_block_action(
+ const block blk,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list oldlabels
+)
+{
+    bool ok = TRUE;
+    origsymbol_list labels;
+
+    labels = collect_labels( blk->statements );
+    ok &= check_double_symbols( "labels", labels );
+    if( ok ){
+	unsigned int ix;
+
+	for( ix=0; ix<labels->sz; ix++ ){
+	    const origsymbol s = labels->arr[ix];
+
+	    if( member_origsymbol_list( oldlabels, s ) ){
+		origin_error( s, "label hides one in a previous context" );
+		ok = FALSE;
+	    }
+	}
+    }
+    labels = concat_origsymbol_list(
+	labels,
+	rdup_origsymbol_list( oldlabels )
+    );
+.call generate_walker_call "    " blk block block
+    rfre_origsymbol_list( labels );
+    return ok;
+}
+
+/* Check a VDeclGlobalVariable. */
+static bool check_VDeclGlobalVariable_action(
+ const VDeclGlobalVariable d,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " d VDeclGlobalVariable VDeclGlobalVariable
+    if( ok ){
+	const type it = derive_type_optexpression( d->init );
+
+	if( it != typeNIL ){
+	    ok &= assigncompare_types( org, d->t, it );
+	    rfre_type( it );
+	}
+    }
+    return ok;
+}
+
+/* Check a VDeclLocalVariable. */
+static bool check_VDeclLocalVariable_action(
+ const VDeclLocalVariable d,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " d VDeclLocalVariable VDeclLocalVariable
+    if( ok ){
+	const type it = derive_type_optexpression( d->init );
+
+	if( it != typeNIL ){
+	    ok &= assigncompare_types( org, d->t, it );
+	    rfre_type( it );
+	}
+    }
+    return ok;
+}
+
+/* Check a VDeclProcedure. */
+static bool check_VDeclProcedure_action(
+ const VDeclProcedure d,
+ const origin org,
+ const blockctx oldctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+    blockctx ctx = CTX_PROCEDURE;
+
+    (void) oldctx;
+.call generate_walker_call "    " d VDeclProcedure VDeclProcedure
+    return ok;
+}
+
+/* Check a VDeclFunction. */
+static bool check_VDeclFunction_action(
+ const VDeclFunction d,
+ const origin org,
+ const blockctx oldctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+    blockctx ctx = CTX_FUNCTION;
+
+    (void) oldctx;
+.call generate_walker_call "    " d VDeclFunction VDeclFunction
+    if( ok ){
+	ok &= check_retval_symbol( d->retval );
+    }
+    return ok;
+}
+
+/* Check a symbol table vnusdeclaration */
+static bool check_vnusdeclaration_action(
+ const vnusdeclaration e,
+ const origin oldorg,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+    origin org = e->name->orig;
+
+    (void) oldorg;
+.call generate_walker_call "    " e vnusdeclaration vnusdeclaration
+    if( ok ){
+	ok = check_vnusdeclaration_symbol( e->name );
+    }
+    return ok;
+}
+
+/* Given an expression 'x' that is used in a dereference expression,
+ * check that it makes sense.
+ */
+static bool check_ExprDeref_action(
+ const ExprDeref x,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " x ExprDeref ExprDeref
+    if( ok ){
+	const type t = derive_type_expression( x->ref );
+
+	if( t == typeNIL ){
+	    return FALSE;
+	}
+	if( t->tag != TAGTypePointer ){
+	    tmstring typenm;
+
+	    typenm = name_type( t );
+	    sprintf( errarg, "type %s", typenm );
+	    orig_errpos( org );
+	    error( "cannot dereference this expression" );
+	    rfre_tmstring( typenm );
+	    ok = FALSE;
+	}
+	rfre_type( t );
+    }
+    return ok;
+}
+
+/* Given a Cast expression, check it. */
+static bool check_ExprCast_action(
+ const ExprCast x,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " x ExprCast ExprCast
+    if( ok ){
+	type xt = derive_type_expression( x->x );
+
+	if( !is_valid_cast( x->t, xt ) ){
+	    tmstring typenm_from;
+	    tmstring typenm_to;
+
+	    typenm_from = name_type( xt );
+	    typenm_to = name_type( x->t );
+	    sprintf(
+		errarg,
+		"cannot cast a %s to a %s",
+		typenm_from,
+		typenm_to
+	    );
+	    orig_errpos( org );
+	    error( "bad cast" );
+	    rfre_tmstring( typenm_from );
+	    rfre_tmstring( typenm_to );
+	    ok = FALSE;
+	}
+	rfre_type( xt );
+    }
+    return ok;
+}
+
+/* Given a GetBlocksize expression, check it. */
+static bool check_ExprGetBlocksize_action(
+ const ExprGetBlocksize x,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " x ExprGetBlocksize ExprGetBlocksize
+    if( ok ){
+	type aggr_type;
+	type dim_type;
+
+	ok = check_location_expression( x->shape, org );
+	aggr_type = derive_type_expression( x->shape );
+	dim_type = derive_type_expression( x->dim );
+	if( aggr_type->tag != TAGTypeView && aggr_type->tag != TAGTypeShape ){
+	    orig_errpos( org );
+	    error( "only shapes and views have a blocksize" );
+	    ok = FALSE;
+	}
+	if( !is_numeric_type( dim_type ) ){
+	    orig_errpos( org );
+	    error( "the expression for a dimension number must be of a numeric type" );
+	    ok = FALSE;
+	}
+	rfre_type( dim_type );
+	rfre_type( aggr_type );
+    }
+    return ok;
+}
+
+/* Given a Owner expression, check it. */
+static bool check_ExprOwner_action(
+ const ExprOwner x,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " x ExprOwner ExprOwner
+    if( ok ){
+	type sel_t;
+
+	ok = check_location_expression( x->shape, org );
+	sel_t = derive_type_expression( x->shape );
+	switch( sel_t->tag ){
+	    case TAGTypeBase:
+		break;
+
+	    case TAGTypeView:
+	    case TAGTypeShape:
+	    case TAGTypePointer:
+	    case TAGTypeNeutralPointer:
+	    case TAGTypeRecord:
+	    case TAGTypeFunction:
+	    case TAGTypeProcedure:
+		orig_errpos( org );
+		error( "only single elements have an owner" );
+		ok = FALSE;
+		break;
+	}
+	rfre_type( sel_t );
+    }
+    return ok;
+}
+
+/* Given a IsOwner expression, check it. */
+static bool check_ExprIsOwner_action(
+ const ExprIsOwner x,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " x ExprIsOwner ExprIsOwner
+    if( ok ){
+	type sel_t;
+	type proc_t;
+
+	ok = check_location_expression( x->shape, org );
+	sel_t = derive_type_expression( x->shape );
+	switch( sel_t->tag ){
+	    case TAGTypeBase:
+		break;
+
+	    case TAGTypeView:
+	    case TAGTypeShape:
+	    case TAGTypePointer:
+	    case TAGTypeRecord:
+	    case TAGTypeNeutralPointer:
+	    case TAGTypeFunction:
+	    case TAGTypeProcedure:
+		orig_errpos( org );
+		error( "only single elements have an owner" );
+		ok = FALSE;
+		break;
+	}
+	rfre_type( sel_t );
+	proc_t = derive_type_expression( x->proc );
+	if( !is_numeric_type( proc_t ) ){
+	    orig_errpos( org );
+	    error( "the expression for a processor number must be of a numeric type" );
+	    ok = FALSE;
+	}
+	rfre_type( proc_t );
+    }
+    return ok;
+}
+
+/* Given a Sender expression, check it. */
+static bool check_ExprSender_action(
+ const ExprSender x,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " x ExprSender ExprSender
+    if( ok ){
+	type sel_t;
+
+	ok = check_location_expression( x->shape, org );
+	sel_t = derive_type_expression( x->shape );
+	switch( sel_t->tag ){
+	    case TAGTypeBase:
+		break;
+
+	    case TAGTypeView:
+	    case TAGTypeShape:
+	    case TAGTypePointer:
+	    case TAGTypeRecord:
+	    case TAGTypeNeutralPointer:
+	    case TAGTypeFunction:
+	    case TAGTypeProcedure:
+		orig_errpos( org );
+		error( "only single elements have a sender" );
+		ok = FALSE;
+		break;
+	}
+	rfre_type( sel_t );
+    }
+    return ok;
+}
+
+/* Given a GetSize expression, check it. */
+static bool check_ExprGetSize_action(
+ const ExprGetSize x,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " x ExprGetSize ExprGetSize
+    if( ok ){
+	type aggr_type;
+	type dim_type;
+
+	ok = check_location_expression( x->shape, org );
+	aggr_type = derive_type_expression( x->shape );
+	if( aggr_type->tag != TAGTypeView && aggr_type->tag != TAGTypeShape ){
+	    orig_errpos( org );
+	    error( "only shapes and views have a size" );
+	    ok = FALSE;
+	}
+	rfre_type( aggr_type );
+	dim_type = derive_type_expression( x->dim );
+	if( !is_numeric_type( dim_type ) ){
+	    orig_errpos( org );
+	    error( "expression for dimension must be of a numeric type" );
+	    ok = FALSE;
+	}
+	rfre_type( dim_type );
+    }
+    return ok;
+}
+
+/* Given a GetRoom expression, check it. */
+static bool check_ExprGetRoom_action(
+ const ExprGetRoom x,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " x ExprGetRoom ExprGetRoom
+    if( ok ){
+	ok = check_location_expression( x->shape, org );
+	if( ok ){
+	    type aggr_type = derive_type_expression( x->shape );
+
+	    if( aggr_type->tag != TAGTypeShape ){
+		orig_errpos( org );
+		error( "only shapes have a room" );
+		ok = FALSE;
+	    }
+	    rfre_type( aggr_type );
+	}
+    }
+    return ok;
+}
+
+/* Given a IsMultidimDist expression, check it. */
+static bool check_ExprIsMultidimDist_action(
+ const ExprIsMultidimDist x,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " x ExprIsMultidimDist ExprIsMultidimDist
+    if( ok ){
+	ok = check_location_expression( x->shape, org );
+	if( ok ){
+	    const type aggr_type = derive_type_expression( x->shape );
+
+	    if( aggr_type->tag != TAGTypeShape ){
+		orig_errpos( org );
+		error( "only shapes have a distribution" );
+		ok = FALSE;
+	    }
+	    rfre_type( aggr_type );
+	}
+    }
+    return ok;
+}
+
+/* Given a Complex expression, check it. */
+static bool check_ExprComplex_action(
+ const ExprComplex x,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " x ExprComplex ExprComplex
+    if( ok ){
+	type t_re;
+	type t_im;
+
+	t_re = derive_type_expression( x->re );
+	if( !is_numeric_type( t_re ) ){
+	    orig_errpos( org );
+	    error( "the real part of a complex number must be of type real" );
+	    ok = FALSE;
+	}
+	rfre_type( t_re );
+	t_im = derive_type_expression( x->im );
+	if( !is_numeric_type( t_im ) ){
+	    orig_errpos( org );
+	    error( "the imaginary part of a complex number must be of type real" );
+	    ok = FALSE;
+	}
+	rfre_type( t_im );
+    }
+    return ok;
+}
+
+/* Given a Selection expression, check it. */
+static bool check_ExprSelection_action(
+ const ExprSelection x,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " x ExprSelection ExprSelection
+    if( ok ){
+	type ted_type;
+
+	ted_type = derive_type_expression( x->selected );
+	ok = check_selection_type( org, ted_type, x->selectors );
+	rfre_type( ted_type );
+    }
+    return ok;
+}
+
+/* Given a Unop expression, check it. */
+static bool check_ExprUnop_action(
+ const ExprUnop x,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " x ExprUnop ExprUnop
+    if( ok ){
+	ok = check_unop( org, x->optor, x->operand );
+    }
+    return ok;
+}
+
+/* Given a Binop expression, check it. */
+static bool check_ExprBinop_action(
+ const ExprBinop x,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " x ExprBinop ExprBinop
+    if( ok ){
+	ok = check_binop( org, x->operanda, x->optor, x->operandb );
+    }
+    return ok;
+}
+
+/* Given a If expression, check it. */
+static bool check_ExprIf_action(
+ const ExprIf x,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " x ExprIf ExprIf
+    if( ok ){
+	type condtype;
+	type thentype;
+	type elsetype;
+
+	condtype = derive_type_expression( x->cond );
+	if( !is_boolean_type( condtype ) ){
+	    const tmstring nm = name_type( condtype );
+
+	    sprintf( errarg, "actual type is %s", nm );
+	    rfre_tmstring( nm );
+	    orig_errpos( org );
+	    error( "a condition expression must be of type boolean" );
+	    ok = FALSE;
+	}
+	rfre_type( condtype );
+	thentype = derive_type_expression( x->thenval );
+	elsetype = derive_type_expression( x->elseval );
+	if( !is_equivalent_type( thentype, elsetype ) ){
+	    const tmstring thennm = name_type( thentype );
+	    const tmstring elsenm = name_type( elsetype );
+
+	    sprintf( errarg, "actual types are %s and %s", thennm, elsenm );
+	    rfre_tmstring( thennm );
+	    rfre_tmstring( elsenm );
+	    orig_errpos( org );
+	    error( "expressions in a conditional must have the same type" );
+	    ok = FALSE;
+	}
+	rfre_type( thentype );
+	rfre_type( elsetype );
+    }
+    return ok;
+}
+
+/* Given a Name expression, check it. */
+static bool check_ExprName_action(
+ const ExprName x,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " x ExprName ExprName
+    if( ok ){
+	ok = check_expression_symbol( x->name );
+    }
+    return ok;
+}
+
+/* Given a ExprField expression, check it. */
+static bool check_ExprField_action(
+ const ExprField x,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " x ExprField ExprField
+    if( ok ){
+	type rt;
+
+	rt = derive_type_expression( x->rec );
+	if( rt->tag == TAGTypeRecord ){
+	    int pos;
+
+	    pos = find_field( rt, x->field );
+	    if( pos<0 ){
+		origin_error( x->field, "no such field in this record" );
+		ok = FALSE;
+	    }
+	}
+	else {
+	    tmstring typenm;
+
+	    typenm = name_type( rt );
+	    sprintf( errarg, "%s", typenm );
+	    orig_errpos( x->field->orig );
+	    error( "this type has no fields" );
+	    rfre_tmstring( typenm );
+	    ok = FALSE;
+	}
+	rfre_type( rt );
+    }
+    return ok;
+}
+
+/* Given an Address expression, check it. */
+static bool check_ExprAddress_action(
+ const ExprAddress x,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " x ExprAddress ExprAddress
+    if( ok ){
+	ok = check_location_expression( x->adr, org );
+    }
+    return ok;
+}
+
+/* Check a list of elements 'l' of type 'declaration' */
+static bool check_declaration_list_action(
+ const declaration_list l,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " l declaration_list declaration_list
+    if( ok ){
+	origsymbol_list declared = collect_declaration_names(
+	    new_origsymbol_list(),
+	    l
+	);
+	ok = check_double_symbols( "declarations", declared );
+	rfre_origsymbol_list( declared );
+    }
+    return ok;
+}
+
+/* Check a list of elements 'l' of type 'vnusdeclaration' */
+static bool check_vnusdeclaration_list_action(
+ vnusdeclaration_list l,
+ const origin org,
+ const blockctx ctx,
+ const origsymbol_list labels
+)
+{
+    bool ok = TRUE;
+
+.call generate_walker_call "    " l vnusdeclaration_list vnusdeclaration_list
+    if( ok ){
+	origsymbol_list names;
+
+	names = collect_symtab_entries( l );
+	ok = check_double_symbols( "symbol table", names );
+	rfre_origsymbol_list( names );
+    }
+    return ok;
+}
+
+/* -------- End of actors ---------- */
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnus program, check its correctness. */
+bool check_vnusprog( const vnusprog t )
+{
+    bool ok = TRUE;
+    origsymbol_list labels;
+    blockctx ctx = CTX_GLOBAL;
+    origin org = 0;
+
+    labels = collect_labels( t->statements );
+.call generate_descent_call "    " t vnusprog vnusprog
+    rfre_origsymbol_list( labels );
+    return ok;
+}

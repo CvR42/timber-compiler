@@ -1,0 +1,10 @@
+// File: oktupleconv.spar
+//
+// Test implicit tuple conversion.
+
+public class oktupleconv {
+    public static void main(){
+	[double^3] a = [1,2,3];
+	__println( 1, a[0], ' ', a[1], ' ', a[2] );
+    }
+}

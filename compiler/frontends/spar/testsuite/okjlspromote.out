@@ -1,0 +1,4 @@
+(int)12.5f==12
+after float widening: 12
+12*12==144
+Math.sin(144)==-0.491

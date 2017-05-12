@@ -1,0 +1,2 @@
+errjlscolorable.spar:9: method 'setColor(int)' of interface 'Colorable' is not implemented
+errjlscolorable.spar:9: method 'getColor()' of interface 'Colorable' is not implemented

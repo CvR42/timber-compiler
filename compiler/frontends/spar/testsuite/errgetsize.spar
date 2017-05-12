@@ -1,0 +1,12 @@
+// File: errgetsize.spar
+//
+// test errors and warnings for array room/size manipulation methods.
+
+public class errgetsize {
+    public static void main(){
+	int a[*,*] = { { 1, 2, 3 }, { 4, 5, 6 } };
+
+	[int^2] v = a.getSize();
+	a.getSize();
+    }
+}

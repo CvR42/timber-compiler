@@ -1,0 +1,6 @@
+*.tv
+dist.lst
+*.testerr
+*.gprof
+*.done
+candidates

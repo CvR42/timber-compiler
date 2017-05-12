@@ -1,0 +1,32 @@
+// File: spar.channel.FileInputChannel.spar
+
+package spar.channel;
+
+public class FileInputChannel extends AbstractInputChannel {
+    public FileInputChannel( String fnm ) throws java.io.IOException
+    {
+	System.getSecurityManager().checkRead( fnm );
+        open( fnm );
+    }
+
+    public FileInputChannel( java.io.File file ) throws java.io.IOException
+    {
+	this( file.getPath() );
+    }
+
+    public FileInputChannel( java.io.FileDescriptor fd )
+    {
+	handle = fd.getFD();
+    }
+
+    private void open( String fnm ) throws java.io.IOException
+    {
+        char namebuf[] = fnm.toCharArray();
+	handle = spar.compiler.File.openInput( __getbuf(namebuf), namebuf.length );
+	__delete( namebuf );
+	if( handle<0 ){
+	    throw new java.io.IOException( "Cannot open file '" + fnm + "'" );
+	}
+    }
+
+}

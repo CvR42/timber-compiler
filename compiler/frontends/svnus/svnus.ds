@@ -1,0 +1,234 @@
+|| File: svnus.ds
+||
+|| Datastructures for administration in the Sugar Vnus frontend.
+
+|| An origin descriptor.
+|| This is tacked on to all sorts of constructs for which it is convenient
+|| to track the origin.
+origin == ( file:filename, line:int );
+
+|| A symbol with its origin.
+origsymbol == ( sym:tmsymbol, orig:origin );
+
+vnusprog == (
+    pragmas:[pragma],
+    decls:[declaration],
+    statements:[statement],
+    vnusdecls:[vnusdeclaration]
+);
+
+|| The aliases below are used to distinguish between the name spaces the
+|| various symbols are in.
+varname -> origsymbol;
+pragmaname -> origsymbol;
+labelname -> origsymbol;
+scopename -> tmsymbol;
+filename -> tmsymbol;
+fieldname -> origsymbol;
+
+declaration ~= { pragmas:[pragma], org:origin, name:varname };
+
+RoutineDeclaration = declaration +
+    DeclFunction:
+    {
+	parms:[formalParameter],
+	retval:varname,
+	retpragmas:[pragma],
+	rettype:type,
+	body:block
+    } |
+    DeclProcedure: { parms:[formalParameter], body:block } |
+    DeclExternalFunction:
+    {
+	parms:[formalParameter],
+	retpragmas:[pragma],
+	retval:varname,
+	rettype:type
+    } |
+    DeclExternalProcedure: { parms:[formalParameter] }
+    ;
+
+VariableDeclaration = declaration +
+    DeclVariable: { t:type, init:optexpression } |
+    DeclExternalVariable: { t:type }
+    ;
+
+|| A statement block with a scope name
+block == (
+    scope:scopename,
+    declarations:[declaration],
+    statements:[statement]
+);
+
+pragma = { name:pragmaname } +
+    PragmaFlag: {} |                || Being there is enough
+    PragmaExpression: { x:expression }
+    ;
+
+switchCase = { body:block } +
+    SwitchCaseValue: { cond:vnus_int } |
+    SwitchCaseDefault: {}
+    ;
+
+statement ~= { label:labelname, orig:origin, pragmas:[pragma] };
+
+Imperative = statement +
+    AssignStatement: { lhs:expression, rhs:expression } |
+    ProcedureCallStatement: { proc:expression, parameters:[expression] } |
+    SetSizeStatement: { shape:expression, sizes:[size] } |
+    SetRoomStatement: { shape:expression, sz:expression } |
+    FitRoomStatement: { shape:expression } |
+    ViewStatement: { viewcards:[cardinality], viewaggr:expression, viewstr:expression }
+    ;
+
+Control = statement +
+    WhileStatement: { cond:expression, body:block } |
+    ForStatement: { cards:[cardinality], body:block } |
+    IfStatement: { cond:expression, thenbody:block, elsebody:block } |
+    BlockStatement: { body:block } |
+    SwitchStatement: { cond:expression, cases:[switchCase] } |
+    ReturnStatement: {} |
+    ValueReturnStatement: { v:expression } |
+    GotoStatement: { target:labelname }
+    ;
+
+Parallelization = statement +
+    ForallStatement: { cards:[cardinality], body:block } |
+    ForkallStatement: { cards:[cardinality], body:block } |
+    ForeachStatement: { cards:[cardinality], body:block } |
+    EachStatement: { statements:[statement] }
+    ;
+
+Communication = statement +
+    BarrierStatement: {} |
+    SendStatement: { me:expression, dest:expression, elm:expression } |
+    ReceiveStatement: { me:expression, src:expression, elm:expression } |
+    BlockSendStatement: { me:expression, dest:expression, elm:expression, nelm:expression } |
+    BlockReceiveStatement: { me:expression, src:expression, elm:expression, nelm:expression }
+    ;
+
+MemoryManagement = statement +
+    DeleteStatement: { adr:expression } |
+    GarbageCollectStatement: {}
+    ;
+
+Support = statement +
+    EmptyStatement: {} |
+    PrintStatement: { argv:[expression] } |
+    PrintLineStatement: { argv:[expression] }
+    ;
+
+formalParameter == ( name:varname, pragmas:[pragma], t:type );
+
+size =
+    SizeDontcare: { orig:origin } |
+    SizeExpression: { x:expression };
+
+|| An declaration in the symbol table.
+vnusdeclaration == ( name:origsymbol, pragmas:[pragma], data:vnusdeclarationdata );
+
+vnusdeclarationdata =
+    VDeclGlobalVariable: { t:type, init:optexpression } |
+    VDeclFunction: { parms:[formalParameter], retval:origsymbol, t:type, body:block } |
+    VDeclProcedure: { parms:[formalParameter], body:block } |
+    VDeclLocalVariable: { scope:tmsymbol, t:type, init:optexpression } |
+    VDeclReturnVariable: { scope:tmsymbol, t:type } |
+    VDeclFormalVariable: { scope:tmsymbol, t:type } |
+    VDeclCardinalityVariable: {} |
+    VDeclExternalVariable: { t:type } |
+    VDeclExternalFunction: { parms:[formalParameter], t:type } |
+    VDeclExternalProcedure: { parms:[formalParameter] }
+    ;
+
+distribution =
+    DistDontcare: {} |
+    DistBlock: {} |
+    DistCyclic: {} |
+    DistBC: { blocksize:expression } |
+    DistReplicated: {} |
+    DistCollapsed: {} |
+    DistLocal: { proc:expression }
+    ;
+
+|| A type
+type =
+    TypeBase: { base:BASETYPE } |
+    TypeView: { rank:uint, elmtype:type } |
+    TypeShape: { sizes:[size], distr:[distribution], elmtype:type } |
+    TypePointer: { elmtype:type } |
+    TypeRecord: { fields:[field] } |
+    TypeNeutralPointer: {} |
+    TypeProcedure: { formals:[type] } |
+    TypeFunction: { formals:[type], retval:type }
+    ;
+
+field == ( name:fieldname, elmtype:type );
+
+view == ( cardinalities:[cardinality], loc:expression );
+
+cardinality == ( name:varname, pragmas:[pragma], bound:expression );
+
+functioncall == ( name:varname, parameters:[expression] );
+
+optexpression =
+    OptExprNone: {} |
+    OptExpr: { x:expression }
+    ;
+		
+|| A Sugar Vnus expression.
+expression ~= {};
+
+LiteralExpression = expression +
+    ExprByte: { v:vnus_byte } |
+    ExprShort: { v:vnus_short } |
+    ExprInt: { v:vnus_int } |
+    ExprLong: { v:vnus_long } |
+    ExprFloat: { v:vnus_float } |
+    ExprDouble: { v:vnus_double } |
+    ExprChar: { c:vnus_char } |
+    ExprBoolean: { b:vnus_boolean } |
+    ExprString: { s:vnus_string } |
+    ExprNull: {}
+    ;
+
+AccessExpression = expression +
+    ExprName: { name:varname } |
+    ExprSelection: { selected:expression, selectors:[expression] } |
+    ExprField: { rec:expression, field:fieldname } |
+    ExprDeref: { ref:expression } |
+    ExprFunctionCall: { function:expression, parameters:[expression] }
+    ;
+
+ConstructorExpression = expression +
+    ExprComplex: { re:expression, im:expression } |
+    ExprRecord: { fields:[expression] } |
+    ExprView: { v:view } |
+    ExprAddress: { adr:expression } |
+    ExprNew: { t:type }
+    ;
+
+OperatorExpression = expression +
+    ExprCast: { t:type, x:expression } |
+    ExprIf: { cond:expression, thenval:expression, elseval:expression } |
+    ExprUnop: { optor:UNOP, operand:expression } |
+    ExprBinop: { operanda:expression, optor:BINOP, operandb:expression }
+    ;
+
+ShapeInfoExpression = expression +
+    ExprIsMultidimDist: { shape:expression } |
+    ExprGetBlocksize: { shape:expression, dim:expression } |
+    ExprGetSize: { shape:expression, dim:expression } |
+    ExprGetRoom: { shape:expression } |
+    ExprSender: { shape:expression } |
+    ExprOwner: { shape:expression } |
+    ExprIsOwner: { shape:expression, proc:expression }
+;
+
+MiscellaneousExpression ~= expression +
+    ExprPragma: { pragmas:[pragma], x:expression }
+    ;
+
+
+|| Local Variables:
+|| tab-width:4
+|| End:

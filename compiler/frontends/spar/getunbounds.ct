@@ -1,0 +1,269 @@
+.. File: getunbounds.ct
+..
+.. Return the names of all variables that are used but not defined
+.. in the given class declaration.
+..
+.. This is used in the implementation of local classes.
+..
+.. Return 'walk' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the datastructure we're walking on, and a type 't', of that variable,
+.. generate a return statement.
+.macro generate_walker_return indent var t
+$(indent)return;
+.endmacro
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+.if ${member ${stemname $t} ${typelist}}
+$(indent)if( $(var) == NULL ){
+$(indent)    return;
+$(indent)}
+.endif
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+static void getunbounds_$t_walker( const_$t $(var), origsymbol_list vars, tmsymbol_list localvars )
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we're walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+static void getunbounds_$t_walker( const_$t $(var), origsymbol_list vars, tmsymbol_list localvars );
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)getunbounds_$(type)_action( $(var), vars, localvars );
+.else
+$(indent)getunbounds_$(type)_action( to_const_$(type)( $(var) ), vars, localvars );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)getunbounds_$(type)_walker( $(var), vars, localvars );
+.else
+$(indent)getunbounds_$(type)_walker( to_const_$(type)( $(var) ), vars, localvars );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var', and a type 'type', generate
+.. the body of an empty walker function.
+.macro generate_empty_walker_body indent var type
+$(indent)(void) vars;
+$(indent)(void) localvars;
+.endmacro
+..
+.. For which types are there actions defines?
+.. Currently we're naive, and assume only VariableNames and TypeNames
+.. are affected. No doubt this overlooks something
+.set actors
+.append actors Block
+.append actors Cardinality
+.append actors FieldDeclaration
+.append actors FormalParameter
+.append actors MethodName
+.append actors TypeDeclaration
+.append actors VariableName
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "Block" "$(actors)"}
+..
+// ->->-> This is a GENERATED FILE <-<-<-
+
+/* File: getunbounds.c
+ *
+ * Return a list of all unbound names.
+ */
+
+#include <tmc.h>
+#include <assert.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "getunbounds.h"
+#include "service.h"
+
+.foreach t VariableName MethodName
+typedef const_${alias $t} const_$t;
+.endforeach
+
+.call generate_walker_forwards "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+/* -------- actors ---------- */
+
+/* Action for type MethodName. */
+static void getunbounds_MethodName_action(
+ const_origsymbol nm,
+ origsymbol_list vars,
+ tmsymbol_list localvars
+)
+{
+    if( nm == NULL ){
+	return;
+    }
+.call generate_walker_call "    " nm MethodName MethodName
+    if( is_qualified_origsymbol( nm ) ){
+	origsymbol first = firstpart_origsymbol( nm );
+
+	if( !member_tmsymbol_list( localvars, first->sym ) ){
+	    vars = add_origsymbol_list( vars, first );
+	}
+	rfre_origsymbol( first );
+    }
+}
+
+/* Action for type VariableName. */
+static void getunbounds_VariableName_action(
+ const_origsymbol nm,
+ origsymbol_list vars,
+ tmsymbol_list localvars
+)
+{
+    if( nm == NULL ){
+	return;
+    }
+.call generate_walker_call "    " nm VariableName VariableName
+    if( is_qualified_origsymbol( nm ) ){
+	origsymbol first = firstpart_origsymbol( nm );
+
+	if( !member_tmsymbol_list( localvars, first->sym ) ){
+	    vars = add_origsymbol_list( vars, first );
+	}
+	rfre_origsymbol( first );
+    }
+    else {
+	if( !member_tmsymbol_list( localvars, nm->sym ) ){
+	    vars = add_origsymbol_list( vars, nm );
+	}
+    }
+}
+
+/* Action for type FormalParameter. */
+static void getunbounds_FormalParameter_action(
+ const_FormalParameter p,
+ origsymbol_list vars,
+ tmsymbol_list localvars
+)
+{
+    (void) vars;
+    (void) getunbounds_FormalParameter_walker;
+    if( p == NULL || p->t == NULL ){
+	return;
+    }
+    if( p->t->tag == TAGTypeType ){
+	return;
+    }
+    tmsymbol s = p->name->sym;
+    localvars = add_tmsymbol_list( localvars, s );
+}
+
+/* Action for type Cardinality. */
+static void getunbounds_Cardinality_action(
+ const_Cardinality card,
+ origsymbol_list vars,
+ tmsymbol_list localvars
+)
+{
+    (void) getunbounds_Cardinality_walker;
+    if( card == NULL ){
+	return;
+    }
+.call generate_descent_call "    " card->lowerbound expression expression
+.call generate_descent_call "    " card->upperbound expression expression
+.call generate_descent_call "    " card->stride expression expression
+    tmsymbol s = card->name->sym;
+    localvars = add_tmsymbol_list( localvars, s );
+}
+
+/* Action for type FieldDeclaration. */
+static void getunbounds_FieldDeclaration_action(
+ const_FieldDeclaration fd,
+ origsymbol_list vars,
+ tmsymbol_list localvars
+)
+{
+    if( fd == NULL ){
+	return;
+    }
+    (void) getunbounds_FieldDeclaration_walker;
+.call generate_descent_call "	" fd->init optexpression optexpression
+    if( fd->t->tag == TAGTypeType ){
+	return;
+    }
+    tmsymbol s = fd->name->sym;
+    localvars = add_tmsymbol_list( localvars, s );
+}
+
+/* Action for type TypeDeclaration. */
+static void getunbounds_TypeDeclaration_action(
+ const_TypeDeclaration d,
+ origsymbol_list vars,
+ tmsymbol_list old_localvars
+)
+{
+    if( d == TypeDeclarationNIL ){
+	return;
+    }
+    tmsymbol_list localvars = rdup_tmsymbol_list( old_localvars );
+.call generate_walker_call "	" d TypeDeclaration TypeDeclaration
+    rfre_tmsymbol_list( localvars );
+}
+
+/* Action for type Block. */
+static void getunbounds_Block_action( const_Block blk, origsymbol_list vars, tmsymbol_list old_localvars )
+{
+    if( blk == BlockNIL ){
+	return;
+    }
+    tmsymbol_list localvars = rdup_tmsymbol_list( old_localvars );
+.call generate_walker_call "	" blk Block Block
+    rfre_tmsymbol_list( localvars );
+}
+
+/* -------- End of action functions ---------- */
+
+.call generate_walker "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+/* Given a type declaration, substitute all given parameters. */
+void getunbounds_declaration( const_declaration d, origsymbol_list vars, const_tmsymbol_list superfields )
+{
+    tmsymbol_list localvars = rdup_tmsymbol_list( superfields );
+.call generate_descent_call "    " d declaration declaration
+    assert( localvars->sz == superfields->sz );
+    rfre_tmsymbol_list( localvars );
+}

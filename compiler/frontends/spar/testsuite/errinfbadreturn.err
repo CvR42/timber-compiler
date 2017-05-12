@@ -1,0 +1,1 @@
+errinfbadreturn.spar:10: method 'foo()' returns 'int', according to interface 'inf' it should return 'void'

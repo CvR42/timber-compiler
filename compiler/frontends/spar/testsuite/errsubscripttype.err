@@ -1,0 +1,2 @@
+errsubscripttype.spar:8: Incompatible type for index element. Explicit cast needed to convert long to int
+errsubscripttype.spar:9: Incompatible type for index element. Cannot convert int[] to int

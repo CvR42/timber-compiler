@@ -1,0 +1,7 @@
+#!/bin/csh
+if (-r $2.v) then
+  rm -rf $2.g.tm $2_$1.g.tm
+  ../../../backends/vnus/vnus -t $2.v > $2.g.tm
+  ../align -l$1 $2.g.tm > $2_$1.g.tm
+endif
+

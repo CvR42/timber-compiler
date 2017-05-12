@@ -1,0 +1,17 @@
+package spar.testsuite;
+
+final class t1 {
+    static void bla() {}
+}
+
+class t extends t1 {
+    public int x;
+    public int y;
+}
+
+public class errfinalinherit {
+    public static void main()
+    {
+	t x = new t();
+    }
+}

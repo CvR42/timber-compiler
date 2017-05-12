@@ -1,0 +1,94 @@
+/*
+   Search engine
+
+   Search for the use of a variable.
+   Returns TRUE on success, FALSE otherwise.
+   */
+
+.. File: search.ct
+..
+.insert gensearch.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors ExprName LocName
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "cardinality_list" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "vnusctl.h"
+#include "search.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+/*
+  See above.
+  */
+static int rewrite_ExprName_action(
+  ExprName e, tmsymbol sym )
+{
+    return (e->name->sym == sym);
+}
+
+/*
+  See above.
+  */
+static int rewrite_LocName_action(
+  LocName e, tmsymbol sym )
+{
+    return (e->name->sym == sym);
+}
+
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, try to see whether a symbol is used. */
+int search_expression_list(
+     expression_list elm, tmsymbol sym )
+{
+    int result = false;
+.call generate_descent_call "    " elm expression_list expression_list
+    return result;
+}
+
+int search_expression(
+     expression elm, tmsymbol sym )
+{
+        // A hack to avoid 'unused' warnings
+    (void) rewrite_LocName_walker;
+    (void) rewrite_ExprName_walker;
+
+    int result = false;
+.call generate_descent_call "    " elm expression expression
+    return result;
+}
+
+int search_cardinality_list(
+     cardinality_list elm, tmsymbol sym )
+{
+    int result = false;
+.call generate_descent_call "    " elm cardinality_list cardinality_list
+    return result;
+}
+
+int search_cardinality(
+     cardinality elm, tmsymbol sym )
+{
+    int result = false;
+.call generate_descent_call "    " elm cardinality cardinality
+    return result;
+}
+

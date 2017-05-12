@@ -1,0 +1,149 @@
+Allereerst: alles is alpha.
+
+Belangrijkste files:
+* compiler:
+  * V-nus.h
+  * V-nus.y
+  * symbol_table.c
+  * V-nus.l
+* code:
+  * main.v -> main.c
+  * kernel.h
+  * kernel.c
+  * (template.c)
+  Kernel.h & kernel.c in lib definieren alle hulproutines die data
+  manipuleren. Main.v is het V-nus input programma en main.c is de
+  gegenereerde output. Template.c is nu wat out of date, maar dat was zoals ik
+  dacht dat een en ander eruit moest gaan zien. Zaten nog wat kleine foutjes
+  in. Ik zou zeggen hou het even als guideline erbij en flikker het weg
+  wanneer de symboltables (functies make_dst, make_data, en make_literal)
+  gegenereerd kunnen worden. Oh, make_literal is in template.c een onderdeel
+  van make_data. Leek me bij nader inzien toch niet zo handig.
+
+Booster (module Test):
+PROCEDURE Proc (IN A: IETSA, INOUT B: IETSB, OUT C:IETSC)
+
+wordt vertaalt naar C:
+void Wrap_Test_Proc(DATA **A, DATA **B, DATA **C);
+
+deze wrapper verzorgt het IN, INOUT en OUT gedeelte en roept hier binnen aan:
+void Test_Proc(DST **dst, DATA **A, DATA **B, DATA **C);
+
+De dst is de dtnamische stack om CONST "variabelen" zichtbaar te maken in
+Test_Proc.
+
+Ingeval van een functie wordt de boel:
+FUNCTION Func (IN A: IETSA, IN B: IETSB) RESULT C:IETSC;
+
+DATA *Wrap_Test_Func(DATA **A, DATA **B);
+
+DATA *Test_Func(DST **dst, DATA **A, DATA **B, DATA **C);
+
+FYI:
+* In feite hebben we dus een typeloze parameter overdracht.
+* De RESULT parameter wordt binnen de wrapper een argument.
+* De argumenten zijn dubbelle pointers, zodat nieuwe data onder de parameters
+  gehangen kan worden, zonder dat de aanroeper het merkt.
+
+Wanneer er een paar CONST vars gedefinieerd zijn moeten die zichtbaar gemaakt
+worden in de functie / procedure:
+
+DATA *Test_Func(DST **dst, DATA **A, DATA **B, DATA **C)
+{
+	DATA *n, *m;
+
+	n = make_const(dst, 0);
+	m = make_const(dst, 1);
+	...
+	real_code();
+	...
+	destroy_data(m);
+	destroy_data(n);
+	return *C;
+}
+
+Lokale variabelen laat ik even achterwege, maar het lijkt me typisch iets a
+la:
+
+DATA *Test_Func(DST **dst, DATA **A, DATA **B, DATA **C)
+{
+        DATA *v, *w;
+        
+        v = make_data(1234);
+        w = make_data(1235);
+        ...
+        real_code();
+        ...
+        destroy_data(v);
+        destroy_data(w);
+        return *C;
+}
+
+Waarbij de nummers 1234 & 1235 verwijzen naar entries in een tabel die de
+declaratie beschrijft aan de hand waarvan de variabele zijn ruimte opgezet
+krijgt.
+
+Bij recursie moet ingeval van externe functies Test_Func uiteraard wel
+Wrap_Test_Func aanroepen.
+
+In de wrapper moet als eerste de CONST variabelen afgehandeld worden. Deze
+moeten hun waarden krijgen voordat ze gebruikt kunnen worden. Declareer voor
+iedere IN parameter (volgens Joachim mag CONST alleen bij IN parameters) een
+stukje geheugen in een array om een verwijzing naar de variabele in op te
+slaan. Daarna kunnen de andere parameters gecheckt / aangemaakt worden met de
+juiste constanten.
+
+Ingeval van een functie wordt de boel:
+FUNCTION Func (IN A: SHAPE {CONST n} OF IETSA, IN B: SHAPE {CONST m} OF IETSB,
+IN C: SHAPE {n} OF IETSC) RESULT D: SHAPE {n # m} OF IETSD;
+
+DATA *Wrap_Test_Func(DATA **A, DATA **B, DATA **C)
+{
+	DST	**dst
+	DATA	*var[2];
+	DATA	*D;
+
+	var[0] = *A;
+	var[1] = *B;
+	dst = make_dst(var, 1234);
+	...
+	D = make_data(dst, 1235);
+	D = Test_Func(dst, A, B, C, D); /* ongeveer... */
+	...
+	destroy_dst(dst);
+	return D;
+}
+
+Het ongeveer slaat op de IN/INOUT/OUT behandeling:
+* IN moet gecopieerd worden in lokale copie.
+* IN moet vernietigd worden wanneer het niet een variabele maar een expressie
+  was.
+* INOUT kan direct worden door gegeven.
+* OUT moet eerst van zijn waarden ontdaan worden alvorens een nieuwe waarde te
+  krijgen.
+
+Booster (module Test):
+PROCEDURE Proc (IN A: IETSA, INOUT B: IETSB, OUT C:IETSC)
+
+levert op:
+void Wrap_Test_Proc(DATA **A, DATA **B, DATA **C)
+{
+	DATA *local;
+
+	...
+	if (is_volatile(*A) == TRUE)
+		local = *A;
+	else {
+		local = create_data();
+		local = copy_data(local, *A);
+	}
+	destroy_data(*C);
+	*C = make_data(dst, 1234);
+	Test_Proc(&local, B, C);
+	destroy_data(local);
+	...
+}
+
+Overigens zou voor dat in de wrapper de echte functie wordt aangeroepen een
+test gedaan kunnen worden naar het type. Maar ja, daar doen we toch niet
+aan...

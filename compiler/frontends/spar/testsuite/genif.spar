@@ -1,0 +1,12 @@
+package spar.testsuite;
+
+public class genif {
+    public static void main()
+    {
+	if( true )
+	    if( true )
+		__println( 1, "yes" );
+	    else
+		__println( 1, "no" );
+    }
+}

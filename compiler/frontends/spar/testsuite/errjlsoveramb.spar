@@ -1,0 +1,20 @@
+// After JLS2 15.12.2.3    Example: Overloading Ambiguity
+
+class Point { int x, y; }
+
+class ColoredPoint extends Point { int color; }
+
+public class errjlsoveramb {
+    static void test(ColoredPoint p, Point q) {
+        __println(1,"(ColoredPoint, Point)");
+    }
+
+    static void test(Point p, ColoredPoint q) {
+        __println(1,"(Point, ColoredPoint)");
+    }
+
+    public static void main(String[] args) {
+        ColoredPoint cp = new ColoredPoint();
+        test(cp, cp);                        // compile-time error
+    }
+}

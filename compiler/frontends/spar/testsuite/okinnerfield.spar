@@ -1,0 +1,12 @@
+// Tests access to a field of a static inner class.
+
+public final class okinnerfield {
+    static class inner {
+	static int n = 42;
+	static int getn() { return n; }
+    }
+    public static void main(){
+	__println( 1, okinnerfield.inner.n );
+	__println( 1, okinnerfield.inner.getn() );
+    }
+}

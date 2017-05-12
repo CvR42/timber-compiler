@@ -1,0 +1,122 @@
+TODO:
+
+At the moment temporaries are added to the nearest enclosing scope. This is
+sufficient for all the current rules, but in future rules loops and such
+might be switched. When this becomes the case there is a chance that
+the variable declarations are no longer in the right scope.
+A solution to this problem would be to add temporaries to the procedure
+or function scope instead of the nearest scope. This would mean keeping
+track of the current function or procedure instead of the current scope.
+Soem rules already have thi functionality, so this rewrite should not be
+that big a problem.
+
+
+
+Recently we submitted a paper to the CPC2000 workshop. To produce some nice
+graphs I worked on several benchmarks in the hope of getting lineair speedup.
+In the beginning performance was hopeless and I did a lot of work on the
+compiler to improve things. The things that have been done, and the things
+that are still to be done are listed below.
+
+There were a lot of things that hampered me in obtaining performance. the
+most noticable were:
+
+Owner tests use virtual functions to obtain distribution info. They are very
+expensive, and depending on the example cost a factor 10 to 100 in
+performance. If the distribution is known at compile time then it is very
+advantageous to inline the owner expressions.
+
+If something has a local distribution it prevents owner absorbtion. As this
+distribution is necessary to get data to p[0] for data input/output it is
+very usefull. Lifting the testing for this distribution outside loops
+enables owner absorbtion again.
+A local distribution (local(processor-number) indicates that a whole shape
+is placed on a certain processor.
+
+We still need a lot of analysis. The overhead generated with the introduction
+of tempos for shapes, and the associated test/copy/send/recv code costs a lot,
+probably a factor 2. The introduction of the <$dontbreakout$> pragma, which
+indicates that an expression in the RHS has the same distribution as the LHS,
+helps prevent this unnecessary code generation.
+
+-----
+Things done during the preparation of the CPC2000 paper:
+
+io1: (new rule)
+Inline Owner/IsOwner/Sender expressions for shapes with 1-dimensional
+distribution. Currently handled are block/cyclic/BC/replicated/local.
+Getting distribution info at runtime is very expensive as virtual function
+calls are used. These are unavoidable. This inlining can only be done if
+the compiler knows the distribution. Is done after oa5(owner absorbtion).
+
+it1: (insert tempos for shape references in assignments)
+Introduced the <$dontbreakout$> pragma. This prevents the introduction of
+tempos if the user knows that a shape is already local compared to the LHS
+of an assignment. As long as there is no distribution analysis this helps a
+lot with improving performance as copies are avoided.
+
+if6: (split multi-dim foreach loops)
+When splitting a loop copy all the pragmas to all the new loops.
+
+el1: (new rule)
+If there is an IsOwner/Sender test on a shape that has a local distribution,
+lift this test outside the enclosing loop. This happens before oa5.
+
+oa5: (owner absorbtion)
+Nothing much, used Kees' typederive code to find out distributions instead
+of some complicated piece of code of my own.
+
+ca3: (comm.aggr. generate comm. scheme)
+Added the send-to-self test. Seems to give a bit of extra performance.
+
+ot: (elt.wise comm. scheme)
+Added the send-to-self test. Seems to give a bit of extra performance.
+
+ftf2: (new rule)
+All rules worked on the forall statement like Leo's rules. They now work
+on the foreach statement. This rule is for backward compatibility and
+changes all foralls into foreaches. nobody ever implemented the 'real'
+forall semantics anyway.
+
+-----
+Still todo:
+
+Currently only 1-dim distributions are supported by the owner absorbtion and
+other engines. This should be generalised to 2-dim and higher distributions.
+
+Also inline owner etc for scalars. This currently happens in vnus backend,
+but should happen in the spmd engine(mapper) so that the same policy is
+followed.
+
+In the examples mat.v etc, if the formal variable has a distribution things
+go wrong because the compiler uses this info to generate blus actions and
+such, while it doesn't generate redistribute code.
+
+We should allow scalars to have a distribution. Currently the implementation
+assumes the default replicated distribution and doesn't even look for a
+distribution annotation.
+
+Engine if7 switches two tightly nested foreach loops if that is better for
+blussing. This now happens regardless of annotations. This should happen only
+if one of the following conditions holds:
+- both loops are independent
+- both loops are not independent
+- only the outer loop is independent
+In other words, it should not happen if:
+- only the inner loop is independent
+Maybe this switch should not happen at all, but should be replaced with a
+more elaborate owner absorbtion engine(see next item).
+Maybe it should also look at the size of the respective loops.
+
+Engine oa5 now only matches a loop with a condition that is in it. It should
+also match with conditions that are inside inner loops, control statements 
+and other things that hide the necessary info.
+
+The Spar frontend introduces aliases if vectors are used in cardinalities.
+This also prevents owner absorbtion.
+
+Will has a generic engine that finds out if an expression in lineair or not.
+This uses n-ary operators and is much more advanced than the current test.
+It should therefore be used. However, n-ary operators are not in the current
+vnus.ds, and should be seen as something that is internal to an engine that
+should not be passed between engines.

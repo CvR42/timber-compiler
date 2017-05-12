@@ -1,0 +1,3 @@
+t.x=1 when t holds a class T at run time.
+s.x=0 when s holds a class S at run time.
+s.x=0 when s holds a class T at run time.

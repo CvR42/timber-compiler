@@ -1,0 +1,13 @@
+// Spar language extensions to Java. These should be flagged by the
+// compiler if the --java-array flag is given.
+
+package spar.testsuite;
+
+public class errjarray {
+    public static void main()
+    {
+	int n[*];			// Not the Java notation of an array.
+	int n[*,*];			// Multi-dim array.
+	__println( "hello world" );
+    }
+}

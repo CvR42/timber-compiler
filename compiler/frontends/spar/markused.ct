@@ -1,0 +1,201 @@
+.. File: markused.ct
+..
+.. Mark all variables as that *are* actually used by a method that
+.. is itself marked as used.
+..
+.. This is used in macro expansion.
+..
+.. Return 'walk' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the datastructure we're walking on, and a type 't', of that variable,
+.. generate a return statement.
+.macro generate_walker_return indent var t
+$(indent)return;
+.endmacro
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+.if ${member ${stemname $t} ${typelist}}
+$(indent)if( $(var) == NULL ){
+$(indent)    return;
+$(indent)}
+.endif
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+static void markused_$t_walker( const_$t $(var), Entry_list symtab )
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we're walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+static void markused_$t_walker( const_$t $(var), Entry_list symtab );
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)markused_$(type)_action( $(var), symtab );
+.else
+$(indent)markused_$(type)_action( to_const_$(type)( $(var) ), symtab );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)markused_$(type)_walker( $(var), symtab );
+.else
+$(indent)markused_$(type)_walker( to_const_$(type)( $(var) ), symtab );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var', and a type 'type', generate
+.. the body of an empty walker function.
+.macro generate_empty_walker_body indent var type
+$(indent)(void) symtab;
+.endmacro
+..
+.set actors
+.append actors VariableName
+.append actors MethodEntry
+.append actors VariableEntry
+.append actors VariableDeclaration
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "Entry_list" "$(actors)"}
+..
+// ->->-> This is a GENERATED FILE <-<-<-
+
+/* File: markused.c
+ *
+ * Replace a return with a goto.
+ */
+
+#include <tmc.h>
+#include <assert.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "service.h"
+#include "markused.h"
+#include "symbol_table.h"
+
+.foreach t VariableName
+typedef const_${alias $t} const_$t;
+.endforeach
+
+.call generate_walker_forwards "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+/* -------- actors ---------- */
+
+/* Action for type VariableName. */
+static void markused_VariableName_action(
+ const_VariableName nm,
+ Entry_list symtab
+)
+{
+    if( nm == NULL ){
+	return;
+    }
+    // Enable this if there is yet another variable that has no scope,
+    // and hence has been marked as used without reason.
+#if 0
+    if( strcmp( nm->sym->name, "tmp42" ) == 0 ){
+	yup();
+    }
+#endif
+.call generate_walker_call "    " nm VariableName VariableName
+    Entry e = lookup_Entry( symtab, nm );
+    if( e != EntryNIL ){
+	assert( is_VariableEntry( e ) );
+	VariableEntry var = to_VariableEntry( e );
+	if( !var->isused ){
+	    // Since this variable is now marked as used, also mark
+	    // anything that is used within the init expression of the var.
+	    var->isused = true;
+.call generate_walker_call "	    " var VariableEntry VariableEntry
+	}
+    }
+}
+
+/* Action for type MethodEntry. */
+static void markused_MethodEntry_action( const_MethodEntry me, Entry_list symtab )
+{
+    if( me == NULL ){
+	return;
+    }
+    if(
+	(me->isvirtuallyused || me->directusecount != 0) &&
+	me->tag != TAGAbstractFunctionEntry
+    ){
+.call generate_walker_call "	" me MethodEntry MethodEntry
+    }
+}
+
+/* Action for type VariableDeclaration. */
+static void markused_VariableDeclaration_action( const_VariableDeclaration me, Entry_list symtab )
+{
+    (void) symtab;
+    (void) me;
+    (void) markused_VariableDeclaration_walker;
+    // Don't mark variables just because they are declared
+}
+
+/* Action for type VariableEntry. */
+static void markused_VariableEntry_action( const_VariableEntry me, Entry_list symtab )
+{
+    (void) symtab;
+    (void) me;
+    // Don't mark variables just because they have a symboltable entry.
+}
+
+/* -------- End of action functions ---------- */
+
+.call generate_walker "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+/* Given a type declaration, substitute all given parameters. */
+void markused_SparProgram( SparProgram prog )
+{
+    Entry_list symtab = prog->symtab;
+
+    // First reset all usage flags.
+    for( unsigned int ix=0; ix<symtab->sz; ix++ ){
+	Entry e = symtab->arr[ix];
+	if( is_VariableEntry( e ) ){
+	    to_VariableEntry( e )->isused = false;
+	}
+    }
+.call generate_descent_call "    " symtab Entry_list Entry_list
+}

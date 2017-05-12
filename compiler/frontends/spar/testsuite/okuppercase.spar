@@ -1,0 +1,14 @@
+public class okuppercase {
+    static void report_char( char c ){
+	__print( 1, "c='", c, "'" );
+	__print( 1, " upper(c)='", Character.toUpperCase(c), "'" );
+	__print( 1, " lower(c)='", Character.toLowerCase(c), "'" );
+	__println( 1 );
+    }
+    public static void main(){
+	report_char( '1' );
+	report_char( 'a' );
+	report_char( 'A' );
+	report_char( '#' );
+    }
+}

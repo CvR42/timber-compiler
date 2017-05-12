@@ -1,0 +1,84 @@
+/* Applycheck test engine
+
+   If statement is tagged with FlagPragma("hop") then surround it with
+   an if statement.
+   */
+
+.. File: applycheck.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors statement
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "applycheck.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+/* Rewrite action for 'vnusprog'. */
+static statement rewrite_statement_action(
+ statement elm, global_context gc )
+{
+    Pragma_list thePragmas = elm->pragmas;
+    int pos = -1;
+    tmsymbol theSym = add_tmsymbol("hop");
+    for (unsigned i=0; i<thePragmas->sz; i++)
+        if (thePragmas->arr[i]->name->sym==theSym)
+            pos = i;
+    if (pos != -1) 
+    {
+        thePragmas = delete_Pragma_list(thePragmas,pos);
+	elm->pragmas = thePragmas;
+        statement_list newThenSmtList = new_statement_list();
+        statement_list newElseSmtList = new_statement_list();
+        newThenSmtList = append_statement_list(newThenSmtList,elm);
+        block newThenBlock = new_block(0,
+                                       gen_origin(),
+                                       new_Pragma_list(),
+                                       new_OwnerExpr_list(),
+                                       newThenSmtList);
+        block newElseBlock = new_block(0,
+                                       gen_origin(),
+                                       new_Pragma_list(),
+                                       new_OwnerExpr_list(),
+                                       newElseSmtList);
+        statement newStatement = new_SmtIf(0,
+                                           gen_origin(),
+                                           0,
+                                           new_OwnerExpr_list(),
+                                           new_ExprBoolean(true),
+                                           newThenBlock,
+                                           newElseBlock);
+        elm = newStatement;
+    }
+.call generate_walker_call "    " elm statement statement
+    return elm;
+}
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_check( vnusprog elm, global_context gc )
+{
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}
+

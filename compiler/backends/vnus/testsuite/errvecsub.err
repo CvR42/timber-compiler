@@ -1,0 +1,2 @@
+errvecsub.v:16: negative field number
+errvecsub.v:18: record subscript too large: there are only 3 fields

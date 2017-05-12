@@ -1,0 +1,132 @@
+This directory contains a test suite for the spar compiler.
+
+
+General organization
+--------------------
+
+The organization is as follows:
+
+There are the following classes of tests:
+
+- Tests that are supposed to succeed. File names for these tests
+  start with 'ok'. E.g. 'okmath.spar'. These tests are compiled and
+  run. They should succeed without warning or error, and the output
+  should be identical to a reference version.
+
+- Tests that are supposed to fail or cause warnings. File names for
+  these tests start with 'err'. E.g. 'errnomain.spar'. These tests
+  are only run through the frontend, and should generate output on the
+  standard error file. The output on standard error and the exit code
+  of the program should match a reference.
+
+- Tests that are supposed to generate a prescribed Vnus source file.
+  Filenames for these tests start with 'gen'. E.g. 'genopt.spar'.
+  These tests are only run through the frontend, and should not
+  cause a warning or error. The generated Vnus source file should
+  be identical to a reference version.
+
+- Tests that are supposed to cause runtime errors. File names for these
+  tests start with 'rte'. E.g. 'rtealloc.spar'. These tests are compiled
+  and run. They should compile without warning or error, but should fail
+  during execution. The output of the executed program, and the exit code
+  of the program, should match a reference version.
+
+
+Expected files
+--------------
+
+All *.spar files in this directory are considered elements of the
+test suite. They should have one of the prefixes described above;
+other files cause an error. For each category a couple of other
+files is also expected:
+
+- Succeed files: ok*.out contains the correct output of the test run.
+
+- Error files: err*.err contains the correct error output of the compiler.
+  err*.exit contains the correct exit code of the compiler.
+
+- Vnus files: gen*.v contains the correct Vnus code.
+
+- Runtime error checks: rte*.err contains the correct stderr output of
+  the test run. err*.exit contains the correct exit code of the test run.
+
+By default, a test is run without flags.
+
+
+If a file '*.flags' is found, the flags are taken from that file.
+
+
+How the test suite is run
+-------------------------
+
+The test suite is run with the script 'runall'. This script
+collects the *.java files in the directory, determines the category
+of the test, and executes one of the following scripts as appropriate:
+
+The following flags are accepted:
+
+-s		Don't report the execution of each test, as is normally done.
+-v		Show the details of execution of each test.
+-k		Keep running the remaining tests, even if one of them failed.
+--version	Show the version number.
+--help		Show a help text.
+
+If a list of files is given, only these tests are executed, otherwise
+all *.java files in the directory are executed.
+
+
+runok
+-----
+
+Given a source file, execute a test that is supposed to succeed. Return
+with exit code 0 if all went well, an exit code 1 if the test failed,
+or an exit code 2 if the test could not be run.
+
+The following flags are accepted:
+
+-v		Show the details of execution of the test.
+--version	Show the version number.
+--help		Show a help text.
+
+
+runerr
+-----
+
+Given a source file, execute a test that is supposed to fail. Return
+with exit code 0 if all went well (i.e. the file could not be compiled
+and generated the correct error message), with exit code 1 if the test
+failed (i.e. the file compiled with the wrong output or exit code),
+or an exit code 2 if the test could not be run.
+
+The following flags are accepted:
+
+-v		Show the details of execution of the test.
+--version	Show the version number.
+--help		Show a help text.
+
+
+rungen
+------
+
+Given a source file, execute a test that is supposed to generate a
+certain Vnus file. Return with exit code 0 if all went well, with exit
+code 1 if the test failed, or an exit code 2 if the test could not be run.
+
+The following flags are accepted:
+
+-v		Show the details of execution of the test.
+--version	Show the version number.
+--help		Show a help text.
+
+runrte
+------
+
+Given a source file, execute a test that is supposed to generate a
+runtime error. Return with exit code 0 if all went well, with exit
+code 1 if the test failed, or an exit code 2 if the test could not be run.
+
+The following flags are accepted:
+
+-v		Show the details of execution of the test.
+--version	Show the version number.
+--help		Show a help text.

@@ -1,0 +1,206 @@
+/*
+   Applyca2 engine
+
+   Do communication aggregation.
+   The second step: find an 'independent' foreach statement and move all
+   leading 'communication' statements to separate loops.
+   */
+
+.. File: applyca2.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtForeach
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "applyca2.h"
+#include "replace.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+/*
+  If foreach statement is independent then put all leading
+  'comm' statements into separate loops.
+  */
+static statement rewrite_SmtForeach_action(
+    SmtForeach e, global_context gc )
+{
+.call generate_walker_call "    " e SmtForeach SmtForeach
+    if (!pragma_list_contains_tmsymbol(
+        e->pragmas,
+        add_tmsymbol("independent")))
+        return e;
+    if (warning_level >= WARN_DEBUG)
+	fprintf(stderr, "CA2: found independent foreach\n");
+    
+    statement_list sl = e->body->statements;
+    SmtBlock sb = SmtBlockNIL;
+    while(sl->sz > 1)
+    {
+        if (sl->arr[0]->tag != TAGSmtAssign)
+            break;
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr, "CA2: found ass.stmt at pos %d\n",0);
+        if (!is2owned(to_SmtAssign(sl->arr[0])))
+            break;
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr, "CA2: found 2-owned stmt, separating...\n");
+        if (sb == SmtBlockNIL)
+        {
+	    if (warning_level >= WARN_DEBUG)
+		fprintf(stderr, "CA2: creating enclosing scope\n");
+            sb = new_SmtBlock(
+                0,
+                gen_origin(),
+                new_Pragma_list(),
+                new_OwnerExpr_list(),
+                new_block(
+                    rdup_tmsymbol(e->body->scope),
+                    gen_origin(),
+                    new_Pragma_list(),
+                    new_OwnerExpr_list(),
+                    new_statement_list()));
+            e->body->scope = gen_tmsymbol("__scope_");
+        }
+        SmtForeach nl = new_SmtForeach(
+            0,
+            gen_origin(),
+            rdup_Pragma_list(e->pragmas),
+            rdup_OwnerExpr_list(e->on),
+            rdup_cardinality_list(e->cards),
+            rdup_OwnerExpr_list(e->map),
+            new_block(
+                gen_tmsymbol("__scope_"),
+                gen_origin(),
+                rdup_Pragma_list(e->body->pragmas),
+                rdup_OwnerExpr_list(e->body->on),
+                new_statement_list()));
+        nl->body->statements = append_statement_list(
+            nl->body->statements,
+            rdup_statement(sl->arr[0]));
+        nl->pragmas = append_Pragma_list(
+            nl->pragmas,
+            new_FlagPragma(add_origsymbol("usesArrayTempo")));
+// And now in 'nl' uniquify and substitute all cardinality variables
+// Shit NewDistAlign annotaties ook, maar niet altijd grr.........
+// Shouldn't we also add new cardvar decls?            
+        assert(nl->body->statements->arr[0]->tag == TAGSmtAssign);
+        SmtAssign as to_SmtAssign(nl->body->statements->arr[0]);
+        int pos = -1;
+	location lhs = pierceLocationWrapper(as->lhs);
+        switch (lhs->tag)
+        {
+            case TAGLocName:
+                {
+                    LocName ln = to_LocName(lhs);
+                    pos = declaration_list_find_pos(gc->prog->declarations, ln->name);
+                    break;
+                }
+            case TAGLocSelection:
+            {
+                LocSelection ls = to_LocSelection(lhs);
+                if (ls->shape->tag != TAGExprName)
+                    break;
+                ExprName en = to_ExprName(ls->shape);
+                pos = declaration_list_find_pos(gc->prog->declarations, en->name);
+                break;
+            }
+            default:
+                break;
+        }
+        for (unsigned i=0; i<nl->cards->sz; i++)
+        {
+            tmsymbol findSym = nl->cards->arr[i]->name->sym;
+            origsymbol newSym = gen_origsymbol("__ca2_lv_");
+            expression replaceExpr = new_ExprName(rdup_origsymbol(newSym));
+            location replaceLoc = new_LocName(rdup_origsymbol(newSym));
+            nl = to_SmtForeach(replace_statement(
+		nl,
+		findSym, replaceExpr, replaceLoc, gc));
+            if (pos != -1)
+                gc->prog->declarations->arr[pos] = replace_declaration(
+                    gc->prog->declarations->arr[pos],
+		    findSym, replaceExpr, replaceLoc, gc);
+            rfre_expression(replaceExpr);
+            rfre_location(replaceLoc);
+            rfre_origsymbol(nl->cards->arr[i]->name);
+            nl->cards->arr[i]->name = newSym;
+            DeclCardinalityVariable dcv = new_DeclCardinalityVariable(
+                rdup_origsymbol(newSym),
+                0,
+                new_Pragma_list());
+            gc->prog->declarations = append_declaration_list(gc->prog->declarations, dcv);
+            if (nl->cards->arr[i]->secondaries != secondary_listNIL)
+                continue;
+            for (unsigned j=0; j<nl->cards->arr[i]->secondaries->sz; j++)
+            {
+                tmsymbol findSym = nl->cards->arr[i]->secondaries->arr[j]->name->sym;
+                origsymbol newSym = gen_origsymbol("__ca2_lv_");
+                expression replaceExpr = new_ExprName(rdup_origsymbol(newSym));
+                location replaceLoc = new_LocName(rdup_origsymbol(newSym));
+                nl = to_SmtForeach(replace_statement(
+		    nl,
+		    findSym, replaceExpr, replaceLoc, gc));
+                if (pos != -1)
+                    gc->prog->declarations->arr[pos] = replace_declaration(
+                        gc->prog->declarations->arr[pos],
+			findSym, replaceExpr, replaceLoc, gc);
+                rfre_expression(replaceExpr);
+                rfre_location(replaceLoc);
+                rfre_origsymbol(nl->cards->arr[i]->secondaries->arr[j]->name);
+                nl->cards->arr[i]->secondaries->arr[j]->name = newSym;
+                DeclCardinalityVariable dcv = new_DeclCardinalityVariable(
+                    rdup_origsymbol(newSym),
+                    0,
+                    new_Pragma_list());
+                gc->prog->declarations = append_declaration_list(gc->prog->declarations, dcv);
+            }
+        }
+        sb->body->statements = append_statement_list(
+            sb->body->statements,
+            nl);
+        sl = delete_statement_list(sl,0);
+    }
+    e->body->statements = sl;
+    if (sb == SmtBlockNIL)
+    {
+        return e;
+    }
+    else
+    {
+        sb->body->statements = append_statement_list(
+            sb->body->statements,
+            e);
+        return sb;
+    }
+}
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_ca2(
+    vnusprog elm, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+    
+.call generate_descent_call "    " elm vnusprog vnusprog
+    gc->prog->declarations = delete_marked_declaration_list(gc->prog->declarations);
+    return elm;
+}

@@ -1,0 +1,11 @@
+// Minimal class in a subpackage.
+
+package spar.testsuite.subpack;
+
+public class badmutual2 {
+    public static void say()
+    {
+	badmutual1.say();
+	__println( 1, "Hello world from badmutual2" );
+    }
+}

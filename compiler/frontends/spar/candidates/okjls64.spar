@@ -1,0 +1,10 @@
+// After JLS 15.12.2    Examples: Array Access Evaluation Order
+
+
+public class okjls64 {
+    public static void main() {
+        int[] a = { 11, 12, 13, 14 };
+        int[] b = { 0, 1, 2, 3 };
+        __println(1,a[(a=b)[3]]);
+    }
+}

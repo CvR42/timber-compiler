@@ -1,0 +1,419 @@
+% Written by:
+% * Joachim Trescher
+
+\section{Expressions}
+
+An expression prescribes a computation that produces a value,
+variable, or index set. Syntactically, an expression is either an
+operand, or an operation applied to arguments, which are themselves
+expressions. An expression is evaluated by recursively evaluating its
+arguments and performing the operation. The order of argument
+evaluation is undefined.
+
+\subsection*{Compatibilities}
+
+An expression $e$ of type $T_e$ is {\em type compatible} with a
+designator $d$ of type $T_d$ if $T_d$ is compatible with $T_e$, or
+$T_e$ is compatible with $T_d$. A list of expressions $\langle
+e_1,\ldots,e_n\rangle$ with types $T_{e_i}, 1 \leq i \leq n,$ {\em
+matches} a list of designators $\langle d_1,\ldots,d_m\rangle$ with
+types $T_{d_i}, 1 \leq i \leq m,$ iff $n = m$, and $T_{e_i}$ is type
+compatible with $T_{d_i}, 1 \leq i \leq m.$ An expression $e$ of type
+$T_e$ is {\em assignment compatible} with a designator $d$ of type
+$T_d$ iff $T_d$ includes $T_e$.
+
+The type and assignment compatibility relations are relations on the
+syntactical representation of types and expressions, respectively.
+These relations can be computed and checked statically. However, at
+run-time all variables in the representation of the {\em actual type}
+of a designator or an expression are definite.
+
+We say the type of an expression $e$ with the static type $T_e$ and
+the actual type $AT_e$ is {\em compatible} with the type of a
+designator $d$ with the static type $T_d$ and the actual type $AT_d$,
+iff $T_d$ is compatible to $T_e$ and $AT_d$ is type compatible with
+$AT_e$. We say the type of an expression $e$ with the static type
+$T_e$ and the actual type $AT_e$ is {\em assignable} with the type of
+a designator $d$ with the static type $T_d$ and the actual type
+$AT_d$, iff $T_d$ includes $T_e$ and $AT_d$ includes $AT_e$.
+
+If it is required that an expression $e$ is compatible with a
+designator $d$, then it is a static error if $T_e$ is not compatible to
+$T_d$, and it is a checked run-time error if $AT_e$ is not compatible
+with $AT_d$. If it is required that an expression $e$ is assignable to
+a designator $d$, then it is a static error if $T_d$ does not include
+$T_e$, and it is a checked run-time error if $AT_d$ does not include
+$AT_e$. If it is required that a list of expressions matches a list of
+designators then it is a static error if the type of one of the
+designators is not type compatible to the type of the corresponding
+expression, and it is a checked run-time error if the actual type of
+one of the designators is not compatible with the actual type of the
+corresponding expression.
+
+\subsection*{Operators}
+
+The operators that have special syntax are classified and listed in
+order of decreasing binding power in the following table:
+
+\begin{tabular}{llll}
+\hlf
+\T{x.a} & infix qualification\\
+\T{f(x)}
+  & function application\\
+\T{a[i]}
+  & subscripting and selection\\
+\T{+} \T{-}
+  & prefix arithmetical operators\\
+\T{*} \T{/} \T{DIV} \T{MOD}
+  & infix arithmetical operators\\
+\T{+} \T{-}
+  & infix arithmetical operators\\
+\T{=} \T{<>} \T{<} \T{>} \T{<=} \T{>=} 
+  & infix relational operators\\
+\T{NOT}
+  & prefix boolean operator\\
+\T{AND}
+  & infix boolean operator\\
+\T{OR}
+  & infix boolean operator\\
+\hlf
+\end{tabular}
+
+\noindent All infix operators are left associative. Parentheses can be
+used to override the precedence rules. Operators without special
+syntax are functional. An application of a functional operator has the
+form {\sf op(args)}, where {\sf op} is the operation and {\sf args} is
+a list of argument expressions that match the formal parameter list of
+the functional operator {\sf op}. An application of a functional
+operator is an expression. The type of the expression is the result
+type of the functional operator {\sf op}.
+
+\subsection*{Operands}
+
+An operand is either a designator, function designator, selection,
+constant, or a literal. Literals are string literals, boolean
+literals, numeric literals, or shape literals.
+
+A string literal is an element of \Language{\TC{StringLiteral}}. The
+type of a string literal is \T{STRING}.
+
+A boolean literal is one of the predefined identifiers \texttt{TRUE}
+or \texttt{FALSE}.
+
+Numeric literals denote non-negative natural, real, or complex
+values. The type of a numeric literal is the smallest numeric type,
+that contains the denoted value. A literal of type \T{NATURAL} is a
+non-empty sequence of the decimal digits {\sf 0} through {\sf 9}. The
+digits are interpreted in base 10. The value of the literal must be at
+most \texttt{MAXNATURAL}.
+
+A literal of type \T{REAL} has the form {\sf decimal E exponent},
+where {\sf decimal} is a non-empty sequence of decimal digits followed
+by a decimal point followed by a non-empty sequence of decimal digits,
+and {\sf exponent} is a non-empty sequence of decimal digits
+optionally beginning with a \T{+} or \T{-}. The literal denotes
+decimal times $10^{\sf exponent}$. If {\sf E exponent} is omitted,
+{\sf exponent} defaults to 0. As a shorthand notation it is acceptable
+to use a natural literal to represent {\sf decimal} of a natural
+valued literal of type \T{REAL}.
+
+A literal of type \T{COMPLEX} is a list of two expressions enclosed in
+parentheses \T{(} and \T{)}. The first expression specifies the real
+part of a complex number and the second specifies the imaginary part
+of a complex number.
+
+A shape literal is a list of expressions enclosed in curly braces
+\T{\{} and \T{\}}. The expressions either evaluate all to numeric
+values, to boolean values, to string values, or to shape values. 
+
+If the expressions evaluate to numeric values then the base type of
+the shape literal is the smallest numeric type that includes all the
+values of the sequence, and the form of the shape literal is the
+sequence $\langle l \rangle$, where $l$ is the length of the
+expression list denoted by the shape literal.
+
+If the expressions evaluate to string values then the base type of the
+shape literal is \T{STRING}, and the form of the shape literal is the
+sequence $\langle l \rangle$, where $l$ is the length of the
+expression list denoted by the shape literal.
+
+If the expressions evaluate to boolean values then the base type of
+the shape literal is \T{BOOLEAN}, and the form of the shape literal is
+the sequence $\langle l \rangle$, where $l$ is the length of the
+expression list denoted by the shape literal.
+
+If the expressions evaluate to shape values, then we require that all
+shape values have the same form $F$, and the base type of all shape
+values is either \T{STRING}, \T{BOOLEAN}, or a numeric type. The base
+type of the shape literal is \T{STRING}, or \T{BOOLEAN} in the first
+two cases, and the smallest numeric type that includes the base type
+of all shape values in the latter case. The form of the shape literal
+is the sequence $\langle l \rangle \concat F$, where $l$ is the length
+of the expression list denoted by the shape literal.
+
+
+\subsection*{Set expressions}
+
+A set expression prescribes a computation that produces a selection of
+indices.  Syntactically, a set expression is an {\em index selection}
+or a set operator applied to arguments which are themselves set
+expressions. A set expression is evaluated by recursively evaluating
+its arguments and applying the set operator. The order of argument
+evaluation is undefined.
+
+The value of a set expression is not a member of any \Booster\ type.
+Therefore, set expressions are meaningful exclusively in the context
+of a selector list of a subscript. If a set expression $S$ occurs on
+the {\em n-th} position of a selector list of a subscript, and $c_n$
+is the {\em n-th} element of the form of the subscripted variable,
+then $C_S \ \widehat{=} \ \{ 0,\ldots c_{n-1}\}$ is called the {\em
+context} of $S$, and $L_{C_S} \ \widehat{=} \ n$ its length.
+
+The selectors and set operators are listed in order of decreasing
+binding power in the following table:
+
+\begin{tabular}{ll}
+\hlf
+\verb'..' & infix range selection\\
+\verb'_' & don't care selection\\
+\verb'$' & maximum selector\\
+\hlf
+\verb'\' & prefix difference operator\\
+\verb'|' & infix union operator\\
+\verb'&' & infix intersection\\
+\end{tabular}
+
+\noindent The range selection takes two arguments of type \T{NATURAL}
+and specifies the index selection $\{a,\ldots,b\}$ where $a$ is the
+value of the first argument and $b$ is the value of the second
+argument. If $a > b$ the empty selection is specified. It is required
+that $b < L_{C_S}$. The maximum selector is an expression of type
+\T{NATURAL} that evaluates to $L_{C_\$}-1$. The don't care selection
+is treated as a shorthand for the set expression \T{0..\$}.
+
+The difference operator takes a set expression as an argument and
+specifies the selection $D \quad \widehat{=} \quad C \setminus S$,
+where $C$ is the context of the set expression and $S$ the selection
+specified by its argument. The union and intersection operators take
+two set expressions as arguments and specify the selection obtained by
+the union or intersection of the argument values.
+
+\subsection*{Designators}
+
+An identifier is a {\em writable} designator if it is declared as a
+variable, or a formal parameter.  An identifier is a {\em readonly}
+designator if it is a generic constant, an index variable, or a
+declared constant.
+
+The only expressions that produce designators are qualification,
+function application, subscripting, and selection. The following table
+defines these operations and specifies the conditions under which they
+produce designators.
+
+\begin{description}
+
+\item[{\sf a[e$_{\sf 1}$,\ldots,e$_{\sf m}$]}] 
+
+If all {\sf e$_{\sf i}$} are expressions of type {\tt NATURAL}, $1
+\leq i \leq m$, and the writable designator {\sf a} has a shape type
+with form $\langle n_1,\ldots,n_m \rangle \concat F$, then {\sf
+a[e$_{\sf 1}$,\ldots,e$_{\sf m}$]} is a writable designator that
+denotes the element of {\sf a} with index $[i_1,\ldots,i_m]$, where
+$i_j$ is the value of expression {\sf e$_{\sf j}$}. It is required
+that $0 \leq i_j \leq n_j-1$ for $ 1 \leq j \leq m$. The type of {\sf
+a[e$_{\sf 1}$,\ldots,e$_{\sf m}$]} is the shape type with form $F$ and
+the same base type as {\sf a}.
+
+If all {\sf e$_{\sf i}$} are set expressions, $1 \leq i \leq m$, and
+the writable designator {\sf a} has a shape type with form $\langle
+n_1,\ldots,n_m \rangle \concat F$, then {\sf a[e$_{\sf
+1}$,\ldots,e$_{\sf n}$]} is a writable designator that denotes the
+shape that contains the elements of {\sf a} whose index are elements
+of the set $\{[i_1,\ldots,i_m] \mid i_j \in E_j\}$, where $E_j$ is the
+value of the set expression {\sf e$_{\sf j}$}. The type of {\sf
+a[e$_{\sf 1}$,\ldots,e$_{\sf n}$]} is the shape type with form
+$\langle l_1,\ldots,l_m\rangle \concat F$, where $l_i$ is the
+cardinality of the set $E_i$, $1 \leq i \leq m$, and the same base
+type as {\sf a}. It is required that $\forall j \in \{1,\ldots,m\}
+\bullet \forall i \in E_j \bullet i \in \{0,\ldots,n_j-1\}$.
+
+Note, an expression with the syntactical form \T{a[\ldots][\ldots]}
+is not an element of the \Booster\ language.
+
+
+\item[{\sf M.x}]
+
+If {\sf M} is the name of an imported module, then {\sf M.x} denotes
+the entity named {\sf x} in the module {\sf M}. In this case {\sf M.x}
+is a designator if {\sf x} is declared as a variable; such a
+designator is always writable.
+
+
+\item[{\sf f(a$_{\sf 1}$,\ldots,a$_{\sf n}$)}]
+
+If {\sf f} is declared as a function that returns a result of a view
+type, and the expressions {\sf a$_{\sf 1}$,\ldots,a$_{\sf n}$} match the
+formal parameters of the function {\sf f} then {\sf
+f(a$_{\sf 1}$,\ldots,a$_{\sf n}$)} denotes a writable designator.
+
+\item[{\sf f(a$_{\sf 1}$,\ldots,a$_{\sf n}$)}]
+
+If {\sf f} is declared as a function and the expressions {\sf a$_{\sf
+1}$,\ldots,a$_{\sf n}$} match the formal parameters of the function
+{\sf f} then the function designator {\sf f(a$_{\sf 1}$,\ldots,a$_{\sf
+n}$)} as a constituent of an expression denotes an operand of the
+result type of {\sf f}.
+
+\end{description}
+
+\subsection*{Expression compatibility}
+
+Some operators are applicable to operands of various types, denoting
+different operations. In these cases, the actual operation is
+identified by the type of the operands. For a given operator, the
+types of its operands are {\em expression compatible} if they conform
+to tables given below, which also show the result types of the
+corresponding expressions. 
+
+These tables use the auxiliary functions \coerce\ and \MaxDim. The
+function \coerce\ chooses from a set of intrinsic numeric types an
+element that includes all other elements. The function \MaxDim\
+computes from two forms a form that includes both and contains as much
+information as possible (i.e.\ replaces where possible variables by
+constant expressions). More formally:
+
+\[
+\begin{array}{rcl}
+\multicolumn{3}{c}{
+\coerce: 2^{\Language{\NT{Types}}} \rightarrow \Language{\NT{Types}}}\\
+\hlf
+\coerce(\mbox{\em TypeSet\/}) & \widehat{=} & \left\{
+  \begin{array}{ll}
+  T & \mbox{such that } T \in \mbox{\em TypeSet\/} \wedge \\
+    &  \forall T' \in \mbox{\em TypeSet} \bullet T
+      \sqsupseteq T' \\
+  \end{array}\right.\\
+\end{array}
+\]
+
+\[
+\begin{array}{rcll}
+\multicolumn{3}{c}{
+\MaxDim: \Language{\NT{Types}} \times \Language{\NT{Types}}
+\rightarrow \Forms}\\
+\hlf
+\MaxDim(\langle d_1,\ldots,d_m\rangle, \langle e_1,\ldots,e_n\rangle) 
+    & \widehat{=} & \langle f_1,\ldots,f_k\rangle
+\end{array}
+\]
+where $k = \mbox{\em max}(\{n,m\})$, and for $1 \leq i \leq k$ holds
+$f_i = d_i$ if $d_i$ is a natural value or $n < i$, else $f_i = e_i$
+if $e_i$ is a natural value or $m < i$, $f_i = X$ otherwise, where $X$
+is a fresh free variable from \freevar. For example, consider the two
+forms $F_1 = \langle 3, X, 5\rangle$ and $F_2 = \langle Y, 4 \rangle$
+then we have $\MaxDim(F_1, F_2) = \langle 3,4,5\rangle$.
+
+The following table specifies the result types of an application of an
+unary operator:
+
+\begin{tabular}{llll}
+\\
+{\em operator} & {\em operand type} & {\em result type}\\
+\hlf
+\T{+} & $T_1$ & $T_1$\\
+{\em condition} & \T{COMPLEX} $\sqsupseteq \bt(T_1)$\\ 
+\hlf
+\T{-} & $T_1$ & $T$ such that\\
+{\em condition} & \T{COMPLEX} $\sqsupseteq \bt(T_1)$
+& \form$(T)$ = \form$(T_1)$\\
+& & \bt($T$) = \coerce(\{\bt($T_1$), \T{INTEGER}\})\\
+\hlf
+\T{NOT} & $T_1$ & $T_1$\\
+{\em condition} & \bt$(T_1)$ = \T{BOOLEAN}\\
+\\
+\end{tabular}
+
+For the operand types $T_1$ and $T_2$ of the binary arithmetical and
+boolean operators it is required that either $T_1$ includes $T_2$ or
+$T_2$ includes $T_1$.
+
+\begin{tabular}{llll}
+\\
+{\em operator} & {\em 1.\ operand} & {\em 2.\ operand} 
+& {\em result type}\\
+\hlf
+\T{+} \T{*} & $T_1$ & $T_2$ & $T$ such that\\
+{\em conditions} & \multicolumn{2}{l}{\T{COMPLEX} $\sqsupseteq$
+\bt($T_1$)}
+& 1.\ $\form(T) = \mbox{\em MaxDim}(T_1, T_2)$\\
+& \multicolumn{2}{l}{\T{COMPLEX} $\sqsupseteq$ \bt($T_2$)}
+& 2.\ \bt($T$) = $\coerce(\{\bt(T_1),\bt(T_2)\})$\\
+\hlf
+\T{-} & $T_1$ & $T_2$ & $T$ such that\\
+{\em conditions} & \multicolumn{2}{l}{\T{COMPLEX} $\sqsupseteq$
+\bt($T_1$)}
+& 1.\ $\form(T) = \mbox{\em MaxDim}(T_1, T_2)$\\
+& \multicolumn{2}{l}{ \T{COMPLEX} $\sqsupseteq$ \bt($T_2$)}
+& 2.\ \bt($T$) =$\coerce(\{\bt(T_1),\bt(T_2),$\\
+& & & \quad $\T{INTEGER}\})$\\
+\hlf
+\T{/} & $T_1$ & $T_2$ & $T$ such that\\
+{\em conditions} & \multicolumn{2}{l}{\T{COMPLEX} $\sqsupseteq$
+\bt($T_1$)}
+& 1.\ $\form(T) = \mbox{\em MaxDim}(T_1, T_2)$\\
+& \multicolumn{2}{l}{ \T{COMPLEX} $\sqsupseteq$ \bt($T_2$)}
+& 2.\ \bt($T$) = $\coerce(\{\bt(T_1),\bt(T_2),$\\
+& & & \quad $\T{REAL}\})$\\
+\hlf
+\T{MOD} & $T_1$ & $T_2$ & $T$ such that\\
+{\em conditions} & \multicolumn{2}{l}{\T{INTEGER} $\sqsupseteq$
+\bt($T_1$)}
+& 1.\ $\mbox\form(T) = \mbox{\em MaxDim}(T_1, T_2)$\\
+& \multicolumn{2}{l}{ \T{INTEGER} $\sqsupseteq$ \bt($T_2$)}
+& 2.\ \bt($T$) = \T{NATURAL}\\
+\hlf
+\T{DIV} & $T_1$ & $T_2$ & $T$ such that\\
+{\em conditions} & \multicolumn{2}{l}{\T{INTEGER} $\sqsupseteq$
+\bt($T_1$)}
+& 1.\ $\mbox\form(T) = \mbox{\em MaxDim}(T_1, T_2)$\\
+& \multicolumn{2}{l}{ \T{INTEGER} $\sqsupseteq$ \bt($T_2$)}
+& 2.\ \bt($T$) = $\coerce(\{\bt(T_1), \bt(T_2)\})$\\
+\hlf
+\T{OR} \T{AND} & 
+$T_1$ & $T_2$ & $T$ such that\\
+{\em conditions} & \multicolumn{2}{l}{
+\bt($T_1$) = \T{BOOLEAN}}
+& 1.\ $\mbox\form(T) = \mbox{\em MaxDim}(T_1, T_2)$\\
+& \multicolumn{2}{l}{\bt($T_2$) = \T{BOOLEAN}}
+& 2.\ \bt($T$) = \T{BOOLEAN}\\
+\hlf
+\end{tabular}
+
+The binary relational operators accept only operands whose type is
+included by \T{REAL} except the tests for (in)equality which may be
+applied to compatible multi-dimensional operands. To enable the use of
+these expressions in the condition of a conditional or repetitive
+statement the result type of such an expression is a scalar
+\T{BOOLEAN}.
+
+\begin{tabular}{llll}
+\\
+{\em binary operator} & {\em 1.\ operand} & {\em 2.\ operand} 
+& {\em result type}\\
+\hlf
+\T{>} \T{>=}\\
+\T{<} \T{<=} & $T_1$ & $T_2$ & \T{BOOLEAN}\\
+{\em conditions} & \multicolumn{2}{l}{
+$T_1 \sqsupseteq T_2 \vee T_2 \sqsupseteq T_1$}\\
+\hlf
+\T{<>} \T{=} & $T_1$ & $T_2$ & \T{BOOLEAN}\\
+{\em conditions} & \multicolumn{2}{l}{
+$\bt(T_1) \sqsupseteq \bt(T_2)$}\\
+& \multicolumn{2}{l}{ 
+  $T_1 \approx T_2 \vee T_2 \approx T_1$}\\
+\\
+\end{tabular}
+
+It is a static error if in an expression the operands are not
+expression compatible. It is a checked run-time error if the actual
+types of the operands of an expression are not expression compatible.

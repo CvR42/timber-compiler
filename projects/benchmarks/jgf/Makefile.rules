@@ -1,0 +1,91 @@
+SPARFLAGS_B0N0 := --noboundscheck --nonotnullassert
+SPARFLAGS_B1N0 := --nonotnullassert
+SPARFLAGS_B0N1 := --noboundscheck
+SPARFLAGS_B1N1 :=
+TIMEFORMAT = %U+%S
+TIME = /usr/bin/time --format $(TIMEFORMAT)
+
+%-java-b0n0-exe$(EXE) : %.java
+	spar $(SPARFLAGS) $(SPARFLAGS_B0N0) $^ -o $@
+
+%-java-b0n1-exe$(EXE) : %.java
+	spar $(SPARFLAGS) $(SPARFLAGS_B0N1) $^ -o $@
+
+%-java-b1n0-exe$(EXE) : %.java
+	spar $(SPARFLAGS) $(SPARFLAGS_B1N0) $^ -o $@
+
+%-java-b1n1-exe$(EXE) : %.java
+	spar $(SPARFLAGS) $(SPARFLAGS_B1N1) $^ -o $@
+
+%-spar-b0n0-exe$(EXE) : %.spar
+	spar $(SPARFLAGS) $(SPARFLAGS_B0N0) $^ -o $@
+
+%-spar-b0n1-exe$(EXE) : %.spar
+	spar $(SPARFLAGS) $(SPARFLAGS_B0N1) $^ -o $@
+
+%-spar-b1n0-exe$(EXE) : %.spar
+	spar $(SPARFLAGS) $(SPARFLAGS_B1N0) $^ -o $@
+
+%-spar-b1n1-exe$(EXE) : %.spar
+	spar $(SPARFLAGS) $(SPARFLAGS_B1N1) $^ -o $@ 
+
+%.class : %.java
+	javac -O $^
+
+%.result %.time: %-exe$(EXE)
+	$(TIME) --output=$*.time ./$^ &> $*.result
+
+%-hotspot-server.result %-hotspot-server.time : %.class
+	$(TIME) --output=$*-hotspot-server.time java -server -noverify $(JAVAFLAGS) $* &> $*-hotspot-server.result
+
+%-hotspot-desktop.result %-hotspot-desktop.time : %.class
+	$(TIME) --output=$*-hotspot-desktop.time java -noverify $(JAVAFLAGS) $* &> $*-hotspot-desktop.result
+
+
+default :
+	@echo "Please enter explicit target:"
+	@echo "  clean: remove all exe/out/class files"
+
+# rules to produce Java results
+
+runs-spar: $(SPARRESULTS)
+
+SPARVERSIONS := b0n0 b1n1 b1n0 b0n1
+HOTSPOTVERSIONS := desktop server
+
+CLASSFILES := $(BENCHMARKS:%=%.class)
+EXEFILES := ${foreach VER,$(SPARVERSIONS),${foreach B,$(BENCHMARKS),$B-java-$(VER)-exe$(EXE)}}
+JAVARESULTS := ${foreach VER,$(HOTSPOTVERSIONS),${foreach B,$(BENCHMARKS),$B-hotspot-$(VER).result}}
+SPARRESULTS := ${foreach VER,$(SPARVERSIONS),${foreach B,$(BENCHMARKS),$B-java-$(VER).result}}
+JAVATIMES := ${foreach VER,$(HOTSPOTVERSIONS),${foreach B,$(BENCHMARKS),$B-hotspot-$(VER).time}}
+SPARTIMES := ${foreach VER,$(SPARVERSIONS),${foreach B,$(BENCHMARKS),$B-java-$(VER).time}}
+RESULTS := $(JAVARESULTS) $(SPARRESULTS)
+TIMES := $(JAVATIMES) $(SPARTIMES)
+
+runs-java: $(JAVARESULTS)
+
+runs: $(RESULTS)
+
+results: $(RESULTS)
+
+all: $(CLASSFILES) $(EXEFILES)
+
+progs: $(CLASSFILES) $(EXEFILES)
+
+dumps:
+	echo $(TIMES)
+
+.PRECIOUS: $(CLASSFILES) $(EXEFILES)
+
+JUNK = $(CLASSFILES) $(EXEFILES) *.stackdump
+
+PRECIOUSJUNK = $(RESULTS) $(TIMES)
+
+empty:
+	$(RM) $(JUNK) $(PRECIOUSJUNK)
+
+clean:
+	$(RM) $(JUNK)
+
+.PHONY : clean default empty runs runs-spar runs-java
+.SUFFIXES: .spar .java .class .result .time

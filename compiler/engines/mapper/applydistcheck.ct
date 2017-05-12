@@ -1,0 +1,78 @@
+/* Applydistcheck engine
+
+   Check that no old style distributions remain.
+   Thorough check on all places that can contain annotations.
+   */
+
+.. File: applytag.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors vnusprog declaration block statement
+.append actors TypePragmas LocWrapper ExprWrapper
+.set actors_copy $(actors)
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "applydiststrip.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Utility stuff ---- */
+
+/*
+  For now generate a warning, but eventually change this into an internal
+  error.
+  */
+void check_pragmas(
+    Pragma_list l, const char *nodeName)
+{
+    if (l == Pragma_listNIL)
+	return;
+    if (pragma_list_contains_tmsymbol(l, add_tmsymbol("dist")))
+    {
+	fprintf(stderr,"Warning: %s node still contains distribution\n",nodeName);
+    }
+}
+
+
+/* ----------- Actors ----------- */
+
+/*
+  As all nodes we want to visit have the pragmas in a field with the same
+  name, we can simply generate similar actions for all of them.
+  */
+.foreach t $(actors_copy)
+static $t rewrite_$t_action(
+    $t e, global_context gc)
+{
+    check_pragmas(e->pragmas, "$t");
+.call generate_walker_call "    " e $t $t
+    return e;
+}
+
+.endforeach
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_dist_check( vnusprog elm, global_context gc )
+{
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}
+

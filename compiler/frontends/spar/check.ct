@@ -1,0 +1,2770 @@
+.. File: check.ct
+..
+.. Enforcement of context sensitive restrictions of Spar/Java
+..
+.. Return 'walk' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the datastructure we're walking on, and a type 't', of that variable,
+.. generate a return statement.
+.macro generate_walker_return indent var t
+$(indent)return ok;
+.endmacro
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+$(indent)bool ok = true;
+
+.if ${member ${stemname $t} ${typelist}}
+$(indent)if( $(var) == 0 ){
+$(indent)$(indent)return ok;
+$(indent)}
+.endif
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+static bool check_$t_walker( $t $(var), check_data *ctx )
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we're walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+static bool check_$t_walker( $t $(var), check_data *ctx );
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)ok &= check_$(type)_action( $(var), ctx );
+.else
+$(indent)ok &= check_$(type)_action( to_$(type)( $(var) ), ctx );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)ok &= check_$(type)_walker( $(var), ctx );
+.else
+$(indent)ok &= check_$(type)_walker( to_$(type)( $(var) ), ctx );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var', and a type 'type', generate
+.. the body of an empty walker function.
+.macro generate_empty_walker_body indent var type
+$(indent)(void) $(var);
+$(indent)(void) ctx;
+.endmacro
+..
+.. For which types are there actions defines?
+.set actors
+.append actors AssignStatement
+.append actors BinopExpression
+.append actors Block
+.append actors Cardinality
+.append actors Cardinality_list
+.append actors CastExpression
+.append actors ClassInstanceOfExpression
+.append actors ComplexExpression
+.append actors ConcreteTypeEntry
+.append actors ConstructorDeclaration
+.append actors DeleteStatement
+.append actors DoWhileStatement
+.append actors Entry_list
+.append actors FormalParameter
+.append actors FormalParameter_list
+.append actors ForwardFieldEntry
+.append actors ForwardFunctionEntry
+.append actors FunctionDeclaration
+.append actors GenericMapping_list
+.append actors GetBufExpression
+.append actors GetLengthExpression
+.append actors GetSizeExpression
+.append actors GlobalVariableEntry
+.append actors GotoStatement
+.append actors IfExpression
+.append actors IfStatement
+.append actors InstanceOfExpression
+.append actors LocalVariableEntry
+.append actors MethodDeclaration
+.append actors MethodInvocationExpression
+.append actors MethodInvocationStatement
+.append actors MethodMapping_list
+.append actors PrintLineStatement
+.append actors PrintStatement
+.append actors ReturnStatement
+.append actors SubscriptExpression
+.append actors SwitchCase_list
+.append actors SwitchStatement
+.append actors SynchronizedStatement
+.append actors TypeDeclaration
+.append actors UnopExpression
+.append actors ValueReturnStatement
+.append actors VariableEntry
+.append actors VariableName
+.append actors VariableNameExpression
+.append actors WhereExpression
+.append actors WhileStatement
+.append actors declaration
+.append actors statement
+.append actors statement_list
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "SparProgram" "$(actors)"}
+..
+
+/* File: check.c
+ *
+ * Check the correctness of a vnus program.
+ */
+
+#include <stdio.h>
+#include <string.h>
+#include <ctype.h>
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "error.h"
+#include "symbol_table.h"
+#include "global.h"
+#include "check.h"
+#include "collect.h"
+#include "typederive.h"
+#include "service.h"
+#include "typename.h"
+#include "exprname.h"
+#include "analyze.h"
+
+.foreach t VariableName
+typedef ${alias $t} $t;
+.endforeach
+
+#define IS_PROCEDURE true
+#define IS_FUNCTION false
+
+typedef enum en_blockctx {
+    BCTX_FUNCTION,
+    BCTX_PROCEDURE,
+    BCTX_GLOBALCODE,
+    BCTX_SYMTAB,
+    BCTX_OBJECT
+} blockctx;
+
+typedef struct str_check_data {
+    Entry_list *symtab;
+    origin org;
+    type returntype;		// In a function, what type does it return.
+    TypeEntry_list typelist;
+    blockctx where;
+    origsymbol_list labels;
+} check_data;
+
+.call generate_walker_forwards "$(visit_types)"
+
+#line $[1+${tpllineno}] "${tplfilename}"
+
+/* Given the type of the lhs, the type of the rhs, and the assigned
+ * expression, return true iff this is a valid narrowing primitive
+ * conversion in an assignment.
+ * As stated in JLS2 5.2:
+ *
+ * In addition, a narrowing primitive conversion may be used if all of the
+ * following conditions are satisfied:
+ *
+ * + The expression is a constant expression of type byte, short, char or int. 
+ * + The type of the variable is byte, short, or char. 
+ * + The value of the expression (which is known at compile time,
+ *   because it is a constant expression) is representable in the type of
+ *   the variable.
+ */
+static bool is_valid_narrowing_assignment( const_type tlhs, const_type trhs, const_expression rhs, bool *overflow )
+{
+    // This implements the conditions specified in JLS2 5.2 'Assignment
+    // conversion'.
+
+    // First clause.
+    *overflow = false;
+    if(
+	trhs->tag != TAGPrimitiveType ||
+        !is_compiletime_constant( rhs, origsymbol_listNIL )
+    ){
+	return false;
+    }
+    vnus_int val;
+
+    switch( rhs->tag ){
+	case TAGByteExpression:
+	    val = to_const_ByteExpression(rhs)->v;
+	    break;
+
+	case TAGShortExpression:
+	    val = to_const_ShortExpression(rhs)->v;
+	    break;
+
+	case TAGCharExpression:
+	    // TODO: do this right for all unicode values.
+	    val = to_const_CharExpression(rhs)->c;
+	    break;
+
+	case TAGIntExpression:
+	    val = to_const_IntExpression(rhs)->v;
+	    break;
+
+	default:
+	    return false;
+
+    }
+
+    // Second clause.
+    if( tlhs->tag != TAGPrimitiveType ){
+	return false;
+    }
+    BASETYPE bt = to_const_PrimitiveType(tlhs)->base;
+    switch( bt ){
+	case BT_BYTE:
+	    *overflow = true;
+	    return (val>=VNUS_BYTE_MIN) && (val<=VNUS_BYTE_MAX);
+
+	case BT_SHORT:
+	    *overflow = true;
+	    return (val>=VNUS_SHORT_MIN) && (val<=VNUS_SHORT_MAX);
+
+	case BT_CHAR:
+	    *overflow = true;
+	    return (val>=VNUS_CHAR_MIN) && (val<=VNUS_CHAR_MAX);
+
+	default:
+	    break;
+    }
+   
+    return false;
+}
+
+/* Given the type of the lhs and the type of the rhs, check if they are
+ * assignment compatible.
+ */
+static bool assigncompare_types(
+    Entry_list symtab,
+    TypeEntry_list typelist,
+    const_origin org,
+    const_type tlhs,
+    const_type trhs,
+    const_expression rhs
+)
+{
+    bool overflow;
+
+    // This implements the rules of JLS2 5.2
+    if( is_assignequivalent_type( symtab, typelist, trhs, tlhs ) ){
+	return true;
+    }
+    if( is_valid_narrowing_assignment( tlhs, trhs, rhs, &overflow ) ){
+	return true;
+    }
+    tmstring typenm_rhs = typename_type( trhs );
+    tmstring typenm_lhs = typename_type( tlhs );
+    if( is_valid_cast( symtab, typelist, trhs, tlhs ) ){
+	if( overflow ){
+	    origin_error(
+		org,
+		"Converting this %s constant to a %s would cause loss of precision",
+		typenm_rhs,
+		typenm_lhs
+	    );
+	}
+	else {
+	    origin_error(
+		org,
+		"assigning a %s to a %s requires an explicit cast",
+		typenm_rhs,
+		typenm_lhs
+	    );
+	}
+    }
+    else {
+	origin_error(
+	    org,
+	    "cannot assign a %s to a %s",
+	    typenm_rhs,
+	    typenm_lhs
+	);
+    }
+    rfre_tmstring( typenm_rhs );
+    rfre_tmstring( typenm_lhs );
+    return false;
+}
+
+/* Given the type of the formal parameter and the type of the actual
+ * parameter, check if they are compatible.
+ */
+static bool parametercompare_types( Entry_list symtab, TypeEntry_list typelist, const origin org, const type tformal, const type tactual )
+{
+    if( is_invocationequivalent_type( symtab, typelist, tactual, tformal ) ){
+	return true;
+    }
+    tmstring typenm_formal = typename_type( tformal );
+    tmstring typenm_actual = typename_type( tactual );
+    origin_error( org, "cannot pass a %s to a %s parameter", typenm_actual, typenm_formal );
+    rfre_tmstring( typenm_actual );
+    rfre_tmstring( typenm_formal );
+    return false;
+}
+
+/* Given an origin 'org', a formal parameter 'formal', and an actual
+ * parameter 'actual', check whether it is correct to pass the actual
+ * parameter can be passed to this formal parameter.
+ */
+static bool check_parm( Entry_list symtab, TypeEntry_list typelist, const origin org, const type formal_type, const expression actual )
+{
+    type actual_type;
+    bool ok;
+
+    if( formal_type == typeNIL ){
+	return false;
+    }
+    actual_type = derive_type_expression( symtab, actual );
+    if( actual_type == typeNIL ){
+	return false;
+    }
+    ok = parametercompare_types( symtab, typelist, org, formal_type, actual_type );
+    rfre_type( actual_type );
+    return ok;
+}
+
+/* Given a list of declarations 'decls', a function or procedure type
+ * 'routinetype' and an actual parameter list 'actuals', check that the
+ * routine is invoked with the correct number and type of parameters.
+ */
+static bool check_parmlist_type(
+ Entry_list symtab,
+ TypeEntry_list typelist,
+ const origin org,
+ const type routinetype,
+ const expression_list actuals,
+ bool is_procedure
+)
+{
+    bool ok = true;
+    unsigned int ix;
+    type_list formals = type_listNIL;
+    type rettype = typeNIL;
+
+    if( actuals == expression_listNIL ){
+	return ok;
+    }
+    switch( routinetype->tag ){
+	case TAGExceptionVariableType:
+	    origin_error( org, "cannot invoke an exception variable" );
+	    return false;
+
+	case TAGGCRefLinkType:
+	case TAGGCTopRefLinkType:
+	    origin_error( org, "cannot invoke a reflink" );
+	    return false;
+
+	case TAGPrimitiveType:
+	    origin_error( org, "cannot invoke a simple variable" );
+	    return false;
+
+	case TAGTypeType:
+	    origin_error( org, "cannot invoke a type" );
+	    return false;
+
+	case TAGArrayType:
+	case TAGPrimArrayType:
+	    origin_error( org, "cannot invoke an array" );
+	    return false;
+
+	case TAGVoidType:
+	    origin_error( org, "cannot invoke void" );
+	    return false;
+
+	case TAGNullType:
+	    origin_error( org, "cannot invoke 'null'" );
+	    return false;
+
+	case TAGTupleType:
+	    origin_error( org, "cannot invoke a record" );
+	    return false;
+
+	case TAGVectorType:
+	    origin_error( org, "cannot invoke a vector" );
+	    return false;
+
+	case TAGFunctionType:
+	    formals = to_FunctionType(routinetype)->formals;
+	    rettype = to_FunctionType(routinetype)->rettype;
+	    break;
+
+	case TAGGenericObjectType:
+	case TAGObjectType:
+	    origin_error( org, "cannot invoke a class or interface" );
+	    return false;
+
+	case TAGPragmaType:
+	    return check_parmlist_type(
+		symtab,
+		typelist,
+		org,
+		to_PragmaType( routinetype )->t,
+		actuals,
+		is_procedure
+	    );
+
+	case TAGTypeOf:
+	{
+	    type tx = derive_type_expression( symtab, to_TypeOf(routinetype)->x );
+	    bool res = check_parmlist_type( symtab, typelist, org, tx, actuals, is_procedure );
+
+	    rfre_type( tx );
+	    return res;
+	}
+
+	case TAGTypeOfIf:
+	{
+	    const_TypeOfIf ift = to_const_TypeOfIf(routinetype);
+	    type tx = calculate_ifexpression_type( symtab, ift->org, ift->thenval, ift->elseval );
+	    bool res = check_parmlist_type( symtab, typelist, org, tx, actuals, is_procedure );
+
+	    rfre_type( tx );
+	    return res;
+	}
+
+    }
+    if( formals == type_listNIL ){
+	return false;
+    }
+    if( actuals->sz != formals->sz ){
+	origin_error(
+	    org,
+	    "method called with %u instead of %u parameters",
+	    actuals->sz,
+	    formals->sz
+	);
+	ok = false;
+    }
+    if( ok ){
+	for( ix=0; ix<actuals->sz; ix++ ){
+	    ok &= check_parm( symtab, typelist, org, formals->arr[ix], actuals->arr[ix] );
+	}
+    }
+    if( is_procedure && rettype != typeNIL && rettype->tag != TAGVoidType ){
+	internal_error( "function invocation should have been rewritten" );
+    }
+    return ok;
+}
+
+/* Given a list of declarations 'decls', a function or procedure expression
+ * 'routine' and an actual parameter list 'actuals', check that the function
+ * is invoked with the correct number and type of parameters.
+ */
+static bool check_parmlist(
+ Entry_list symtab,
+ TypeEntry_list typelist,
+ const origin org,
+ const origsymbol routine,
+ const expression_list actuals,
+ bool is_procedure
+)
+{
+    bool ok = true;
+    type routinetype = derive_type_name( symtab, routine );
+
+    if( routinetype == typeNIL ){
+	return false;
+    }
+    ok = check_parmlist_type( symtab, typelist, org, routinetype, actuals, is_procedure );
+    rfre_type( routinetype );
+    return ok;
+}
+
+static bool check_Cardinality_symbol( Entry_list symtab, origsymbol s )
+{
+    Entry d = search_Entry( symtab, s->sym );
+    if( d == EntryNIL ){
+	origsymbol_error( s, "unknown cardinality variable" );
+	return false;
+    }
+    switch( d->tag ){
+        case TAGCardinalityVariableEntry:
+	    break;
+
+        case TAGLocalVariableEntry:
+        case TAGFormalParameterEntry:
+        case TAGGlobalVariableEntry:
+        case TAGFunctionEntry:
+        case TAGExternalFunctionEntry:
+        case TAGFieldEntry:
+        case TAGGCLinkEntry:
+        case TAGGCTopLinkEntry:
+        case TAGForwardFieldEntry:
+        case TAGForwardFunctionEntry:
+        case TAGAbstractFunctionEntry:
+	    origsymbol_error( s, "not a cardinality variable" );
+	    return false;
+    }
+    return true;
+}
+
+/*  Given a symbol, check that it is sensible to use in an expression. */
+static bool check_expression_symbol( Entry_list *symtab, const origsymbol s )
+{
+    const_Entry e = search_Entry( *symtab, s->sym );
+
+    if( e == EntryNIL ){
+	/* This should have been caught by the binding phase. */
+	origsymbol_internal_error( s, "unknown variable" );
+    }
+    return true;
+}
+
+/* Given a description 'desc' and a list of symbols 'l', check
+ * that the given list of symbols does not contain duplicate entries.
+ */
+static bool check_double_tmsymbols( const char *desc, const tmsymbol_list l )
+{
+    bool ok = true;
+
+    for( unsigned int ixa=0; ixa<l->sz; ixa++ ){
+	tmsymbol sa = l->arr[ixa];
+
+	for( unsigned int ixb=ixa+1; ixb<l->sz; ixb++ ){
+	    tmsymbol sb = l->arr[ixb];
+
+	    if( sa == sb ){
+		sprintf( errarg, "%s: '%s'", desc, sa->name );
+		error( "double declaration" );
+		ok = false;
+	    }
+	}
+    }
+    return ok;
+}
+
+/* Given a symbol 's', ensure that it is a valid function name. */
+static bool check_function_symbol( Entry_list symtab, const_origsymbol s )
+{
+    bool ok = true;
+    Entry d = search_Entry( symtab, s );
+
+    if( d == EntryNIL ){
+	origsymbol_error( s, "unknown method" );
+        return false;
+    }
+    switch( d->tag ){
+	case TAGExternalFunctionEntry:
+        case TAGFunctionEntry:
+        case TAGForwardFunctionEntry:
+        case TAGAbstractFunctionEntry:
+	    break;
+
+        case TAGGlobalVariableEntry:
+        case TAGLocalVariableEntry:
+        case TAGFormalParameterEntry:
+        case TAGCardinalityVariableEntry:
+        case TAGGCLinkEntry:
+        case TAGGCTopLinkEntry:
+        case TAGFieldEntry:
+        case TAGForwardFieldEntry:
+	    origsymbol_error( s, "not a method" );
+	    ok = false;
+	    break;
+    }
+    return ok;
+}
+
+/* Given a function or procedure name, and an FormalParameter list, compare
+ * this FormalParameter list with the one in the symbol table. Since we just
+ * derived the symbol table entries ourselves, there shouldn't be any
+ * difference.
+ */
+static bool compare_declaration_with_symboltable( Entry_list *symtab, origsymbol s, FormalParameter_list parms )
+{
+    bool ok = true;
+    Entry d = search_Entry( *symtab, s->sym );
+    FormalParameter_list st_args = FormalParameter_listNIL;
+
+    if( d == EntryNIL ){
+	origsymbol_error( s, "unknown method" );
+        return false;
+    }
+    switch( d->tag ){
+	case TAGGlobalVariableEntry:
+	case TAGFormalParameterEntry:
+	case TAGLocalVariableEntry:
+	case TAGCardinalityVariableEntry:
+	case TAGGCLinkEntry:
+	case TAGGCTopLinkEntry:
+        case TAGFieldEntry:
+        case TAGForwardFieldEntry:
+	    origsymbol_error( s, "the symboltable does not store this as a method" );
+	    return false;
+
+	case TAGFunctionEntry:
+	    st_args = to_FunctionEntry(d)->parameters;
+	    break;
+
+	case TAGForwardFunctionEntry:
+	    st_args = to_ForwardFunctionEntry(d)->parameters;
+	    break;
+
+	case TAGExternalFunctionEntry:
+	    st_args = to_ExternalFunctionEntry(d)->parameters;
+	    break;
+
+	case TAGAbstractFunctionEntry:
+	    st_args = to_AbstractFunctionEntry(d)->parameters;
+	    break;
+
+    }
+    if( st_args != FormalParameter_listNIL && !isequal_FormalParameter_list( st_args, parms ) ){
+	origsymbol_error( s, "declaration and symbol table entry differ" );
+	ok = false;
+    }
+    return ok;
+}
+
+// Given a type that is used for a subscript, make sure it can be used
+// in that role.
+static bool check_subscript_type( origin org, type t )
+{
+    bool ok = true;
+
+    if( t->tag != TAGPrimitiveType ){
+	tmstring tnm = typename_type( t );
+	origin_error( org, "Incompatible type for index element. Cannot convert %s to int", tnm );
+	rfre_tmstring( tnm );
+	return false;
+    }
+    BASETYPE bt = to_PrimitiveType(t)->base;
+    if( bt != BT_INT && !is_widening_prim_basetype( bt, BT_INT ) ){
+	tmstring tnm = typename_type( t );
+	origin_error( org, "Incompatible type for index element. Explicit cast needed to convert %s to int", tnm );
+	rfre_tmstring( tnm );
+	ok = false;
+    }
+    return ok;
+}
+
+/* Given an origin 'org', a list of sizes describing the subscribed
+ * array, and an expression that should evaluate to a vector containing
+ * the real subscription expressions, check that these lists agree with
+ * eachother.
+ *
+ * If rankexpr is expressionNIL, rank is 1. This occurs if the function
+ * is used to check primitive arrays or tuple subscripts.
+ */
+static bool check_selector_list(
+ Entry_list symtab,
+ const origin org,
+ const_expression rankexpr,
+ const expression sx
+)
+{
+    bool ok = true;
+    unsigned int rank;
+
+    if( rankexpr == expressionNIL ){
+	rank = 1;
+    }
+    else if( !extract_array_rank( originNIL, rankexpr, &rank ) ){
+	ok = false;
+	return ok;
+    }
+
+    type st = derive_type_expression( symtab, sx );
+    switch( st->tag ){
+	case TAGTupleType:
+	{
+	    TupleType tt = to_TupleType(st);
+	    type_list tl = tt->fields;
+
+	    if( rank<tl->sz ){
+		origin_error( org, "too many subscripts (%u instead of %u)", tl->sz, rank );
+		ok = false;
+	    }
+	    if( rank>tl->sz ){
+		origin_error(
+		    org,
+		    "only %u subscript%s (instead of %u)",
+		    tl->sz,
+		    (tl->sz == 1)?"":"s",
+		    rank
+		);
+		ok = false;
+	    }
+	    for( unsigned int ix=0; ix<tl->sz; ix++ ){
+		type t = tl->arr[ix];
+
+		ok |= check_subscript_type( org, t );
+	    }
+	    break;
+	}
+
+	case TAGVectorType:
+	{
+	    VectorType tt = to_VectorType(st);
+	    expression power = tt->power;
+	    unsigned int sz;
+
+	    if( extract_vector_power( org, power, &sz ) ){
+		if( rank<sz ){
+		    origin_error( org, "too many subscripts (%ld instead of %u)", sz, rank );
+		    ok = false;
+		}
+		if( rank>sz ){
+		    origin_error(
+			org,
+			"only %ld subscript%s (instead of %u)",
+			sz,
+			sz == 1?"":"s",
+			rank
+		    );
+		    ok = false;
+		}
+	    }
+	    else {
+		ok = false;
+	    }
+	    ok = check_subscript_type( org, tt->elmtype );
+	    break;
+	}
+
+	default:
+	    {
+		tmstring nm = typename_type( st );
+		origin_error( org, "only a vector can be used as subscript, not a %s", nm );
+		rfre_tmstring( nm );
+		ok = false;
+	    }
+    }
+    rfre_type( st );
+    return ok;
+}
+
+/* Given an origin 'org' and a type 't', check that it is a sensible type for
+ * a selection.
+ */
+static bool check_selection_type(
+ Entry_list symtab,
+ const origin org,
+ const type t,
+ const expression subscripts
+)
+{
+    bool ok = true;
+
+    switch( t->tag ){
+	case TAGPragmaType:
+	    ok = check_selection_type(
+		symtab,
+		org,
+		to_PragmaType(t)->t,
+		subscripts
+	    );
+	    break;
+
+	case TAGPrimitiveType:
+	    origin_error( org, "cannot select elements of a scalar" );
+	    ok = false;
+	    break;
+
+	case TAGTypeType:
+	    origin_error( org, "cannot select elements of a type" );
+	    ok = false;
+	    break;
+
+	case TAGVoidType:
+	    origin_error( org, "cannot select elements of void" );
+	    break;
+
+	case TAGNullType:
+	    origin_error( org, "cannot select elements of 'null'" );
+	    ok = false;
+	    break;
+
+	case TAGTupleType:
+	    // TODO: allow this
+	    origin_error( org, "cannot select elements of a tuple" );
+	    ok = false;
+	    break;
+
+	case TAGVectorType:
+	    ok = check_selector_list( symtab, org, expressionNIL, subscripts );
+	    break;
+
+	case TAGExceptionVariableType:
+	    origin_error( org, "cannot select elements of an exeptionvariabletype" );
+	    ok = false;
+	    break;
+
+	case TAGGCRefLinkType:
+	case TAGGCTopRefLinkType:
+	    origin_error( org, "cannot select elements of a mark link" );
+	    ok = false;
+	    break;
+
+	case TAGArrayType:
+	    ok = check_selector_list( symtab, org, to_ArrayType(t)->rank, subscripts );
+	    break;
+
+	case TAGPrimArrayType:
+	    ok = check_selector_list( symtab, org, expressionNIL, subscripts );
+	    break;
+
+	case TAGFunctionType:
+	    origin_error( org, "cannot select elements of a method" );
+	    ok = false;
+	    break;
+
+	case TAGGenericObjectType:
+	case TAGObjectType:
+	    origsymbol_error(
+		to_ObjectType(t)->name,
+		"cannot select elements of a class or interface"
+	    );
+	    ok = false;
+	    break;
+
+	case TAGTypeOf:
+	{
+	    type tx = derive_type_expression( symtab, to_TypeOf(t)->x );
+	    ok = check_selection_type( symtab, org, tx, subscripts );
+
+	    rfre_type( tx );
+	}
+
+	case TAGTypeOfIf:
+	{
+	    const_TypeOfIf ift = to_const_TypeOfIf(t);
+	    type tx = calculate_ifexpression_type( symtab, ift->org, ift->thenval, ift->elseval );
+	    ok = check_selection_type( symtab, org, tx, subscripts );
+
+	    rfre_type( tx );
+	}
+
+    }
+    return ok;
+}
+
+/* Given an origin 'org' and an expression 'loc', ensure that it is
+ * a valid expression, and that it represents a location.
+ */
+static bool check_location_expression( const_expression loc, const origin org )
+{
+    bool ok = true;
+
+    if( loc == expressionNIL ){
+	return ok;
+    }
+    switch( loc->tag ){
+	case TAGArrayInitExpression:
+	case TAGAssignOpExpression:
+	case TAGBinopExpression:
+	case TAGShortopExpression:
+	case TAGBooleanExpression:
+	case TAGByteExpression:
+	case TAGCharExpression:
+	case TAGClassIdExpression:
+	case TAGClassInstanceOfExpression:
+	case TAGComplexExpression:
+	case TAGDefaultValueExpression:
+	case TAGDoubleExpression:
+	case TAGFieldInvocationExpression:
+	case TAGFloatExpression:
+	case TAGGetBufExpression:
+	case TAGGetLengthExpression:
+	case TAGGetSizeExpression:
+	case TAGInstanceOfExpression:
+	case TAGIntExpression:
+	case TAGInterfaceInstanceOfExpression:
+	case TAGLongExpression:
+	case TAGMethodInvocationExpression:
+	case TAGNewClassExpression:
+	case TAGNewRecordExpression:
+	case TAGNullExpression:
+	case TAGOuterSuperInvocationExpression:
+	case TAGOuterThisExpression:
+	case TAGPostDecrementExpression:
+	case TAGPostIncrementExpression:
+	case TAGPreDecrementExpression:
+	case TAGPreIncrementExpression:
+	case TAGShortExpression:
+	case TAGSizeofExpression:
+	case TAGStringExpression:
+	case TAGInternalizeExpression:
+	case TAGSuperInvocationExpression:
+	case TAGTypeExpression:
+	case TAGTypeInstanceOfExpression:
+	case TAGTypeInvocationExpression:
+	case TAGUnopExpression:
+	case TAGVectorExpression:
+	case TAGBracketExpression:
+	{
+	    tmstring nm = name_expression( loc );
+	    origin_error( org, "expression '%s' does not describe a location", nm );
+	    rfre_tmstring( nm );
+	    ok = false;
+	    break;
+	}
+
+	case TAGIfExpression:
+	    ok = check_location_expression( to_const_IfExpression(loc)->thenval, org );
+	    ok &= check_location_expression( to_const_IfExpression(loc)->thenval, org );
+	    break;
+
+	case TAGWhereExpression:
+	    ok = check_location_expression( to_const_WhereExpression(loc)->x, org );
+	    break;
+
+	case TAGForcedCastExpression:
+	    ok = check_location_expression( to_const_ForcedCastExpression(loc)->x, org );
+	    break;
+
+	case TAGCastExpression:
+	    ok = check_location_expression( to_const_CastExpression(loc)->x, org );
+	    break;
+
+	case TAGAnnotationExpression:
+	    ok = check_location_expression( to_const_AnnotationExpression(loc)->x, org );
+	    break;
+
+	case TAGNotNullAssertExpression:
+	    ok = check_location_expression( to_const_NotNullAssertExpression(loc)->x, org );
+	    break;
+
+	case TAGClassExpression:
+	case TAGFieldExpression:
+	case TAGNewArrayExpression:
+	case TAGNewInitArrayExpression:
+	case TAGSubscriptExpression:
+	case TAGSuperFieldExpression:
+	case TAGOuterSuperFieldExpression:
+	case TAGTypeFieldExpression:
+	case TAGVectorSubscriptExpression:
+	    break;
+
+	case TAGVariableNameExpression:
+	{
+	    varflags flags = to_const_VariableNameExpression(loc)->flags;
+	    if( !(flags & VAR_GENERATED) ){
+		if( flags & VAR_THIS ){
+		    origin_error( org, "A 'this' expression is not a location" );
+		    ok = false;
+		}
+		if( flags & VAR_CLASS ){
+		    origin_error( org, "A 'class' expression is not a location" );
+		    ok = false;
+		}
+	    }
+	    break;
+	}
+
+    }
+    return ok;
+}
+
+/* Given an origin 'org', an unary operator, and an operand, check
+ * that the expression is sensible.
+ */
+static bool check_unop( Entry_list symtab, const origin org, const UNOP optor, const expression operand )
+{
+    type t = derive_type_expression( symtab, operand );
+    bool ok = true;
+
+    switch( optor ){
+	case UNOP_NOT:
+	    if( !is_boolean_type( symtab, t ) && !is_integral_type( symtab, t ) ){
+		origin_error( org, "the 'not' operator requires a boolean or integral operand" );
+		ok = false;
+	    }
+	    break;
+
+	case UNOP_PLUS:
+	    if( !is_numeric_type( symtab, t ) ){
+		origin_error( org, "the unary '+' operator requires a numeric operand" );
+		ok = false;
+	    }
+	    break;
+
+	case UNOP_NEGATE:
+	    if( !is_numeric_type( symtab, t ) ){
+		origin_error( org, "the negation operator requires a numeric operand" );
+		ok = false;
+	    }
+	    break;
+
+	case UNOP_INVERT:
+	    if( !is_numeric_type( symtab, t ) ){
+		origin_error( org, "the inversion operator requires a numeric operand" );
+		ok = false;
+	    }
+	    break;
+
+    }
+    rfre_type( t );
+    return ok;
+}
+
+static bool is_zero_constant( Entry_list symtab, const_expression x )
+{
+    switch( x->tag ){
+	case TAGIntExpression:
+	    return to_const_IntExpression(x)->v == 0;
+
+	case TAGByteExpression:
+	    return to_const_ByteExpression(x)->v == 0;
+
+	case TAGShortExpression:
+	    return to_const_ShortExpression(x)->v == 0;
+
+	case TAGLongExpression:
+	    return to_const_LongExpression(x)->v == 0;
+
+	case TAGForcedCastExpression:
+	    if( !is_integral_type( symtab, to_const_ForcedCastExpression(x)->t ) ){
+	        return false;
+	    }
+	    return is_zero_constant( symtab, to_const_ForcedCastExpression(x)->x );
+
+	case TAGCastExpression:
+	    if( !is_integral_type( symtab, to_const_CastExpression(x)->t ) ){
+	        return false;
+	    }
+	    return is_zero_constant( symtab, to_const_CastExpression(x)->x );
+
+	case TAGBracketExpression:
+	    return is_zero_constant( symtab, to_const_BracketExpression(x)->x );
+
+	case TAGAnnotationExpression:
+	    return is_zero_constant( symtab, to_const_AnnotationExpression(x)->x );
+
+	case TAGArrayInitExpression:
+	case TAGAssignOpExpression:
+	case TAGBinopExpression:
+	case TAGShortopExpression:
+	case TAGBooleanExpression:
+	case TAGCharExpression:
+	case TAGClassIdExpression:
+	case TAGClassInstanceOfExpression:
+	case TAGComplexExpression:
+	case TAGDefaultValueExpression:
+	case TAGDoubleExpression:
+	case TAGFieldInvocationExpression:
+	case TAGFloatExpression:
+	case TAGGetBufExpression:
+	case TAGGetLengthExpression:
+	case TAGGetSizeExpression:
+	case TAGInstanceOfExpression:
+	case TAGInterfaceInstanceOfExpression:
+	case TAGMethodInvocationExpression:
+	case TAGNewClassExpression:
+	case TAGNewRecordExpression:
+	case TAGNullExpression:
+	case TAGOuterSuperInvocationExpression:
+	case TAGOuterThisExpression:
+	case TAGPostDecrementExpression:
+	case TAGPostIncrementExpression:
+	case TAGPreDecrementExpression:
+	case TAGPreIncrementExpression:
+	case TAGSizeofExpression:
+	case TAGStringExpression:
+	case TAGInternalizeExpression:
+	case TAGSuperInvocationExpression:
+	case TAGTypeExpression:
+	case TAGTypeInstanceOfExpression:
+	case TAGTypeInvocationExpression:
+	case TAGUnopExpression:
+	case TAGVectorExpression:
+	case TAGWhereExpression:
+	case TAGIfExpression:
+	case TAGNotNullAssertExpression:	// Can't be an integral expr.
+	case TAGClassExpression:
+	case TAGFieldExpression:
+	case TAGNewArrayExpression:
+	case TAGNewInitArrayExpression:
+	case TAGSubscriptExpression:
+	case TAGSuperFieldExpression:
+	case TAGOuterSuperFieldExpression:
+	case TAGTypeFieldExpression:
+	case TAGVectorSubscriptExpression:
+	case TAGVariableNameExpression:
+	    break;
+    }
+    return false;
+}
+
+#define is_equalitycompare_operator(op) (((op)==BINOP_EQUAL)||((op)==BINOP_NOTEQUAL))
+
+/* Given an origin 'org', a binary operator, and two operands, check
+ * that the expression is sensible.
+ */
+static bool check_binop( Entry_list symtab, TypeEntry_list typelist, origin org, expression opa, BINOP optor, expression opb )
+{
+    type ta = derive_type_expression( symtab, opa );
+    type tb = derive_type_expression( symtab, opb );
+    bool ok = true;
+
+    if( is_equalitycompare_operator( optor ) ){
+	if(
+	    (is_ReferenceType( ta ) && tb->tag == TAGNullType) ||
+	    (is_ReferenceType( tb ) && ta->tag == TAGNullType) ||
+	    (ta->tag == TAGNullType && tb->tag == TAGNullType)
+	){
+	    ok = true;
+	}
+	else if( ta->tag == TAGPrimitiveType && is_identity_conv_type( symtab, ta, tb ) ){
+	    ok = true;
+	}
+	else if( is_ReferenceType( ta ) && (is_valid_cast( symtab, typelist, ta, tb ) || is_valid_cast( symtab, typelist, tb, ta )) ){
+	    ok = true;
+	}
+	else {
+	    tmstring nma = typename_type( ta );
+	    tmstring nmb = typename_type( tb );
+
+	    origin_error( org, "cannot compare a %s and a %s", nma, nmb );
+	    rfre_tmstring( nma );
+	    rfre_tmstring( nmb );
+	    ok = false;
+	}
+	rfre_type( ta );
+	rfre_type( tb );
+	return ok;
+    }
+    switch( optor ){
+	/* Boolean operators. */
+	case BINOP_AND:
+	case BINOP_OR:
+	case BINOP_XOR:
+	    if( is_integral_type( symtab, ta ) && is_integral_type( symtab, tb ) ){
+		break;
+	    }
+	    if( !is_boolean_type( symtab, ta ) || !is_boolean_type( symtab, tb ) ){
+		tmstring nma;
+		tmstring nmb;
+
+		nma = typename_type( ta );
+		nmb = typename_type( tb );
+		sprintf( errarg, "actual types are: %s and %s", nma, nmb );
+		rfre_tmstring( nma );
+		rfre_tmstring( nmb );
+		origin_error( org, "a boolean operator requires boolean or integral operands" );
+		ok = false;
+	    }
+	    break;
+
+	/* numeric operators. */
+	case BINOP_MOD:
+	case BINOP_PLUS:
+	case BINOP_MINUS:
+	case BINOP_TIMES:
+	case BINOP_DIVIDE:
+	    // The '+' as string concatenation is a special case
+	    if( optor == BINOP_PLUS && is_String_type( ta ) && is_String_type( tb ) ){
+		break;
+	    }
+	    if( !is_numeric_type( symtab, ta ) || !is_numeric_type( symtab, tb ) ){
+		tmstring nma;
+		tmstring nmb;
+
+		nma = typename_type( ta );
+		nmb = typename_type( tb );
+		sprintf( errarg, "actual types are: %s and %s", nma, nmb );
+		rfre_tmstring( nma );
+		rfre_tmstring( nmb );
+		origin_error( org, "a numeric operator requires numeric operands" );
+		ok = false;
+	    }
+	    if(
+		optor == BINOP_MOD &&
+		(is_complex_type( symtab, ta ) || is_complex_type( symtab, tb ))
+	    ){
+		origin_error( org, "The '%%' operator is not defined for complex numbers" );
+		ok = false;
+	    }
+	    if( optor == BINOP_DIVIDE || optor == BINOP_MOD ){
+		if(
+		    is_zero_constant( symtab, opb ) &&
+		    is_integral_type( symtab, ta )
+		){
+		    if( is_compiletime_constant( opa, origsymbol_listNIL ) ){
+			// Since both sides are compile-time constants,
+			// we consider this an error.
+			origin_error( org, "Division by zero" );
+			ok = false;
+		    }
+		    else {
+			origin_warning( org, "Division by zero" );
+		    }
+		}
+
+	    }
+	    break;
+
+
+	/* comparison operators. */
+	case BINOP_EQUAL:
+	case BINOP_NOTEQUAL:
+	case BINOP_LESS:
+	case BINOP_LESSEQUAL:
+	case BINOP_GREATER:
+	case BINOP_GREATEREQUAL:
+	    /* TODO: complex numbers and strings have no order. */
+	    if( !is_assignequivalent_type( symtab, typelist, ta, tb ) ){
+		tmstring nma = typename_type( ta );
+		tmstring nmb = typename_type( tb );
+
+		origin_error( org, "cannot compare %s with %s", nma, nmb );
+		rfre_tmstring( nma );
+		rfre_tmstring( nmb );
+		ok = false;
+	    }
+	    break;
+
+	case BINOP_SHIFTLEFT:
+	case BINOP_SHIFTRIGHT:
+	case BINOP_USHIFTRIGHT:
+	    // This enforces type specifications of JLS2 15.19
+	    if( !is_integral_type( symtab, ta ) ){
+		tmstring nm = typename_type( ta );
+
+		sprintf( errarg, "left operand is of type %s", nm );
+		rfre_tmstring( nm );
+		origin_error( org, "Only integral types can be shifted" );
+		return false;
+	    }
+	    if( !is_integral_type( symtab, tb ) ){
+		tmstring nm = typename_type( ta );
+
+		sprintf( errarg, "it is of type %s", nm );
+		rfre_tmstring( nm );
+		origin_error( org, "Shift amount must be of an integral type" );
+		return false;
+	    }
+	    break;
+    }
+    rfre_type( ta );
+    rfre_type( tb );
+    return ok;
+}
+
+/* Given a symbol table, return a list of the symbols in it. */
+static tmsymbol_list collect_symtab_entries( Entry_list l )
+{
+    tmsymbol_list ans = new_tmsymbol_list();
+
+    ans = setroom_tmsymbol_list( ans, l->sz );
+    for( unsigned int ix=0; ix<l->sz; ix++ ){
+	ans = append_tmsymbol_list( ans, rdup_tmsymbol( l->arr[ix]->name ) );
+    }
+    return ans;
+}
+
+/* Given a list of types and an interface to implement, make sure
+ * that the type that is mentioned is in fact an interface.
+ */
+static bool check_implements( TypeEntry_list typelist, type t_interface )
+{
+    assert( t_interface->tag == TAGObjectType );
+    origsymbol interface = to_ObjectType( t_interface )->name;
+    TypeEntry e = lookup_TypeEntry( typelist, interface );
+
+    if( e != TypeEntryNIL ){
+	if( e->tag == TAGClassEntry ){
+	    origsymbol_error( interface, "Cannot implement a class" );
+	    return false;
+	}
+	if( e->tag != TAGInterfaceEntry ){
+	    origsymbol_error( interface, "Cannot implement this" );
+	    return false;
+	}
+    }
+    return true;
+}
+
+/* Given a list of types and a list of interfaces to implement, make sure
+ * that all the types that are mentioned are in fact interfaces.
+ */
+static bool check_implements_list( TypeEntry_list typelist, type_list interfaces )
+{
+    bool ok = true;
+
+    for( unsigned int ix=0; ix<interfaces->sz; ix++ ){
+	ok = check_implements( typelist, interfaces->arr[ix] );
+    }
+    return ok;
+}
+
+/* -------- actors ---------- */
+
+/* Action for a declaration.  */
+static bool check_declaration_action(
+ const declaration decl,
+ check_data *ctx
+)
+{
+    bool ok = true;
+    if( !decl->used ){
+	return ok;
+    }
+
+    const origin oldorg = ctx->org;
+    ctx->org = decl->org;
+.call generate_walker_call "    " decl declaration declaration
+    ctx->org = oldorg;
+    return ok;
+}
+
+/* Action for a GenericMapping_list.  */
+static bool check_GenericMapping_list_action(
+ const GenericMapping_list l,
+ check_data *ctx
+)
+{
+    // Don't try to check the generic mappings
+    (void) l;
+    (void) ctx;
+    (void) check_GenericMapping_list_walker;
+    return true;
+}
+
+/* Action for a MethodMapping_list.  */
+static bool check_MethodMapping_list_action(
+ const MethodMapping_list l,
+ check_data *ctx
+)
+{
+    // Don't try to check the generic mappings
+    (void) l;
+    (void) ctx;
+    (void) check_MethodMapping_list_walker;
+    return true;
+}
+
+/* Given an FormalParameter 'arg', check the given
+ * function or procedure FormalParameter.
+ */
+static bool check_FormalParameter_action(
+ const FormalParameter arg,
+ check_data *ctx
+)
+{
+    bool ok = true;
+    if( arg == FormalParameterNIL ){
+	return ok;
+    }
+    origsymbol s = arg->name;
+
+.call generate_walker_call "    " arg FormalParameter FormalParameter
+    if( ok ){
+	Entry d = search_Entry( *ctx->symtab, s->sym );
+
+	if( d == EntryNIL ){
+	    origsymbol_error( s, "unknown formal parameter" );
+	    ok = false;
+	}
+	else {
+	    switch( d->tag ){
+		case TAGFormalParameterEntry:
+		    break;
+
+		case TAGGlobalVariableEntry:
+		case TAGLocalVariableEntry:
+		case TAGCardinalityVariableEntry:
+		case TAGGCLinkEntry:
+		case TAGGCTopLinkEntry:
+		case TAGFunctionEntry:
+		case TAGExternalFunctionEntry:
+		case TAGAbstractFunctionEntry:
+		case TAGForwardFunctionEntry:
+		case TAGFieldEntry:
+		case TAGForwardFieldEntry:
+		    origsymbol_error( s, "not a formal parameter" );
+		    ok = false;
+		    break;
+	    }
+	}
+    }
+    return ok;
+}
+
+/* Given a symbol, check that it is valid. */
+static bool check_VariableName_action( const VariableName s, check_data *ctx )
+{
+    bool ok = true;
+
+    if( s != origsymbolNIL ){
+	const char *str = s->sym->name;
+	const char *pos = strstr( str, "__" );
+
+	if( pos != NULL ){
+	    if( !(pos == str+1 && str[0] == 'v')  && !(pos == str && isdigit( str[2] ) ) ){
+		(void) sprintf( errarg, "'%s'", str );
+		origin_error( s->org, "names containing \"__\" are reserved for internal use" );
+	    }
+	    ok = false;
+	}
+.call generate_walker_call "        " s VariableName VariableName
+    }
+    return ok;
+}
+
+/* Check an element 't' of type 'functioncall' */
+static bool check_MethodInvocationExpression_action(
+ const MethodInvocationExpression t,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " t MethodInvocationExpression MethodInvocationExpression
+    if( ok ){
+	ok &= check_parmlist( *ctx->symtab, ctx->typelist, ctx->org, t->invocation->name, t->invocation->parameters, IS_FUNCTION );
+    }
+    return ok;
+}
+
+/* Given an FormalParameter list 'l', check the
+ * FormalParameter list of the function or procedure.
+ */
+static bool check_FormalParameter_list_action(
+ const FormalParameter_list l,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " l FormalParameter_list FormalParameter_list
+    if( ok ){
+	ok = check_duplicate_FormalParameters( l );
+    }
+    return ok;
+}
+
+/* Given a FunctionDeclaration, check it.  */
+static bool check_FunctionDeclaration_action(
+ const FunctionDeclaration fn,
+ check_data *ctx
+)
+{
+    bool ok = true;
+    blockctx oldwhere = ctx->where;
+    const type old_returntype = ctx->returntype;
+
+    if( is_void_type( fn->rettype ) ){
+	ctx->returntype = typeNIL;
+	ctx->where = BCTX_PROCEDURE;
+    }
+    else {
+	ctx->returntype = fn->rettype;
+	ctx->where = BCTX_FUNCTION;
+    }
+.call generate_walker_call "    " fn FunctionDeclaration FunctionDeclaration
+    ctx->where = oldwhere;
+    ctx->returntype = old_returntype;
+    return ok;
+}
+
+// Given the 'throws' clause of a method and the 'throws' clause of the
+// method that it overrides, complain if one of the elements of the 'throws'
+// is not a subclass of an element in the 'throws' clause of the superclass.
+static bool check_throws_overriding( origin org, type_list tl, type_list supertl )
+{
+    bool ok = true;
+
+    // TODO: implement this properly
+    (void) tl;
+    (void) supertl;
+    (void) org;
+#if 0
+    for( unsigned int ix=0; ix<tl->sz; ix++ ){
+	origsymbol e = tl->arr[ix];
+	if( !member_origsymbol_list( supertl, e ) ){
+	    origin_error( org, "method %s in %s cannot be overridden by a private method", sig, superm->owner->name );
+	    ok = false;
+	}
+    }
+#endif
+    return ok;
+}
+
+// Given a method entry 'm' and a method entry 'superm' that is supposed
+// to represent the method that is overridden or hidden, ensure that none
+// of the restrictions described in JLS2 8.4.6 is violated.
+static bool check_method_overriding( origin org, const_MethodEntry m, const_MethodEntry superm )
+{
+    bool ok = true;
+    modflags mflags = m->flags;
+    modflags smflags = superm->flags;
+    if(
+	superm == MethodEntryNIL ||
+	has_flags( smflags, ACC_PRIVATE )
+    ){
+	// According to JLS2 8.4.6.3, last paragraph, a method in
+	// a superclass that is private is not considered to be
+	// overridden or hidden, so in that case there never is a problem.
+	return true;
+    }
+
+    if( has_any_flag( smflags, ACC_FINAL|ACC_PRIVATE ) ){
+	tmstring sig = typename_Signature( superm->realname );
+	origin_error( org, "Method %s in %s is final and cannot be overridden", sig, superm->owner->name );
+	rfre_tmstring( sig );
+	ok = false;
+    }
+
+    // This implements JLS2 8.4.6.1
+    if( 
+	has_flags( smflags, ACC_STATIC ) &&
+	!has_flags( mflags, ACC_STATIC )
+    )
+    {
+	tmstring sig = typename_Signature( superm->realname );
+	origin_error( org, "Static method %s in %s cannot be overridden by an instance method", sig, superm->owner->name );
+	rfre_tmstring( sig );
+	ok = false;
+    }
+
+    // This implements JLS2 8.4.6.2
+    if( 
+	!has_flags( smflags, ACC_STATIC ) &&
+	has_flags( mflags, ACC_STATIC )
+    )
+    {
+	tmstring sig = typename_Signature( superm->realname );
+	origin_error( org, "Instance method %s in %s cannot be overridden by a static method", sig, superm->owner->name );
+	rfre_tmstring( sig );
+	ok = false;
+    }
+
+    // This implements JLS2 8.4.6.3
+    if(
+	has_flags( smflags, ACC_PUBLIC ) &&
+	!has_flags( mflags, ACC_PUBLIC )
+    )
+    {
+	tmstring sig = typename_Signature( superm->realname );
+	origin_error( org, "public method %s in %s cannot be overridden by a more private method", sig, superm->owner->name );
+	rfre_tmstring( sig );
+	ok = false;
+    }
+    if(
+	has_flags( smflags, ACC_PROTECTED ) &&
+	!has_any_flag( mflags, ACC_PROTECTED|ACC_PUBLIC )
+    )
+    {
+	tmstring sig = typename_Signature( superm->realname );
+	origin_error( org, "protected method %s in %s cannot be overridden by a more private method", sig, superm->owner->name );
+	rfre_tmstring( sig );
+	ok = false;
+    }
+
+    if( has_flags( mflags, ACC_PRIVATE ) ){
+	tmstring sig = typename_Signature( superm->realname );
+	origin_error( org, "method %s in %s cannot be overridden by a private method", sig, superm->owner->name );
+	rfre_tmstring( sig );
+	ok = false;
+    }
+
+    // A submethod may not be declared to throw more checked
+    // exceptions than the supermethod.
+    // This implements a restriction in JLS2 8.4.4
+    ok |= check_throws_overriding( org, m->throws, superm->throws );
+    return ok;
+}
+
+/* Given a MethodDeclaration, check it.  */
+static bool check_MethodDeclaration_action(
+ const MethodDeclaration fn,
+ check_data *ctx
+)
+{
+    bool ok = true;
+    const origsymbol_list oldlabels = ctx->labels;
+
+    ctx->labels = new_origsymbol_list();
+.call generate_walker_call "    " fn MethodDeclaration MethodDeclaration
+    rfre_origsymbol_list( ctx->labels );
+    ctx->labels = oldlabels;
+    if( ok ){
+	if( !has_any_flag( fn->flags, ACC_ABSTRACT ) ){
+	    ok = check_function_symbol( *ctx->symtab, fn->name );
+	    ok &= compare_declaration_with_symboltable(
+		ctx->symtab,
+		fn->name,
+		fn->parameters
+	    );
+	}
+    }
+    if( ok ){
+	if( fn->tag == TAGConstructorDeclaration ){
+	    // TODO: complain if a constructor does not have the
+	    // name of the type it lives in.
+	}
+	else {
+	    Entry d = search_Entry( *ctx->symtab, fn->name );
+	    MethodEntry me = to_MethodEntry( d );
+	    tmsymbol overridden = search_overridden( ctx->typelist, me );
+	    if( overridden != tmsymbolNIL ){
+		Entry od = search_Entry( *ctx->symtab, overridden );
+		MethodEntry ome = to_MethodEntry( od );
+
+		ok = check_method_overriding( fn->name->org, me, ome );
+	    }
+	}
+    }
+    return ok;
+}
+
+/* Action function for a constructor. */
+static bool check_ConstructorDeclaration_action(
+ const ConstructorDeclaration fn,
+ check_data *ctx
+)
+{
+    bool ok = true;
+    blockctx oldwhere = ctx->where;
+    type old_returntype = ctx->returntype;
+
+    ctx->returntype = typeNIL;
+    ctx->where = BCTX_PROCEDURE;
+.call generate_walker_call "    " fn ConstructorDeclaration ConstructorDeclaration
+    ctx->where = oldwhere;
+    ctx->returntype = old_returntype;
+    return ok;
+}
+
+/* Check an element 't' of type 'Cardinality' */
+static bool check_Cardinality_action(
+ const Cardinality card,
+ check_data *ctx
+)
+{
+    const origin oldorg = ctx->org;
+
+    ctx->org = card->name->org;
+    bool ok = check_Cardinality_symbol( *ctx->symtab, card->name );
+.call generate_walker_call "    " card Cardinality Cardinality
+    if( ok ){
+	type t;
+	if( card->lowerbound != expressionNIL ){
+	    t = derive_type_expression( *ctx->symtab, card->lowerbound );
+	    if( !is_numeric_type( *ctx->symtab, t ) ){
+		origin_error( ctx->org, "cardinality lowerbound must be of a numeric type" );
+		ok = false;
+	    }
+	    rfre_type( t );
+	}
+	if( card->upperbound != expressionNIL ){
+	    t = derive_type_expression( *ctx->symtab, card->upperbound );
+	    if( !is_numeric_type( *ctx->symtab, t ) ){
+		origin_error( ctx->org, "cardinality upperbound must be of a numeric type" );
+		ok = false;
+	    }
+	    rfre_type( t );
+	}
+	if( card->stride != expressionNIL ){
+	    t = derive_type_expression( *ctx->symtab, card->stride );
+	    if( !is_numeric_type( *ctx->symtab, t ) ){
+		origin_error( ctx->org, "cardinality stride must be of a numeric type" );
+		ok = false;
+	    }
+	    rfre_type( t );
+	}
+    }
+    ctx->org = oldorg;
+    return ok;
+}
+
+/* Check a list of elements 'l' of type 'Cardinality' */
+static bool check_Cardinality_list_action(
+ const Cardinality_list l,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " l Cardinality_list Cardinality_list
+    if( ok ){
+	origsymbol_list cards = collect_Cardinality_symbols( l );
+
+	ok = check_double_symbols( "cardinality", cards );
+	rfre_origsymbol_list( cards );
+    }
+    return ok;
+}
+
+/* Given a list of switch cases, check them. */
+static bool check_SwitchCase_list_action(
+ const SwitchCase_list l,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " l SwitchCase_list SwitchCase_list
+    if( ok ){
+	for( unsigned int ix=0; ix<l->sz; ix++ ){
+	    const_SwitchCase cx = l->arr[ix];
+
+	    switch( cx->tag ){
+		case TAGSwitchCaseValue:
+		{
+		    const_expression cond = to_const_SwitchCaseValue( cx )->cond;
+		    for( unsigned int iy=ix+1; iy<l->sz; iy++ ){
+			const_SwitchCase cy = l->arr[iy];
+			if( cy->tag == TAGSwitchCaseValue ){
+			    const_expression condy = to_const_SwitchCaseValue( cy )->cond;
+			    if( condy->tag == TAGIntExpression ){
+				if( are_equivalent_expressions( cond, condy ) ){
+				    tmstring vnm = name_expression( cond );
+				    sprintf( errarg, "value: %s", vnm );
+				    origin_error( ctx->org, "double entry in switch" );
+				    ok = false;
+				}
+			    }
+			}
+		    }
+		    break;
+		}
+
+		case TAGSwitchCaseDefault:
+		{
+		    for( unsigned int iy=ix+1; iy<l->sz; iy++ ){
+			const SwitchCase cy = l->arr[iy];
+
+			if( cy->tag == TAGSwitchCaseDefault ){
+			    origin_error( ctx->org, "double 'default' entry in switch" );
+			    ok = false;
+			}
+		    }
+		    break;
+		}
+	    }
+	}
+    }
+    return ok;
+}
+
+/* Action for 'statement' */
+static bool check_statement_action( const statement smt, check_data *ctx )
+{
+    bool ok = true;
+    const origin oldorg = ctx->org;
+
+    if( smt == statementNIL ){
+	return ok;
+    }
+    ctx->org = smt->org;
+    if( smt->labels != origsymbol_listNIL ){
+	ok &= check_double_symbols( "label", smt->labels );
+    }
+.call generate_walker_call "    " smt statement statement
+    ctx->org = oldorg;
+    return ok;
+}
+
+/* Given an if statement, check it. */
+static bool check_IfStatement_action(
+ const IfStatement smt,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " smt IfStatement IfStatement
+    if( ok ){
+	type condtype = derive_type_expression( *ctx->symtab, smt->cond );
+
+	if( !is_boolean_type( *ctx->symtab, condtype ) ){
+	    const tmstring nm = typename_type( condtype );
+
+	    sprintf( errarg, "actual type is %s", nm );
+	    rfre_tmstring( nm );
+	    origin_error( ctx->org, "a condition expression must be of type boolean" );
+	    ok = false;
+	}
+	rfre_type( condtype );
+    }
+    return ok;
+}
+
+/* Given a while statement, check it. */
+static bool check_WhileStatement_action(
+ const WhileStatement smt,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " smt WhileStatement WhileStatement
+    if( ok ){
+	const type condtype = derive_type_expression( *ctx->symtab, smt->cond );
+
+	if( !is_boolean_type( *ctx->symtab, condtype ) ){
+	    origin_error( ctx->org, "a condition expression must be of type boolean" );
+	    ok = false;
+	}
+	rfre_type( condtype );
+    }
+    return ok;
+}
+
+/* Given a do while statement, check it. */
+static bool check_DoWhileStatement_action(
+ const DoWhileStatement smt,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " smt DoWhileStatement DoWhileStatement
+    if( ok ){
+	const type condtype = derive_type_expression( *ctx->symtab, smt->cond );
+
+	if( !is_boolean_type( *ctx->symtab, condtype ) ){
+	    origin_error( ctx->org, "a condition expression must be of type boolean" );
+	    ok = false;
+	}
+	rfre_type( condtype );
+    }
+    return ok;
+}
+
+/* Given a Assign statement, check it. */
+static bool check_AssignStatement_action(
+ const AssignStatement smt,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " smt AssignStatement AssignStatement
+    if( ok ){
+	ok &= check_location_expression( smt->lhs, ctx->org );
+	if( ok ){
+	    type tlhs = derive_type_expression( *ctx->symtab, smt->lhs );
+	    type trhs = derive_type_expression( *ctx->symtab, smt->rhs );
+	    if( smt->op == ASSIGN ){
+		ok = assigncompare_types(
+		    *ctx->symtab,
+		    ctx->typelist,
+		    ctx->org,
+		    tlhs,
+		    trhs,
+		    smt->rhs
+		);
+	    }
+	    else {
+	        // This is a compound assignment operator. According
+		// to JLS2 15.26.2 assignment E1 op= E2 is equivalent
+		// to E1 = (T) ((E1) op (E2)), where T is the type of
+		// E1, except that E1 is evaluated only once.
+		// 
+		// The cast may be a narrowing primitive conversion.
+		ok = check_binop(
+		    *ctx->symtab,
+		    ctx->typelist,
+		    ctx->org,
+		    smt->lhs,
+		    assignop_to_binop( smt->op ),
+		    smt->rhs
+		);
+		if( ok ){
+		    expression binx = new_BinopExpression(
+		        rdup_expression( smt->lhs ),
+			assignop_to_binop( smt->op ),
+			rdup_expression( smt->rhs )
+		    );
+		    type tbin = derive_type_expression( *ctx->symtab, binx );
+		    rfre_expression( binx );
+		    if( !is_valid_cast( *ctx->symtab, ctx->typelist, tbin, tlhs ) ){
+			tmstring typenm_to = typename_type( tlhs );
+			tmstring typenm_tbin = typename_type( tbin );
+			origin_error(
+			    ctx->org,
+			    "Invalid compound assignment: cannot cast result type %s to a %s",
+			    typenm_tbin,
+			    typenm_to
+			);
+			rfre_tmstring( typenm_to );
+			rfre_tmstring( typenm_tbin );
+			ok = false;
+		    }
+		    rfre_type( tbin );
+		}
+	    }
+	    rfre_type( trhs );
+	    rfre_type( tlhs );
+	}
+    }
+    return ok;
+}
+
+/* Given a Print statement, check it. */
+static bool check_PrintStatement_action(
+ const PrintStatement smt,
+ check_data *ctx
+)
+{
+    bool ok = true;
+    const expression_list argv = smt->argv;
+
+.call generate_walker_call "    " smt PrintStatement PrintStatement
+    if( ok ){
+	if( argv->sz<1 ){
+	    origin_error( ctx->org, "a print statement must have at least one parameter" );
+	    ok = false;
+	}
+    }
+    if( ok ){
+	const type tf = derive_type_expression( *ctx->symtab, argv->arr[0] );
+
+	if( !is_numeric_type( *ctx->symtab, tf ) ){
+	    origin_error( ctx->org, "print: the expression for the file must be of a numeric type" );
+	    ok = false;
+	}
+	rfre_type( tf );
+    }
+    return ok;
+}
+
+/* Given a PrintLine statement, check it. */
+static bool check_PrintLineStatement_action(
+ const PrintLineStatement smt,
+ check_data *ctx
+)
+{
+    bool ok = true;
+    const expression_list argv = smt->argv;
+
+.call generate_walker_call "    " smt PrintLineStatement PrintLineStatement
+    if( ok ){
+	if( argv->sz<1 ){
+	    origin_error( ctx->org, "a println statement must have at least one parameter" );
+	    ok = false;
+	}
+    }
+    if( ok ){
+	const type tf = derive_type_expression( *ctx->symtab, argv->arr[0] );
+
+	if( !is_numeric_type( *ctx->symtab, tf ) ){
+	    origin_error( ctx->org, "println: the expression for the file must be of a numeric type" );
+	    ok = false;
+	}
+	rfre_type( tf );
+    }
+    return ok;
+}
+
+/* Given a MethodInvocation statement, check it. */
+static bool check_MethodInvocationStatement_action(
+ const MethodInvocationStatement smt,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " smt MethodInvocationStatement MethodInvocationStatement
+    if( ok ){
+	ok &= check_parmlist( *ctx->symtab, ctx->typelist, ctx->org, smt->invocation->name, smt->invocation->parameters, IS_PROCEDURE );
+    }
+    return ok;
+}
+
+static bool is_deletable_type( type t )
+{
+    if( is_ReferenceType( t ) ){
+	return true;
+    }
+    if( t->tag == TAGPragmaType ){
+	return is_deletable_type( to_PragmaType(t)->t );
+    }
+    return false;
+}
+
+/* Given a Delete statement, check it. */
+static bool check_DeleteStatement_action(
+ const DeleteStatement smt,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " smt DeleteStatement DeleteStatement
+    if( ok ){
+	const type pt = derive_type_expression( *ctx->symtab, smt->adr );
+
+	if( !is_deletable_type( pt ) ){
+	    const tmstring tnm = typename_type( pt );
+	    sprintf( errarg, "actual type: %s ", tnm );
+	    origin_error( ctx->org, "Only reference types can be deleted" );
+	    rfre_tmstring( tnm );
+	    ok = false;
+	}
+	rfre_type( pt );
+    }
+    return ok;
+}
+
+/* Given a Return statement, check it. */
+static bool check_ReturnStatement_action(
+ const ReturnStatement smt,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " smt ReturnStatement ReturnStatement
+    if( ok ){
+	switch( ctx->where ){
+	    case BCTX_FUNCTION:
+		origin_error( ctx->org, "in a function, a return statement must have a value" );
+		ok = false;
+		break;
+
+	    case BCTX_PROCEDURE:
+	    case BCTX_SYMTAB:
+		break;
+
+	    case BCTX_GLOBALCODE:
+	    case BCTX_OBJECT:
+		origin_error( ctx->org, "a return statement is not allowed in the outer block" );
+		ok = false;
+		break;
+
+	}
+    }
+    return ok;
+}
+
+/* Given a ValueReturn statement, check it. */
+static bool check_ValueReturnStatement_action(
+ const ValueReturnStatement smt,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " smt ValueReturnStatement ValueReturnStatement
+    if( ok ){
+	switch( ctx->where ){
+	    case BCTX_FUNCTION:
+	    case BCTX_SYMTAB:
+		break;
+
+	    case BCTX_PROCEDURE:
+		origin_error( ctx->org, "in a procedure, a return statement should not have a value" );
+		ok = false;
+		break;
+
+	    case BCTX_GLOBALCODE:
+	    case BCTX_OBJECT:
+		origin_error( ctx->org, "a return statement is not allowed in the outer block" );
+		ok = false;
+		break;
+
+	}
+    }
+    if( ok ){
+	// ctx->returntype can be NIL in a constructor. Since the return
+	// there is generated, assume it's ok.
+	// TODO: make sure explicit return statements in constructors are
+	// caught.
+	if( ctx->returntype != typeNIL ){
+	    type trhs = derive_type_expression( *ctx->symtab, smt->v );
+	    ok = assigncompare_types(
+		*ctx->symtab,
+		ctx->typelist,
+		ctx->org,
+		ctx->returntype,
+		trhs,
+		smt->v
+	    );
+	    rfre_type( trhs );
+	}
+    }
+    return ok;
+}
+
+// Given a type 't', return true iff the type is correct for a 
+// switch value.
+static bool is_switchable_type( const_type t )
+{
+    switch( t->tag ){
+        case TAGPragmaType:
+	    return is_switchable_type( to_const_PragmaType(t)->t );
+
+	case TAGPrimitiveType:
+	{
+	    BASETYPE bt = to_const_PrimitiveType(t)->base;
+	    return bt == BT_CHAR || bt == BT_BYTE || bt == BT_SHORT || bt == BT_INT;
+	}
+
+	default:
+	    break;
+    }
+    return false;
+}
+
+/* Given a Switch statement, check it. */
+static bool check_SwitchStatement_action(
+ const SwitchStatement smt,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " smt SwitchStatement SwitchStatement
+    if( ok ){
+	const type ct = derive_type_expression( *ctx->symtab, smt->cond );
+
+	// Enforce JLS2 14.10 restriction on the expression we switch on.
+	if( !is_switchable_type( ct ) ){
+	    origin_error( smt->org, "switch expression must be char, byte, short or int" );
+	    ok = false;
+	}
+	SwitchCase_list cl = smt->cases;
+
+	for( unsigned int ix=0; ix<cl->sz; ix++ ){
+	    const_SwitchCase sc = cl->arr[ix];
+
+	    if( sc->tag == TAGSwitchCaseValue ){
+		const_expression sv = to_const_SwitchCaseValue(sc)->cond;
+
+		type t_case = derive_type_expression( *ctx->symtab, sv );
+		ok &= assigncompare_types(
+		    *ctx->symtab,
+		    ctx->typelist,
+		    sc->org,
+		    ct,
+		    t_case,
+		    sv
+		);
+		rfre_type( t_case );
+	    }
+	}
+	rfre_type( ct );
+    }
+    return ok;
+}
+
+/* Given a Synchronized statement, check it. */
+static bool check_SynchronizedStatement_action(
+ const SynchronizedStatement smt,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " smt SynchronizedStatement SynchronizedStatement
+    if( ok ){
+	const type t = derive_type_expression( *ctx->symtab, smt->on );
+
+	if( t != typeNIL ){
+	    if( !is_ReferenceType( t ) && !is_vnusstring_type( t ) ){
+		const tmstring tnm = typename_type( t );
+
+		sprintf( errarg, "actual type: %s ", tnm );
+		origin_error( smt->org, "Synchronization is only possible on a reference type" );
+		rfre_tmstring( tnm );
+		ok = false;
+	    }
+	    rfre_type( t );
+	}
+    }
+    return ok;
+}
+
+/* Given a Goto statement, check it. */
+static bool check_GotoStatement_action(
+ const GotoStatement smt,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " smt GotoStatement GotoStatement
+    if( ok ){
+	if( !member_origsymbol_list( ctx->labels, smt->target ) ){
+	    origsymbol_error( smt->target, "unknown label" );
+	    ok = false;
+	}
+    }
+    return ok;
+}
+
+/* Check a ConcreteTypeEntry. */
+static bool check_ConcreteTypeEntry_action(
+ const ConcreteTypeEntry d,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+    if( d->is_template ){
+	// Don't try to check the entry for a template class or interface.
+	return ok;
+    }
+.call generate_walker_call "    " d ConcreteTypeEntry ConcreteTypeEntry
+    return ok;
+}
+
+/* Check a VariableEntry. */
+static bool check_VariableEntry_action(
+ const VariableEntry d,
+ check_data *ctx
+)
+{
+    bool ok = true;
+    origin old_org = ctx->org;
+    ctx->org = d->realname->org;
+
+.call generate_walker_call "    " d VariableEntry VariableEntry
+    ctx->org = old_org;
+    return ok;
+}
+
+/* Check a GlobalVariableEntry. */
+static bool check_GlobalVariableEntry_action(
+ const GlobalVariableEntry d,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " d GlobalVariableEntry GlobalVariableEntry
+    if( ok ){
+	if( d->init->tag == TAGOptExpr ){
+	    expression x = to_OptExpr( d->init )->x;
+	    const type it = derive_type_expression( *ctx->symtab, x );
+
+	    if( it != typeNIL ){
+		ok &= assigncompare_types(
+		    *ctx->symtab,
+		    ctx->typelist,
+		    ctx->org,
+		    d->t,
+		    it,
+		    x
+		);
+		rfre_type( it );
+	    }
+	}
+    }
+    return ok;
+}
+
+/* Check a LocalVariableEntry. */
+static bool check_LocalVariableEntry_action(
+ const LocalVariableEntry d,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " d LocalVariableEntry LocalVariableEntry
+    if( ok ){
+	if( d->init->tag == TAGOptExpr ){
+	    expression x = to_OptExpr( d->init )->x;
+	    const type it = derive_type_expression( *ctx->symtab, x );
+
+	    if( it != typeNIL ){
+		ok &= assigncompare_types(
+		    *ctx->symtab,
+		    ctx->typelist,
+		    ctx->org,
+		    d->t,
+		    it,
+		    x
+		);
+		rfre_type( it );
+	    }
+	}
+    }
+    return ok;
+}
+
+/* Given a Cast expression, check it. */
+static bool check_CastExpression_action(
+ const CastExpression x,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " x CastExpression CastExpression
+    if( ok ){
+	type xt = derive_type_expression( *ctx->symtab, x->x );
+
+	if( !is_valid_cast( *ctx->symtab, ctx->typelist, xt, x->t ) ){
+	    tmstring typenm_from;
+	    tmstring typenm_to;
+
+	    typenm_from = typename_type( xt );
+	    typenm_to = typename_type( x->t );
+	    origin_error(
+		ctx->org,
+		"cannot cast a %s to a %s",
+		typenm_from,
+		typenm_to
+	    );
+	    rfre_tmstring( typenm_from );
+	    rfre_tmstring( typenm_to );
+	    ok = false;
+	}
+	rfre_type( xt );
+    }
+    return ok;
+}
+
+/* Given a GetSize expression, check it. */
+static bool check_GetSizeExpression_action( const GetSizeExpression x, check_data *ctx )
+{
+    bool ok = true;
+
+.call generate_walker_call "    " x GetSizeExpression GetSizeExpression
+    if( ok ){
+	type dim_type;
+
+	ok = check_location_expression( x->array, ctx->org );
+	type aggr_type = derive_type_expression( *ctx->symtab, x->array );
+	type c_aggr_type = clean_type( aggr_type );
+
+	if( c_aggr_type->tag != TAGArrayType ){
+	    const tmstring nm = typename_type( aggr_type );
+
+	    sprintf( errarg, "actual type is %s", nm );
+	    rfre_tmstring( nm );
+	    origin_error( ctx->org, "only arrays have a size" );
+	    ok = false;
+	}
+	rfre_type( aggr_type );
+	dim_type = derive_type_expression( *ctx->symtab, x->dim );
+	if( !is_numeric_type( *ctx->symtab, dim_type ) ){
+	    origin_error( ctx->org, "expression for dimension must be of a numeric type" );
+	    ok = false;
+	}
+	rfre_type( dim_type );
+    }
+    return ok;
+}
+
+/* Given a GetLength expression, check it. */
+static bool check_GetLengthExpression_action( const GetLengthExpression x, check_data *ctx )
+{
+    bool ok = true;
+
+.call generate_walker_call "    " x GetLengthExpression GetLengthExpression
+    if( ok ){
+	ok = check_location_expression( x->array, ctx->org );
+	if( ok ){
+	    type aggr_type = derive_type_expression( *ctx->symtab, x->array );
+
+	    if( aggr_type->tag != TAGArrayType && !is_tuple_type( aggr_type ) ){
+		origin_error( ctx->org, "only arrays and tuples have a length" );
+		ok = false;
+	    }
+	    rfre_type( aggr_type );
+	}
+    }
+    return ok;
+}
+
+/* Given a Complex expression, check it. */
+static bool check_ComplexExpression_action( const ComplexExpression x, check_data *ctx )
+{
+    bool ok = true;
+
+.call generate_walker_call "    " x ComplexExpression ComplexExpression
+    if( ok ){
+	type t_re;
+	type t_im;
+
+	t_re = derive_type_expression( *ctx->symtab, x->re );
+	if( !is_numeric_type( *ctx->symtab, t_re ) ){
+	    origin_error( ctx->org, "the real part of a complex number must be of type real" );
+	    ok = false;
+	}
+	rfre_type( t_re );
+	t_im = derive_type_expression( *ctx->symtab, x->im );
+	if( !is_numeric_type( *ctx->symtab, t_im ) ){
+	    origin_error( ctx->org, "the imaginary part of a complex number must be of type real" );
+	    ok = false;
+	}
+	rfre_type( t_im );
+    }
+    return ok;
+}
+
+/* Given a Selection expression, check it. */
+static bool check_SubscriptExpression_action( const SubscriptExpression x, check_data *ctx )
+{
+    bool ok = true;
+
+.call generate_walker_call "    " x SubscriptExpression SubscriptExpression
+    if( ok ){
+	type ted_type = derive_type_expression( *ctx->symtab, x->array );
+
+	ok = check_selection_type( *ctx->symtab, ctx->org, ted_type, x->subscripts );
+	rfre_type( ted_type );
+    }
+    return ok;
+}
+
+/* Given a Selection expression, check it. */
+static bool check_GetBufExpression_action( const GetBufExpression x, check_data *ctx )
+{
+    bool ok = true;
+
+.call generate_walker_call "    " x GetBufExpression GetBufExpression
+    if( ok ){
+	type aggr_type = derive_type_expression( *ctx->symtab, x->array );
+
+	if( aggr_type->tag != TAGArrayType ){
+	    origin_error( ctx->org, "you can only get the buffer of an array" );
+	    ok = false;
+	}
+	rfre_type( aggr_type );
+    }
+    return ok;
+}
+
+/* Given a Unop expression, check it. */
+static bool check_UnopExpression_action(
+ const UnopExpression x,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " x UnopExpression UnopExpression
+    if( ok ){
+	ok = check_unop( *ctx->symtab, ctx->org, x->optor, x->operand );
+    }
+    return ok;
+}
+
+/* Given a Binop expression, check it. */
+static bool check_BinopExpression_action(
+ const BinopExpression x,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " x BinopExpression BinopExpression
+    if( ok ){
+	ok = check_binop( *ctx->symtab, ctx->typelist, ctx->org, x->left, x->optor, x->right );
+    }
+    return ok;
+}
+
+/* Given a Instanceof expression, check it. */
+static bool check_InstanceOfExpression_action(
+ const InstanceOfExpression x,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " x InstanceOfExpression InstanceOfExpression
+    if( ok ){
+	type xt = derive_type_expression( *ctx->symtab, x->x );
+
+	if( !is_valid_cast( *ctx->symtab, ctx->typelist, xt, x->t ) ){
+	    tmstring typenm_from;
+	    tmstring typenm_to;
+
+	    typenm_from = typename_type( xt );
+	    typenm_to = typename_type( x->t );
+	    origin_error(
+		ctx->org,
+		"cannot convert a %s to a %s",
+		typenm_from,
+		typenm_to
+	    );
+	    rfre_tmstring( typenm_from );
+	    rfre_tmstring( typenm_to );
+	    ok = false;
+	}
+	rfre_type( xt );
+    }
+    return ok;
+}
+
+/* Given a ClassInstancEof expression, check it. */
+static bool check_ClassInstanceOfExpression_action(
+ const ClassInstanceOfExpression x,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " x ClassInstanceOfExpression ClassInstanceOfExpression
+    if( ok ){
+	type xtype = derive_type_expression( *ctx->symtab, x->x );
+
+	if( !is_ReferenceType( xtype ) ){
+	    const tmstring tnm = typename_type( xtype );
+
+	    sprintf( errarg, "actual type: %s ", tnm );
+	    origin_error( ctx->org, "ClassInstanceOf can only be applied to a reference type" );
+	    rfre_tmstring( tnm );
+	    ok = false;
+	}
+	rfre_type( xtype );
+	TypeEntry e = lookup_TypeEntry( ctx->typelist, x->t );
+	if( e->tag != TAGClassEntry ){
+	    origsymbol_error( x->t, "ClassInstanceOf can only work on classes" );
+	    ok = false;
+	}
+    }
+    return ok;
+}
+
+/* Given a If expression, check it. */
+static bool check_IfExpression_action(
+ const IfExpression x,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " x IfExpression IfExpression
+    if( ok ){
+	type thentype;
+	type elsetype;
+
+	type condtype = derive_type_expression( *ctx->symtab, x->cond );
+	if( !is_boolean_type( *ctx->symtab, condtype ) ){
+	    const tmstring nm = typename_type( condtype );
+
+	    sprintf( errarg, "actual type is %s", nm );
+	    rfre_tmstring( nm );
+	    origin_error( ctx->org, "a condition expression must be of type boolean" );
+	    ok = false;
+	}
+	rfre_type( condtype );
+	thentype = derive_type_expression( *ctx->symtab, x->thenval );
+	elsetype = derive_type_expression( *ctx->symtab, x->elseval );
+	ok = check_IfExpression_types( *ctx->symtab, x->org, thentype, elsetype );
+	rfre_type( thentype );
+	rfre_type( elsetype );
+    }
+    return ok;
+}
+
+/* Given a Where expression, check it. */
+static bool check_WhereExpression_action(
+ const WhereExpression x,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " x WhereExpression WhereExpression
+    if( ok ){
+	statement_list defs = x->defs;
+
+	for( unsigned int ix=0; ix<defs->sz; ix++ ){
+	    statement ds = defs->arr[ix];
+	    if( ds->tag != TAGFieldDeclaration ){
+		origin_error( ds->org, "a where expression may only contain variable declarations" );
+	    }
+	    else {
+		FieldDeclaration d = to_FieldDeclaration( ds );
+		if( d->init->tag != TAGOptExpr ){
+		    origin_error(
+			d->org,
+			"a declaration in a where expression should have an initalizier"
+		    );
+		}
+	    }
+	}
+    }
+    return ok;
+}
+
+/* Given a Name expression, check it. */
+static bool check_VariableNameExpression_action(
+ const VariableNameExpression x,
+ check_data *ctx
+)
+{
+    bool ok = true;
+
+.call generate_walker_call "    " x VariableNameExpression VariableNameExpression
+    if( ok ){
+	ok = check_expression_symbol( ctx->symtab, x->name );
+    }
+    return ok;
+}
+
+/* Check a Block. */
+static bool check_Block_action( const Block blk, check_data *ctx )
+{
+    bool ok = true;
+
+    if( blk == BlockNIL || ctx->where == BCTX_SYMTAB ){
+	return ok;
+    }
+.call generate_walker_call "    " blk Block Block
+    return ok;
+}
+
+/* Check a list of elements 'l' of type 'statement' */
+static bool check_statement_list_action(
+ const statement_list l,
+ check_data *ctx
+)
+{
+    bool ok = true;
+    origsymbol_list oldlabels = ctx->labels;
+
+    if( l == statement_listNIL ){
+	return ok;
+    }
+    ctx->labels = collect_labels( l );
+#if 0
+    // This enforces a restriction that's in fact not there.
+    ok &= check_double_symbols( "label", ctx->labels );
+#endif
+    if( ok ){
+	for( unsigned int ix=0; ix<ctx->labels->sz; ix++ ){
+	    const origsymbol s = ctx->labels->arr[ix];
+
+	    if( member_origsymbol_list( oldlabels, s ) ){
+		origsymbol_error( s, "label hides one in a previous context" );
+		ok = false;
+	    }
+	}
+    }
+    ctx->labels = concat_origsymbol_list(
+	ctx->labels,
+	rdup_origsymbol_list( oldlabels )
+    );
+.call generate_walker_call "    " l statement_list statement_list
+    if( ok ){
+	origsymbol_list declared = collect_vardeclaration_names(
+	    new_origsymbol_list(),
+	    l
+	);
+	ok = check_double_symbols( "variable declaration", declared );
+	rfre_origsymbol_list( declared );
+    }
+    rfre_origsymbol_list( ctx->labels );
+    ctx->labels = oldlabels;
+    return ok;
+}
+
+/* Cut off checking for forward field entries. */
+static bool check_ForwardFieldEntry_action( ForwardFieldEntry e, check_data *ctx )
+{
+    (void) e;
+    (void) ctx;
+    (void) check_ForwardFieldEntry_walker;
+    return true;
+}
+
+/* Cut off checking for forward function entries. */
+static bool check_ForwardFunctionEntry_action( ForwardFunctionEntry e, check_data *ctx )
+{
+    (void) e;
+    (void) ctx;
+    (void) check_ForwardFunctionEntry_walker;
+    return true;
+}
+
+/* Check a list of elements 'l' of type 'Entry' */
+static bool check_Entry_list_action( Entry_list l, check_data *ctx )
+{
+    bool ok = true;
+    blockctx oldwhere = ctx->where;
+
+    ctx->where = BCTX_SYMTAB;
+.call generate_walker_call "    " l Entry_list Entry_list
+    if( ok ){
+	tmsymbol_list names = collect_symtab_entries( l );
+
+	ok = check_double_tmsymbols( "symbol table", names );
+	rfre_tmsymbol_list( names );
+    }
+    ctx->where = oldwhere;
+    return ok;
+}
+
+/* Check a type (class or interface) declaration. */
+static bool check_TypeDeclaration_action( TypeDeclaration cl, check_data *ctx )
+{
+    bool ok = true;
+
+    if( cl->formals->sz != 0 ){
+	// This is a generic type; don't check.
+	return ok;
+    }
+    blockctx oldwhere = ctx->where;
+    ctx->where = BCTX_OBJECT;
+.call generate_walker_call "    " cl TypeDeclaration TypeDeclaration
+    if( ok ){
+	ok = check_implements_list( ctx->typelist, cl->interfaces );
+    }
+    ctx->where = oldwhere;
+    return ok;
+}
+
+/* -------- End of actors ---------- */
+
+.call generate_walker "$(visit_types)"
+
+#line $[1+${tpllineno}] "${tplfilename}"
+
+/* Given a vnus program, check its correctness. */
+void check_SparProgram( const SparProgram t )
+{
+    check_data the_ctx;
+    check_data *ctx = &the_ctx;
+    bool ok = true;
+
+    the_ctx.org = 0;
+    the_ctx.returntype = typeNIL;
+    the_ctx.typelist = t->typelist;
+    the_ctx.where = BCTX_GLOBALCODE;
+    the_ctx.symtab = &t->symtab;
+    the_ctx.labels = new_origsymbol_list();
+    /* TODO: check there is a main function */
+.call generate_descent_call "    " t SparProgram SparProgram
+    rfre_origsymbol_list( the_ctx.labels );
+}

@@ -1,0 +1,8 @@
+// File: errnomain.spar
+//
+// Test handling of a missing 'main' method.
+
+package spar.testsuite;
+
+public class errnomain {
+}

@@ -1,0 +1,12 @@
+// After JLS2 15.7.4    Argument Lists are Evaluated Left-to-Right
+
+public class okjlsgoing {
+    public static void main() {
+        __string s = "going, ";
+        print3(s, s, s = "gone");
+    }
+
+    static void print3(__string a, __string b, __string c) {
+        __println(1,a , b , c);
+    }
+}

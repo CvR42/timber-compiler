@@ -1,0 +1,28 @@
+// The classical example of a dynamic method invocation.
+
+package spar.testsuite;
+
+class c1 {
+    void hello() {
+	__println( 1, "Hi, I'm class c1" );
+    }
+}
+
+class c2 extends c1 {
+    void hello() {
+	__println( 1, "Hi, I'm class c2" );
+    }
+}
+
+public class okdynacall {
+    public static void call_hello( c1 c ) {
+	c.hello();
+    }
+    public static void main()
+    {
+	c1 x1 = new c1();
+	c2 x2 = new c2();
+	call_hello( x1 );
+	call_hello( x2 );
+    }
+}

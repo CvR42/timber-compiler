@@ -1,0 +1,87 @@
+/*
+   Applyif6 engine
+
+   Change all multi-dimensional foreach's into one-dimensional ones.
+
+   OwnerExpr list is probably not processed right.
+   */
+
+.. File: applyif6.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtForeach
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "vnusctl.h"
+#include "applyif6.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+/*
+  If a foreach has more than one cardinality variable create a new foreach
+  with the first cardinality variable in the list and put it around the
+  original foreach(minus its first carinality variable).
+  Then do the whole thing recursively again.
+
+  This rule doesn't process/copies pragmas and ownerexprs correctly...
+  */
+static SmtForeach rewrite_SmtForeach_action(
+  SmtForeach e, global_context gc )
+{
+    if (e->cards->sz > 1)
+    {
+        SmtForeach nsf = new_SmtForeach(
+            0,
+            gen_origin(),
+            rdup_Pragma_list(e->pragmas),
+            rdup_OwnerExpr_list(e->on),
+            new_cardinality_list(),
+            new_OwnerExpr_list(),
+            new_block(
+                e->body->scope,
+                gen_origin(),
+		new_Pragma_list(),
+                new_OwnerExpr_list(),
+                new_statement_list()));
+        nsf->cards = append_cardinality_list(
+            nsf->cards,
+            rdup_cardinality(e->cards->arr[0]));
+        e->body->scope = 0;
+        e->cards = delete_cardinality_list(e->cards, 0);
+        nsf->body->statements = append_statement_list(
+            nsf->body->statements,
+            e);
+        e = nsf;
+    }
+.call generate_walker_call "    " e SmtForeach SmtForeach
+    return e;
+}
+
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_if6(
+    vnusprog elm, global_context gc )
+{
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}

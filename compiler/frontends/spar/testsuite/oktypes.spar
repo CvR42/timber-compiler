@@ -1,0 +1,155 @@
+// Test declarations and simple manipulations of base types.
+
+package spar.testsuite;
+
+
+
+public class oktypes {
+    static int i, n = 2, a[*,*];
+    static float x = 0.0f;
+    static complex c, c2;
+    static boolean b, b2 = true;
+    static int f;
+
+    static void testcmpint( int f, int a, int b )
+    {
+	__print( f, a, "=", b );
+	if( a==b ){
+	    __println( f, " yes" );
+	}
+	else {
+	    __println( f, " no" );
+	}
+	__print( f, a, "!=", b );
+	if (a!=b) {
+	    __println( f, " yes" );
+	}
+	else {
+	    __println( f, " no" );
+	}
+	__print( f, a, "<", b );
+	if( a<b ){
+	    __println( f, " yes" );
+	}
+	else {
+	    __println( f, " no" );
+	}
+	__print( f, a, "<=", b );
+	if( a<=b ) {
+	    __println( f, " yes" );
+	}
+	else {
+	    __println( f, " no" );
+	}
+	__print( f, a, ">", b );
+	if( a>b) {
+	    __println( f, " yes" );
+	}
+	else {
+	    __println( f, " no" );
+	}
+	__print( f, a, ">=" );
+	__print( f, b );
+	if( a>=b ){
+	    __println( f, " yes" );
+	}
+	else {
+	    __println( f, " no" );
+	}
+    }
+
+    public static void main()
+    {
+	f = 1;
+	if( true ){
+	    __println( f, "Yep, true is true" );
+	}
+	else {
+	    __println( f, "Huh, true is false?" );
+	}
+	if( false ){
+	    __println( f, "Huh, false is true?" );
+	}
+	else {
+	    __println( f, "Yep, false is false" );
+	}
+	b = false;
+	b = !b;
+	b = false | b;
+	b = true & b;
+	i = 2;
+	i = 50-i;
+	i = 5+i;
+	i = 5*i;
+	i = i/12;
+	i = -i;
+	i = +i;
+	n = 7;
+	n = +n;
+	n = 7+n;
+	n = n-5;
+	n = n*12;
+	n = n/13;
+	n = n*6;
+	n = n/3;
+	x = 2.1f;
+	x = -x;
+	x = +x;
+	x = 0.7f+x;
+	x = x-5e2f;
+	x = x*0.12f;
+	x = x/0.13f;
+	c = complex ( 2, 3 );
+	c2 = complex ( 5, 12 );
+	c = -c;
+	__println( f, "c: ", c );
+	c = +c;
+	__println( f, "c: ", c );
+	c = c+c2;
+	__println( f, "c: ", c );
+	c = c*c2;
+	__println( f, "c: ", c );
+	c = c-c2;
+	__println( f, "c: ", c );
+	c = c/c2;
+	i = -42;
+	__println( f, "b: ", b );
+	__println( f, "c: ", c );
+	__println( f, "i: ", i );
+	__println( f, "n: ", n );
+	__println( f, "x: ", x );
+
+	__println( f, 1 );
+
+	__println( f, ((byte) 1)+'c' );
+
+	n = 3;
+	while( n>0 ) n = n-1;
+
+	__println( f, "n: ", n );
+
+	i = 14;
+	while( i>0 ){
+	    __println( f, "i = ", i );
+	    i = i-1;
+	}
+	for(  i :- 0:3, j :- 0:4 ){
+	    __println( f, "i = ", i, ", ", "j = ", j );
+	}
+	testcmpint( f, 1, 2 );
+	testcmpint( f, 1, 1 );
+	testcmpint( f, 2, 1 );
+	testcmpint( f, 223, 1 );
+
+	__println( f, 3<4?"yes":"no" );
+	__println( f, (int) ((byte) 12) );
+	__println( f, "left shifts: int:",1<<2," byte:",((byte) 1)<<2," short:",((short) 1)<<2," long:",1l<<2 );
+	__println( f, "right shifts: int:",55>>2," byte:",((byte) 55)>>2," short:",((short) 55)>>2," long:",55l>>2 );
+	__println( f, "unsigned right shifts: int:",55>>>2," byte:",((byte) 55)>>>2," short:",((short) 55)>>>2," long:",55l>>>2 );
+	__println( f, "shifts of negative numbers: left:",(-11)<<2," right:",(-11)>>2," unsigned right:",(-11)>>>2 );
+	__println( f, "bitwise operations: and:", 17 & 18, " or:",17 | 18," xor:",17 ^ 18 );
+	__println( f, "boolean operations: and:", true & false, " or:",true | false," xor:",true ^ false );
+	__println( f,"bitwise not:", !12," ", ! (-144));
+	__println( f,"boolean not:", !false," ", !true);
+    }
+}

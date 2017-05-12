@@ -1,0 +1,6 @@
+errbadmod.java:8: 'protected' modifier not allowed for a outer class
+errbadmod.java:9: 'private' modifier not allowed for a outer class
+errbadmod.java:10: 'private' modifier not allowed for a outer interface
+errbadmod.java:11: 'protected' modifier not allowed for a outer interface
+errbadmod.java:17: 'protected' modifier not allowed for a local class
+errbadmod.java:18: 'protected' modifier not allowed for a local class

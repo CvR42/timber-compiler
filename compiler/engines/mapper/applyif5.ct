@@ -1,0 +1,78 @@
+/*
+   Applyif5 engine
+
+   Replace a for statement with a foreach statement if the 'isforeach'
+   pragma is present.
+   */
+
+.. File: applyif5.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtFor
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "vnusctl.h"
+#include "applyif5.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+/*
+  See above.
+  */
+static statement rewrite_SmtFor_action(
+  SmtFor e, global_context gc )
+{
+.call generate_walker_call "    " e SmtFor SmtFor
+    Pragma_list thePragmas = e->pragmas;
+    int pos = -1;
+    tmsymbol theSym = add_tmsymbol("isforeach");
+    pos = pragma_list_find_index_tmsymbol(thePragmas, theSym);
+    if (pos != -1) 
+    {
+        thePragmas = delete_Pragma_list(thePragmas,pos);
+        e->pragmas = thePragmas;
+        SmtForall nsf = new_SmtForall(
+            0,
+            e->orig,
+            e->pragmas,
+            e->on,
+            e->cards,
+            new_OwnerExpr_list(), // Not in original!
+            e->body);
+        fre_SmtFor(e);
+        return nsf;
+    }
+    else
+    {
+        return e;
+    }
+}
+
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_if5(
+    vnusprog elm, global_context gc )
+{
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}

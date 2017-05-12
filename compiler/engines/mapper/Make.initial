@@ -1,0 +1,37 @@
+# Makefile for the initial engine
+
+# The magical stuff
+include ./Make.vars
+include $(COMPILERSRCROOT)/Makefiles/Make.vars
+MAKEFILE = Make.initial
+
+EXE	 = initial
+
+# Various categories of source code files.
+TMCSRCC	= search.ct replace.ct
+TMCSRC	= $(TMCSRCC) \
+	  applytag.ct applycheck.ct applyftf.ct applyftf2.ct \
+	  applypre1.ct applypre2.ct applypre4.ct \
+	  applyftn1.ct \
+	  applybug.ct \
+	  applyopasszap.ct applyexprredzap.ct \
+	  parseowners.ct \
+	  applygetowner.ct \
+	  applydiststrip.ct applydistcheck.ct
+TMCXTRA	= 
+TMHXTRA	= extradefs.ht
+TMGXTRA	= genwalk.t gensupport.t
+DSEXTRA = 
+VSRC	= error.cc
+SRCC	= main.cc service.cc global.cc  parsepragmas.cc $(VSRC) symtable.cc
+SRC	= $(SRCC) initial.cc
+
+GENSRC  = tmadmin.cc $(TMCSRC:%.ct=%-g.cc)
+GENHDR  = tmadmin.h
+
+OBJ	= $(SRC:%.cc=%.o) $(GENSRC:%.cc=%.o)
+
+EXTRAFLAGS += -g
+EXTRAFLAGS += -I$(VNUSLIB) -I$(TMROOT)/include 
+
+include ./Make.rules

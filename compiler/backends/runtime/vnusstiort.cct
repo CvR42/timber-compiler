@@ -1,0 +1,25 @@
+.insert lib.t
+/*
+ * Threaded read functions use barriers!
+ */
+
+#include "vnusstio.h"
+.insert lib.t
+#include "io/ioseq.h"
+#include "io/iopar.h"
+#include "../runtime/vnusrtl.h"
+#include <stdio.h>
+
+.foreach type $(typelist)
+${call gen_read_hdr $(type) vp__}
+{
+    VnusInt result = NOT_EXECUTED;
+    vnus_barrier();
+    if (isThisProcessor(0))
+    {
+        result = ${call gen_read_call $(type) vs__};
+    }
+    vnus_barrier();
+    return result;
+}
+.endforeach

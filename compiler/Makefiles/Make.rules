@@ -1,0 +1,180 @@
+# executables
+
+%-s:	%-s.o $(LIBSS)
+	$(CXX) $(LDCXXSFLAGS) $< $(LIBSSFLAGS) -o $@
+#	strip $@
+
+%-t:	%-t.o $(LIBST)
+	$(CXX) $(LDCXXTFLAGS) $< $(LIBSTFLAGS) -o $@
+#	strip $@
+
+%-d:	%-d.o $(LIBSD)
+	$(CXX) $(LDCXXDFLAGS) $< $(LIBSDFLAGS) -o $@
+#	strip $@
+	cp -fp $@ $(PVMDIR)
+
+%-m:	%-m.o $(LIBSM)
+	$(CXX) $(LDCXXMFLAGS) $< $(LIBSMFLAGS) -o $@
+#	strip $@
+
+%-p:	%-p.o $(LIBSP)
+	$(CXX) $(LDCXXPFLAGS) $< $(LIBSPFLAGS) -o $@
+#	strip $@
+
+# embedded targets
+
+%-ts:	%-ts.o $(LIBSTS)
+	$(TMCXX) $(TMLDCXXSFLAGS) $< $(LIBSTSFLAGS) -o $@
+
+%-e:	%-e.o $(LIBE)
+	$(CXX) $(LDCXXEFLAGS) $< $(LIBSEFLAGS) -o $@
+
+%-te:	%-te.o $(LIBSTE)
+	$(TMCXX) $(TMLDCXXEFLAGS) $< $(LIBSTEFLAGS) -o $@
+
+# object files
+
+%-s.o:	%-s.cc
+	$(CXX) $(CXXSFLAGS) -c $< -o $@
+
+%-s.o:	%.cc
+	$(CXX) $(CXXSFLAGS) -c $< -o $@
+
+%-s.o:	%-s.g.cc
+	$(CXX) $(CXXSFLAGS) -c $< -o $@
+
+%-t.o:	%-d.cc
+	$(CXX) $(CXXTFLAGS) -c $< -o $@
+
+%-t.o:	%.cc
+	$(CXX) $(CXXTFLAGS) -c $< -o $@
+
+%-t.o:	%-d.g.cc
+	$(CXX) $(CXXTFLAGS) -c $< -o $@
+
+
+%-d.o:	%-d.cc
+	$(CXX) $(CXXDFLAGS) -c $< -o $@
+%-d.o:	%.cc
+	$(CXX) $(CXXDFLAGS) -c $< -o $@
+%-d.o:	%-d.g.cc
+	$(CXX) $(CXXDFLAGS) -c $< -o $@
+
+%-m.o:	%-d.cc
+	$(CXX) $(CXXMFLAGS) -c $< -o $@
+
+%-m.o:	%.cc
+	$(CXX) $(CXXMFLAGS) -c $< -o $@
+
+%-m.o:	%-d.g.cc
+	$(CXX) $(CXXMFLAGS) -c $< -o $@
+
+
+%-p.o:	%-d.cc
+	$(CXX) $(CXXPFLAGS) -c $< -o $@
+
+%-p.o:	%.cc
+	$(CXX) $(CXXPFLAGS) -c $< -o $@
+
+%-p.o:	%-d.g.cc
+	$(CXX) $(CXXPFLAGS) -c $< -o $@
+
+%-e.o:	%-d.cc
+	$(CXX) $(CXXEFLAGS) -c $< -o $@
+
+%-e.o:	%.cc
+	$(CXX) $(CXXEFLAGS) -c $< -o $@
+
+%-e.o:	%-d.g.cc
+	$(CXX) $(CXXEFLAGS) -c $< -o $@
+
+# embedded targets
+
+%-te.o:	%-d.cc
+	$(TMCXX) $(TMCXXEFLAGS) -c $< -o $@
+
+%-te.o:	%.cc
+	$(TMCXX) $(TMCXXEFLAGS) -c $< -o $@
+
+%-te.o:	%-d.g.cc
+	$(TMCXX) $(TMCXXEFLAGS) -c $< -o $@
+
+
+%-ts.o:	%-s.cc
+	$(TMCXX) $(TMCXXSFLAGS) -c $< -o $@
+
+%-ts.o:	%.cc
+	$(TMCXX) $(TMCXXSFLAGS) -c $< -o $@
+
+%-ts.o:	%-s.g.cc
+	$(TMCXX) $(TMCXXSFLAGS) -c $< -o $@
+
+# default object files
+
+%.o:	%.cc
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+%.o:	%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# generated C code
+
+%-s.g.cc:	%-s.v $(VNUS)
+	$(VNUS) $(VNUSSFLAGS) $< -o $@
+
+%-s.g.cc:	%.v $(VNUS)
+	$(VNUS) $(VNUSSFLAGS) $< -o $@
+
+%-s.g.cc:	%-s.g.v $(VNUS)
+	$(VNUS) $(VNUSSFLAGS) $< -o $@
+
+%-s.g.cc:	%-s.g.tm $(VNUS)
+	$(VNUS) $(VNUSTMTOSFLAGS) $< -o $@
+
+
+%-t.g.cc:	%-d.v $(VNUS)
+	$(VNUS) $(VNUSTFLAGS) $< -o $@
+
+%-t.g.cc:	%-d.tm $(VNUS)
+	$(VNUS) $(VNUSTMTOTFLAGS) $< -o $@
+
+%-t.g.cc:	%-d.g.tm $(VNUS)
+	$(VNUS) $(VNUSTMTOTFLAGS) $< -o $@
+
+
+%-d.g.cc:	%-d.v $(VNUS)
+	$(VNUS) $(VNUSDFLAGS) $< -o $@
+
+%-d.g.cc:	%-d.tm $(VNUS)
+	$(VNUS) $(VNUSTMTODFLAGS) $< -o $@
+
+%-d.g.cc:	%-d.g.tm $(VNUS)
+	$(VNUS) $(VNUSTMTODFLAGS) $< -o $@
+
+# generated tm code
+
+%-s.g.tm:	%-s.v $(VNUS)
+	$(VNUS) $(VNUSVTOTMFLAGS) $< -o $@
+
+%-s.g.tm:	%.v $(VNUS)
+	$(VNUS) $(VNUSVTOTMFLAGS) $< -o $@
+
+%-s.g.tm:	%-s.g.v $(VNUS)
+	$(VNUS) $(VNUSVTOTMFLAGS) $< -o $@
+
+
+%-d.g.tm:	%-s.tm $(MAPPER)
+	$(MAPPER) < $< > $@
+
+%-d.g.tm:	%.tm $(MAPPER)
+	$(MAPPER) < $< > $@
+
+%-d.g.tm:	%-s.g.tm $(MAPPER)
+	$(MAPPER) < $< > $@
+
+# generated vnus code
+
+%-s.g.v:	%.spar $(SPAR)
+	$(SPAR) $(SPARFLAGS) $< -o $@
+
+.PRECIOUS:	%-d.o

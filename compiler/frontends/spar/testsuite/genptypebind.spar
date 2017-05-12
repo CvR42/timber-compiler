@@ -1,0 +1,15 @@
+import spar.util.Vector;
+
+public class genptypebind {
+	genptypebind( Vector(|double|) V ){
+	}
+	static public void SetVec(Vector(|double|) V) {
+		boolean occurs = false;
+	}
+    
+	static public void main() {
+	    Vector(|double|) V = null;
+	    genptypebind x = new genptypebind( V );
+	    SetVec(V);
+	}
+}

@@ -1,0 +1,373 @@
+.. File: markfinal.ct
+..
+.. Inspect a method, and mark all formal parameters and local
+.. variables that are never assigned to as 'final'. For formal parameters
+.. it is possible to use the ACC_FINAL modifier bit, but for local
+.. variables it is necessary to distinguish the ACC_DEDUCED_FINAL
+.. and the ACC_FINAL modifier, since otherwise constants that had
+.. been deduced to be final would be propagated, in violation of
+.. the Java semantics.
+..
+.. TODO: 
+.. - Let the analyzer work for tuples and vectors. For now variables
+.. of these types are never deduced to be final.
+.. - Extend the analysis to the readonly property of reference variables.
+.. - Do final marking of the formal parameter of a catch block.
+..
+.. Return 'walk' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the datastructure we're walking on, and a type 't', of that variable,
+.. generate a return statement/
+.macro generate_walker_return indent var t
+$(indent)return $(var);
+.endmacro
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+.if ${member ${stemname $t} ${typelist}}
+$(indent)if( $(var) == $tNIL ){
+$(indent)    return $(var);
+$(indent)}
+.endif
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+static $t markfinal_$t_walker( $t $(var), markfinal_data *ctx )
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we're walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+static $t markfinal_$t_walker( $t $(var), markfinal_data *ctx );
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) markfinal_$(type)_action( $(var), ctx );
+.else
+$(indent)$(var) = ($(type)) markfinal_$(type)_action( to_$(type)( $(var) ), ctx );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) markfinal_$(type)_walker( $(var), ctx );
+.else
+$(indent)$(var) = ($(type)) markfinal_$(type)_walker( to_$(type)( $(var) ), ctx );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var', and a type 'type', generate
+.. the body of an empty walker function.
+.macro generate_empty_walker_body indent var type
+$(indent)(void) ctx;
+.endmacro
+..
+.. For which types are there actions defines?
+.set actors
+.append actors AssignOpExpression
+.append actors AssignStatement
+.append actors Block
+.append actors ExternalNamePragmaExpression
+.append actors FieldDeclaration
+.append actors PostDecrementExpression
+.append actors PostIncrementExpression
+.append actors PreDecrementExpression
+.append actors PreIncrementExpression
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk MethodDeclaration "$(actors)"}
+..
+// ->->-> This is a GENERATED FILE <-<-<-
+
+/* File: markfinal.c
+ *
+ * See which variables and formal parameters are never assigned to,
+ * and mark them as such.
+ *
+ * This helps quite a lot in the other analysis of the program.
+ */
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "markfinal.h"
+#include "service.h"
+
+typedef struct str_markfinal_data {
+    tmsymbol_list vars;
+    tmsymbol_list tuple_vars;
+    statement_list local_decls;
+} markfinal_data;
+
+.call generate_walker_forwards "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+// This variable is assigned to, so its declaration cannot be labeled
+// final. Zap it from the list.
+static void mark_not_final( markfinal_data *ctx, const_origsymbol var )
+{
+    unsigned int ix;
+
+    if( search_tmsymbol_list( ctx->vars, var->sym, &ix ) ){
+	ctx->vars = delete_tmsymbol_list( ctx->vars, ix );
+    }
+    if( search_tmsymbol_list( ctx->tuple_vars, var->sym, &ix ) ){
+	ctx->tuple_vars = delete_tmsymbol_list( ctx->tuple_vars, ix );
+    }
+}
+
+// This tuple variable is assigned to, so its declaration cannot be labeled
+// final. Zap it from the list.
+static void mark_tuple_not_final( markfinal_data *ctx, const_origsymbol var )
+{
+    unsigned int ix;
+
+    if( search_tmsymbol_list( ctx->tuple_vars, var->sym, &ix ) ){
+	ctx->tuple_vars = delete_tmsymbol_list( ctx->tuple_vars, ix );
+    }
+}
+
+static void markfinal_lhs_expression( const_expression lhs, markfinal_data *ctx )
+{
+    if( lhs->tag == TAGVariableNameExpression ){
+	mark_not_final( ctx, to_const_VariableNameExpression(lhs)->name );
+    }
+    else if( lhs->tag == TAGSubscriptExpression ){
+	const_SubscriptExpression sx = to_const_SubscriptExpression( lhs );
+	const_expression array = sx->array;
+
+	if( array->tag == TAGVariableNameExpression ){
+	    mark_tuple_not_final( ctx, to_const_VariableNameExpression(array)->name );
+	}
+    }
+    else if( lhs->tag == TAGVectorSubscriptExpression ){
+	const_VectorSubscriptExpression sx = to_const_VectorSubscriptExpression( lhs );
+	const_expression vector = sx->vector;
+
+	if( vector->tag == TAGVariableNameExpression ){
+	    mark_tuple_not_final( ctx, to_const_VariableNameExpression(vector)->name );
+	}
+    }
+    else if( lhs->tag == TAGVectorExpression ){
+	const_VectorExpression vx = to_const_VectorExpression( lhs );
+	expression_list xl = vx->fields;
+
+	for( unsigned int ix=0; ix<xl->sz; ix++ ){
+	    markfinal_lhs_expression( xl->arr[ix], ctx );
+	}
+    }
+}
+
+/* -------- actors ---------- */
+
+/* Action for type AssignStatement. */
+static AssignStatement markfinal_AssignStatement_action(
+    AssignStatement smt,
+    markfinal_data *ctx
+)
+{
+.call generate_walker_call "    " smt AssignStatement AssignStatement
+    markfinal_lhs_expression( smt->lhs, ctx );
+    return smt;
+}
+
+/* Action for type AssignOpExpression. */
+static AssignOpExpression markfinal_AssignOpExpression_action(
+    AssignOpExpression smt,
+    markfinal_data *ctx
+)
+{
+.call generate_walker_call "    " smt AssignOpExpression AssignOpExpression
+    markfinal_lhs_expression( smt->left, ctx );
+    return smt;
+}
+
+.foreach t PostIncrementExpression PreIncrementExpression PostDecrementExpression PreDecrementExpression
+/* Action for type $t. */
+static $t markfinal_$t_action(
+    $t smt,
+    markfinal_data *ctx
+)
+{
+.call generate_walker_call "    " smt $t $t
+    markfinal_lhs_expression( smt->x, ctx );
+    return smt;
+}
+
+.endforeach
+/* Action for type ExternalNamePragmaExpression. */
+static ExternalNamePragmaExpression markfinal_ExternalNamePragmaExpression_action(
+    ExternalNamePragmaExpression e,
+    markfinal_data *ctx
+)
+{
+.call generate_walker_call "    " e ExternalNamePragmaExpression ExternalNamePragmaExpression
+    mark_not_final( ctx, e->name );
+    return e;
+}
+
+/* Action for type Block. */
+static Block markfinal_Block_action(
+    Block blk,
+    markfinal_data *ctx
+)
+{
+    statement_list old_local_decls = ctx->local_decls;
+    ctx->local_decls = new_statement_list();
+.call generate_walker_call "    " blk Block Block
+    // Now see which of our local variables are still listed as final
+    for( unsigned int ix=0; ix<ctx->local_decls->sz; ix++ ){
+	statement d = ctx->local_decls->arr[ix];
+	assert( d->tag == TAGFieldDeclaration );
+	FieldDeclaration decl = to_FieldDeclaration(d);
+	tmsymbol nm = decl->name->sym;
+	if( !has_any_flag( decl->flags, ACC_VOLATILE ) ){
+	    if(
+		member_tmsymbol_list( ctx->vars, nm ) ||
+		member_tmsymbol_list( ctx->tuple_vars, nm )
+	    ){
+		// Yep, this one if final, so mark it as such.
+		decl->flags |= ACC_DEDUCED_FINAL;
+		if( trace_analysis ){
+		    fprintf(
+			stderr,
+			"%s:%d: We deduce that variable '%s' is final\n",
+			decl->org->file->name,
+			decl->org->line,
+			nm->name
+		    );
+		}
+	    }
+	}
+    }
+    fre_statement_list( ctx->local_decls );
+    ctx->local_decls = old_local_decls;
+    return blk;
+}
+
+/* Action for type FieldDeclaration. */
+static FieldDeclaration markfinal_FieldDeclaration_action(
+    FieldDeclaration decl,
+    markfinal_data *ctx
+)
+{
+    unsigned int ix;
+
+    ctx->local_decls = append_statement_list( ctx->local_decls, decl );
+    tmsymbol nm = decl->name->sym;
+    if( is_tuple_type( decl->t ) ){
+	// For now, if the variable is already there don't try to deduce
+	// anything, but be careful.
+	// TODO: do something smarter.
+	if( search_tmsymbol_list( ctx->vars, nm, &ix ) ){
+	    ctx->vars = delete_tmsymbol_list( ctx->vars, ix );
+	}
+	else {
+	    ctx->tuple_vars = append_tmsymbol_list( ctx->tuple_vars, nm );
+	}
+    }
+    else {
+	// For now, if the variable is already there don't try to deduce
+	// anything, but be careful.
+	// TODO: do something smarter.
+	if( search_tmsymbol_list( ctx->vars, nm, &ix ) ){
+	    ctx->vars = delete_tmsymbol_list( ctx->vars, ix );
+	}
+	else {
+	    ctx->vars = append_tmsymbol_list( ctx->vars, nm );
+	}
+    }
+.call generate_walker_call "    " decl FieldDeclaration FieldDeclaration
+    return decl;
+}
+
+/* -------- End of action functions ---------- */
+
+.call generate_walker "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+/* Given a Spar program, markfinal it into a simpler version. */
+MethodDeclaration markfinal_MethodDeclaration( MethodDeclaration decl )
+{
+    markfinal_data the_ctx;
+    FormalParameter_list formals = decl->parameters;
+    tmsymbol_list vars = new_tmsymbol_list();
+    tmsymbol_list tuple_vars = new_tmsymbol_list();
+
+    for( unsigned int ix=0; ix<formals->sz; ix++ ){
+	FormalParameter p = formals->arr[ix];
+
+	if( is_tuple_type( p->t ) ){
+	    tuple_vars = add_tmsymbol_list( tuple_vars, p->name->sym );
+	}
+	else {
+	    vars = add_tmsymbol_list( vars, p->name->sym );
+	}
+    }
+    the_ctx.vars = vars;
+    the_ctx.tuple_vars = tuple_vars;
+    the_ctx.local_decls = statement_listNIL;
+    markfinal_data *ctx = &the_ctx;
+
+.call generate_descent_call "    " decl MethodDeclaration MethodDeclaration
+
+    // Now see which formals are still listed as never assigned, and
+    // mark them as final.
+    for( unsigned int iy=0; iy<formals->sz; iy++ ){
+	FormalParameter p = formals->arr[iy];
+
+	if(
+	    member_tmsymbol_list( vars, p->name->sym ) ||
+	    member_tmsymbol_list( tuple_vars, p->name->sym )
+	){
+	    p->flags |= ACC_FINAL;
+	    if( trace_analysis ){
+		fprintf(
+		    stderr,
+		    "%s:%d: We deduce that parameter '%s' is final\n",
+		    decl->org->file->name,
+		    decl->org->line,
+		    p->name->sym->name
+		);
+	    }
+	}
+    }
+    rfre_tmsymbol_list( vars );
+    rfre_tmsymbol_list( tuple_vars );
+    return decl;
+}

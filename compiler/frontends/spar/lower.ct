@@ -1,0 +1,1043 @@
+.. File: lower.ct
+..
+.. Lowering of (most) expressions with side-effects.
+..
+.. Return 'walk' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the datastructure we're walking on, and a type 't', of that variable,
+.. generate a return statement/
+.macro generate_walker_return indent var t
+$(indent)return $(var);
+.endmacro
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+.if ${member ${stemname $t} ${typelist}}
+$(indent)if( $(var) == NULL ){
+$(indent)    return $(var);
+$(indent)}
+.endif
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+static $t lower_$t_walker( $t $(var), lower_data *ctx )
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we're walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+static $t lower_$t_walker( $t $(var), lower_data *ctx );
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) lower_$(type)_action( $(var), ctx );
+.else
+$(indent)$(var) = ($(type)) lower_$(type)_action( to_$(type)( $(var) ), ctx );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) lower_$(type)_walker( $(var), ctx );
+.else
+$(indent)$(var) = ($(type)) lower_$(type)_walker( to_$(type)( $(var) ), ctx );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var', and a type 'type', generate
+.. the body of an empty walker function.
+.macro generate_empty_walker_body indent var type
+$(indent)(void) ctx;
+.endmacro
+..
+..
+.. For which types are there actions defines?
+.set actors 
+.append actors Catch
+.append actors ClassDeclaration
+.append actors ClassicForStatement 
+.append actors ConstructorDeclaration
+.append actors DoWhileStatement
+.append actors EachStatement
+.append actors FieldDeclaration
+.append actors FunctionDeclaration
+.append actors InstanceInitializer
+.append actors InterfaceDeclaration
+.append actors MethodDeclaration
+.append actors PreDecrementExpression
+.append actors PreIncrementExpression
+.append actors ReturnStatement
+.append actors ShortopExpression
+.append actors StaticInitializer
+.append actors SuperFieldExpression
+.append actors SuperInvocationExpression
+.append actors SwitchCase 
+.append actors TryStatement
+.append actors TypeDeclaration
+.append actors TypeInvocationExpression
+.append actors TypeOf
+.append actors ValueReturnStatement
+.append actors WhileStatement
+.append actors statement
+.append actors statement_list
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "SparProgramUnit" "$(actors)"}
+..
+/* File: lower.c
+ *
+ * Traverse the parse tree and do the following conversions:
+ *  - create new scopes for declarations inbetween statements.
+ *  - rewrite expressions with side-effects into separate statements
+ *  - rewrite array initializations into separate assignments
+ */
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "symbol_table.h"
+#include "typederive.h"
+#include "lower.h"
+#include "service.h"
+#include "error.h"
+#include "analyze.h"
+#include "pragma.h"
+#include "dump.h"
+
+typedef struct str_lower_data {
+    statement_list pre_spill_smts;
+    statement_list post_spill_smts;
+    context where;
+    origin org;
+    modflags classflags;
+} lower_data;
+
+.call generate_walker_forwards "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+#define is_static_context(ctx) (((ctx)==CTX_STATICROUTINE)||((ctx)==CTX_STATICINIT))
+#define is_dynamic_context(ctx) (((ctx)==CTX_DYNAMICROUTINE)||((ctx)==CTX_DYNAMICINIT)||((ctx)==CTX_CONSTRUCTOR)))
+#define is_routine_context(ctx) (((ctx)==CTX_STATICROUTINE)||((ctx)==CTX_DYNAMICROUTINE)||((ctx)==CTX_CONSTRUCTOR)||((ctx)==CTX_STATICINIT)||((ctx)==CTX_DYNAMICINIT))
+
+/* -------- helper functions ---------- */
+
+/* Given a list of statements and an 'allow_decl' flag, rewrite
+ * the list of statements so that no declarations follow a statement.
+ * If 'allow_decl' is true, allow the list of statements to
+ * start with a series of declarations.
+ */
+static statement_list rescope_declarations( statement_list sl, bool allow_decl )
+{
+    unsigned int ix = 0;
+    while( ix<sl->sz ){
+	if( is_declaration( sl->arr[ix] ) ){
+	    if( !allow_decl ){
+		statement_list tail;
+
+		sl = extractlist_statement_list( sl, ix, sl->sz, &tail );
+		tail = rescope_declarations( tail, true );
+		sl = append_statement_list(
+		    sl,
+		    new_BlockStatement(
+			rdup_origin( tail->arr[0]->org ),
+			Pragma_listNIL,
+			origsymbol_listNIL,	// Labels
+			new_Block(
+			    tmsymbolNIL,
+			    new_Pragma_list(),
+			    tail
+			)
+		    )
+		);
+	    }
+	}
+	else {
+	     allow_decl = false;
+	}
+	ix++;
+    }
+    return sl;
+}
+
+// Given a list of catch statements, a catch variable, and a 'finally' block,
+// return a statement block that detects the exceptions of the catch
+// statements.
+static Block generate_catch_code(
+    statement varinit,
+    Catch_list catches,
+    origsymbol catchvar,
+    type_list caught,
+    Block finally
+)
+{
+    statement_list else_clause = new_statement_list();
+
+    else_clause = append_statement_list(
+	else_clause,
+	new_InternalThrowStatement(
+	    gen_origin(),
+	    Pragma_listNIL,
+	    origsymbol_listNIL,	// Labels
+	    new_VariableNameExpression( rdup_origsymbol( catchvar ), VAR_LOCAL )
+	)
+    );
+    unsigned int ix = catches->sz;
+    while( ix>0 ){
+	ix--;
+	Catch c = catches->arr[ix];
+	FormalParameter parm = c->parm;
+	Block handler = rdup_Block( c->body );
+
+	caught = append_type_list( caught, rdup_type( parm->t ) );
+	// The catch variable of the original catch clause is now
+	// an initialized variable of the block that handles the
+	// catch expression.
+	VariableDeclaration catchval_decl = new_FieldDeclaration(
+	    rdup_origin( parm->name->org ),
+	    rdup_Pragma_list( parm->pragmas ),
+	    origsymbol_listNIL,	// Labels
+	    ACC_FINAL|parm->flags,
+	    false,
+	    rdup_origsymbol( parm->name ),
+	    rdup_type( parm->t ),
+	    new_OptExpr(
+		new_CastExpression(
+		    rdup_type( parm->t ),
+		    new_VariableNameExpression( rdup_origsymbol( catchvar ), VAR_LOCAL )
+		)
+	    )
+	);
+
+	handler->statements = insert_statement_list(
+	    handler->statements,
+	    0,
+	    catchval_decl
+	);
+	else_clause = append_statement_list(
+	    new_statement_list(),
+	    new_IfStatement(
+		gen_origin(),
+		build_Pragma_list( new_role_pragma( "exception-decode" ) ),
+		origsymbol_listNIL,	// Labels
+		false,			// compile both
+		new_InstanceOfExpression(
+		    new_VariableNameExpression( rdup_origsymbol( catchvar ), VAR_FORMAL ),
+		    rdup_type( parm->t )
+		),
+		handler,
+		new_Block( tmsymbolNIL, Pragma_listNIL, else_clause )
+	    )
+	);
+    }
+    else_clause = insert_statement_list(
+	else_clause,
+	0,
+	varinit
+    );
+
+    if( finally != BlockNIL ){
+	// If there is a 'finally' statement, it should be executed
+	// *even* if the exception handlers throw an exception, so
+	// wrap the entire exception handling stuff in another
+	// simple try{} block, and execute the finally handler
+	// without decoding the newly thrown exception.
+	//
+	// After executing the finally handler, rethrow the exception.
+	//
+	// See JLS2 14.19.2
+	Block finally_copy = rdup_Block( finally );
+	origsymbol catchvar_nm = gen_origsymbol( "catchvar" );
+
+	finally_copy->statements = append_statement_list(
+	    finally_copy->statements,
+	    new_InternalThrowStatement(
+		gen_origin(),
+		Pragma_listNIL,
+		origsymbol_listNIL,	// Labels
+		new_VariableNameExpression( rdup_origsymbol( catchvar_nm ), VAR_FORMAL|VAR_GENERATED )
+	    )
+	);
+
+	// The 'caught' list of this try statement is empty. This is
+	// in fact a lie, but it makes sure that the administration
+	// is ok.
+	statement finally_wrapper = new_SimpleTryStatement(
+	    gen_origin(),
+	    Pragma_listNIL,
+	    origsymbol_listNIL,	// Labels
+	    new_Block( tmsymbolNIL, Pragma_listNIL, else_clause ),
+	    new_FormalParameter(
+		catchvar_nm,
+		new_Pragma_list(),
+		0,
+		new_ExceptionVariableType()
+	    ),
+	    new_type_list(),
+	    finally_copy
+	);
+	else_clause = append_statement_list(
+	    new_statement_list(),
+	    finally_wrapper
+	);
+    }
+    return new_Block( tmsymbolNIL, Pragma_listNIL, else_clause );
+}
+
+/* -------- actors ---------- */
+
+// Given an PreIncrementExpression, lower it to += 1, and call lower again.
+// There is little point in moving this to the mangle treewalker.
+static expression lower_PreIncrementExpression_action(
+    PreIncrementExpression elm,
+    lower_data *ctx
+)
+{
+    expression x = new_AssignOpExpression(
+	elm->x,
+	ASSIGN_PLUS,
+	new_IntExpression( 1 )
+    );
+    fre_expression( elm );
+.call generate_descent_call "    " x expression expression
+    (void) lower_PreIncrementExpression_walker;
+    return x;
+}
+
+// Given an PreDecrementExpression, lower it to factor out side-effects.
+// There is little point in moving this to the mangle treewalker.
+static expression lower_PreDecrementExpression_action(
+    PreDecrementExpression elm,
+    lower_data *ctx
+)
+{
+    expression x = new_AssignOpExpression(
+	elm->x,
+	ASSIGN_MINUS,
+	new_IntExpression( 1 )
+    );
+    fre_expression( elm );
+.call generate_descent_call "    " x expression expression
+    (void) lower_PreDecrementExpression_walker;
+    return x;
+}
+
+/* Action for type 'StaticInitializer'. */
+static StaticInitializer lower_StaticInitializer_action( StaticInitializer init, lower_data *ctx )
+{
+    context oldwhere = ctx->where;
+
+    ctx->where = CTX_STATICINIT;
+.call generate_walker_call "    " init StaticInitializer StaticInitializer
+    ctx->where = oldwhere;
+    return init;
+}
+
+/* Action for type 'Catch'. */
+static Catch lower_Catch_action( Catch blk, lower_data *ctx )
+{
+    origin oldorg = ctx->org;
+
+    ctx->org = blk->org;
+.call generate_walker_call "    " blk Catch Catch
+    ctx->org = oldorg;
+    return blk;
+}
+
+/* Action for type 'statement'. */
+static statement lower_statement_action( statement smt, lower_data *ctx )
+{
+    origin oldorg = ctx->org;
+
+    ctx->org = smt->org;
+.call generate_walker_call "    " smt statement statement
+    ctx->org = oldorg;
+    return smt;
+}
+
+/* Action for type 'SuperFieldExpression'. */
+static SuperFieldExpression lower_SuperFieldExpression_action( SuperFieldExpression x, lower_data *ctx )
+{
+    origin oldorg = ctx->org;
+
+    ctx->org = x->org;
+.call generate_walker_call "    " x SuperFieldExpression SuperFieldExpression
+    ctx->org = oldorg;
+    return x;
+}
+
+/* Action for type 'SuperInvocationExpression'. */
+static SuperInvocationExpression lower_SuperInvocationExpression_action( SuperInvocationExpression x, lower_data *ctx )
+{
+    origin oldorg = ctx->org;
+
+    ctx->org = x->org;
+.call generate_walker_call "    " x SuperInvocationExpression SuperInvocationExpression
+    ctx->org = oldorg;
+    return x;
+}
+
+/* Action for type 'TypeInvocationExpression'. */
+static TypeInvocationExpression lower_TypeInvocationExpression_action( TypeInvocationExpression x, lower_data *ctx )
+{
+    origin oldorg = ctx->org;
+
+    ctx->org = x->org;
+.call generate_walker_call "    " x TypeInvocationExpression TypeInvocationExpression
+    ctx->org = oldorg;
+    return x;
+}
+
+/* Action for type 'ShortopExpression'.  */
+static expression lower_ShortopExpression_action( ShortopExpression x, lower_data *ctx )
+{
+    if( x == ShortopExpressionNIL ){
+	return x;
+    }
+    (void) lower_ShortopExpression_walker;
+.call generate_descent_call "    " x->left expression expression
+    statement_list old_pre_spill_smts = ctx->pre_spill_smts;
+    statement_list old_post_spill_smts = ctx->post_spill_smts;
+    ctx->pre_spill_smts = new_statement_list();
+    ctx->post_spill_smts = new_statement_list();
+.call generate_descent_call "    " x->right expression expression
+    if(
+	ctx->pre_spill_smts->sz != 0 ||
+	ctx->post_spill_smts->sz != 0 ||
+	maybe_has_sideeffect( x->right, 0 )
+    ){
+	// The evaluation of the second term of a short-circuit expression
+	// has spilled code. Since this code should only be evaluated
+	// if the second term is evaluated, some rewriting is necessary.
+	//
+	// Concretely, an expression like this:
+	//
+	//     left && right
+	//
+	// is rewritten to the following spill code:
+	//
+	// bool tmp = left;
+	// if( tmp ){
+	//    /* pre_spill code from right goes here. */
+	//    tmp = right;
+	//    /* post_spill code from right goes here. */
+	// }
+	// 
+	// and the expression is replaced by
+	//
+	//    tmp
+
+	origsymbol nm = gen_origsymbol( "shortmp" );
+	declaration d = new_FieldDeclaration(
+	    rdup_origin( ctx->org ),
+	    Pragma_listNIL,
+	    origsymbol_listNIL,	// Labels
+	    0,
+	    false,
+	    nm,
+	    new_PrimitiveType( BT_BOOLEAN ),
+	    new_OptExpr( x->left )
+	);
+	old_pre_spill_smts = append_statement_list( old_pre_spill_smts, d );
+	statement_list sl = ctx->pre_spill_smts;
+	sl = append_statement_list(
+	    sl,
+	    new_AssignStatement(
+		rdup_origin( ctx->org ),
+		Pragma_listNIL,
+		origsymbol_listNIL,	// Labels
+		ASSIGN,
+		new_VariableNameExpression(
+		    rdup_origsymbol( nm ),
+		    VAR_FINAL|VAR_GENERATED|VAR_LOCAL
+		),
+		x->right
+	    )
+	);
+	sl = concat_statement_list( sl, ctx->post_spill_smts );
+	expression cond = new_VariableNameExpression(
+	    rdup_origsymbol( nm ),
+	    VAR_FINAL|VAR_GENERATED|VAR_LOCAL
+	);
+	if( x->optor == SHORTOP_OR ){
+	    cond = new_UnopExpression( UNOP_NOT, cond );
+	}
+	fre_expression( x );
+	IfStatement is = new_IfStatement(
+	    rdup_origin( ctx->org ),
+	    Pragma_listNIL,
+	    origsymbol_listNIL,	// Labels
+	    false,			// compile both
+	    cond,
+	    new_Block( tmsymbolNIL, Pragma_listNIL, sl ),
+	    new_Block( tmsymbolNIL, Pragma_listNIL, new_statement_list() )
+	);
+	old_pre_spill_smts = append_statement_list( 
+	    old_pre_spill_smts,
+	    is
+	);
+	ctx->pre_spill_smts = old_pre_spill_smts;
+	ctx->post_spill_smts = old_post_spill_smts;
+	return new_VariableNameExpression(
+	    rdup_origsymbol( nm ),
+	    VAR_FINAL|VAR_GENERATED|VAR_LOCAL
+	);
+    }
+    else {
+	ctx->pre_spill_smts = concat_statement_list(
+	    old_pre_spill_smts,
+	    ctx->pre_spill_smts
+	);
+	ctx->post_spill_smts = concat_statement_list(
+	    old_post_spill_smts,
+	    ctx->post_spill_smts
+	);
+    }
+    return x;
+}
+
+/* Action for type 'WhileStatement'. 
+ * The condition expression cannot be broken out in a naive way, since
+ * this may affect the behavior of the program. Therefore, the
+ * condition expression is *always* broken out, and a special statement
+ * is added to update the condition expression.
+ */
+static WhileStatement lower_WhileStatement_action( WhileStatement smt, lower_data *ctx )
+{
+    // Only condition expressions with side-effects will be broken out
+    // So leave the others alone.
+    if( maybe_has_sideeffect( smt->cond, NO_SE_EXCEPTION|NO_SE_NEW ) ){
+	expression x = smt->cond;
+	expression cond = rdup_expression( smt->cond );
+	origsymbol nm = gen_origsymbol( "whilecond" );
+	declaration d = new_FieldDeclaration(
+	    rdup_origin( ctx->org ),
+	    Pragma_listNIL,
+	    origsymbol_listNIL,	// Labels
+	    0,
+	    false,
+	    rdup_origsymbol( nm ),
+	    new_TypeOf( rdup_expression( x ) ),
+	    new_OptExpr( x )
+	);
+
+	ctx->pre_spill_smts = append_statement_list( ctx->pre_spill_smts, d );
+	smt->cond = new_VariableNameExpression( nm, VAR_GENERATED|VAR_LOCAL );
+	AssignStatement updt = new_AssignStatement(
+	    rdup_origin( smt->org ),
+	    rdup_Pragma_list( smt->pragmas ),
+	    origsymbol_listNIL,	// Labels
+	    ASSIGN,
+	    rdup_expression( smt->cond ),
+	    cond
+	);
+	smt->update = append_statement_list( smt->update, updt );
+    }
+.call generate_walker_call "    " smt WhileStatement WhileStatement
+    smt->update = rescope_declarations( smt->update, false );
+    return smt;
+}
+
+/* Action for type 'DoWhileStatement'. 
+ * The condition expression cannot be broken out in a naive way, since
+ * this may affect the behavior of the program. Therefore, the
+ * condition expression is *always* broken out, and a special statement
+ * is added to update the condition expression.
+ */
+static DoWhileStatement lower_DoWhileStatement_action( DoWhileStatement smt, lower_data *ctx )
+{
+    if( maybe_has_sideeffect( smt->cond, NO_SE_EXCEPTION|NO_SE_NEW ) ){
+	origsymbol nm = gen_origsymbol( "dowhilecond" );
+	declaration d = new_FieldDeclaration(
+	    rdup_origin( ctx->org ),
+	    Pragma_listNIL,
+	    origsymbol_listNIL,	// Labels
+	    0,
+	    false,
+	    rdup_origsymbol( nm ),
+	    new_TypeOf( rdup_expression( smt->cond ) ),
+	    new_OptExprNone()
+	);
+	ctx->pre_spill_smts = append_statement_list( ctx->pre_spill_smts, d );
+	expression cond = smt->cond;
+	smt->cond = new_VariableNameExpression( nm, VAR_GENERATED|VAR_LOCAL );
+	// breakout = <condition>;
+	AssignStatement updt = new_AssignStatement(
+	    rdup_origin( smt->org ),
+	    rdup_Pragma_list( smt->pragmas ),
+	    origsymbol_listNIL,	// Labels
+	    ASSIGN,
+	    rdup_expression( smt->cond ),
+	    cond
+	);
+	smt->update = append_statement_list( smt->update, updt );
+    }
+.call generate_walker_call "    " smt DoWhileStatement DoWhileStatement
+    smt->update = rescope_declarations( smt->update, false );
+    return smt;
+}
+
+// Action for type 'InstanceInitializer'.
+static InstanceInitializer lower_InstanceInitializer_action( InstanceInitializer init, lower_data *ctx )
+{
+    context oldwhere = ctx->where;
+
+    ctx->where = CTX_DYNAMICINIT;
+.call generate_walker_call "    " init InstanceInitializer InstanceInitializer
+    ctx->where = oldwhere;
+    return init;
+}
+
+// Action for type 'TryStatement'.
+static statement lower_TryStatement_action( TryStatement t, lower_data *ctx )
+{
+    origsymbol catchvar = gen_origsymbol( "catchvar" );
+    origsymbol exceptvar = gen_origsymbol( "exceptvar" );
+
+.call generate_walker_call "	" t TryStatement TryStatement
+    statement varinit = new_FieldDeclaration(
+	gen_origin(),
+	Pragma_listNIL,
+	origsymbol_listNIL,	// Labels
+	ACC_FINAL,
+	false,
+	exceptvar,
+	new_ObjectType( add_origsymbol( "Throwable" ) ),
+	new_OptExpr(
+	    new_ForcedCastExpression(
+		new_ObjectType( add_origsymbol( "Throwable" ) ),
+		new_VariableNameExpression(
+		    rdup_origsymbol( catchvar ),
+		    VAR_GENERATED|VAR_LOCAL
+		)
+	    )
+	)
+    );
+    type_list caught = new_type_list();
+    Block blk = generate_catch_code(
+	varinit,
+	t->catches,
+	exceptvar,
+	caught,
+	t->finally
+    );
+    statement res = new_SimpleTryStatement(
+	rdup_origin( t->org ),
+	rdup_Pragma_list( t->pragmas ),
+	origsymbol_listNIL,	// Labels
+	rdup_Block( t->body ),
+	new_FormalParameter(
+	    catchvar,
+	    new_Pragma_list(),
+	    0,
+	    new_ExceptionVariableType()
+	),
+	caught,
+	blk
+    );
+    if( t->finally != BlockNIL ){
+	ctx->post_spill_smts = append_statement_list(
+	    ctx->post_spill_smts,
+	    new_BlockStatement(
+		gen_origin(),
+		Pragma_listNIL,
+		origsymbol_listNIL,	// Labels
+		rdup_Block( t->finally )
+	    )
+	);
+    }
+    rfre_statement( t );
+    return res;
+}
+
+/* Action for type 'ReturnStatement'. */
+static ReturnStatement lower_ReturnStatement_action( ReturnStatement smt, lower_data *ctx )
+{
+    if( smt == ReturnStatementNIL ){
+	return smt;
+    }
+    if( ctx->where == CTX_STATICINIT ){
+        origin_error( smt->org, "A return statement is not allowed in a static initializer" ); 
+    }
+    if( ctx->where == CTX_DYNAMICINIT ){
+        origin_error( smt->org, "A return statement is not allowed in an instance initializer" ); 
+    }
+.call generate_walker_call "    " smt ReturnStatement ReturnStatement
+    return smt;
+}
+
+/* Action for type 'ValueReturnStatement'. */
+static ValueReturnStatement lower_ValueReturnStatement_action( ValueReturnStatement smt, lower_data *ctx )
+{
+    if( smt == ValueReturnStatementNIL ){
+	return smt;
+    }
+    if( ctx->where == CTX_STATICINIT ){
+        origin_error( smt->org, "A return statement is not allowed in a static initializer" ); 
+    }
+    if( ctx->where == CTX_DYNAMICINIT ){
+        origin_error( smt->org, "A return statement is not allowed in an instance initializer" ); 
+    }
+    if( ctx->where == CTX_CONSTRUCTOR ){
+        origin_error( smt->org, "A constructor may not return a value" ); 
+    }
+.call generate_walker_call "    " smt ValueReturnStatement ValueReturnStatement
+    return smt;
+}
+
+/* Action for type 'SwitchCase'. */
+static SwitchCase lower_SwitchCase_action( SwitchCase sc, lower_data *ctx )
+{
+.call generate_walker_call "    " sc SwitchCase SwitchCase
+    sc->body = rescope_declarations( sc->body, false );
+    return sc;
+}
+
+/* Action for type 'EachStatement'. */
+static EachStatement lower_EachStatement_action(
+    EachStatement smt,
+    lower_data *ctx
+)
+{
+.call generate_walker_call "    " smt EachStatement EachStatement
+    // TODO: this is utterly wrong; a declaration should be
+    // disallowed instead of causing a nested scope.
+    smt->statements = rescope_declarations( smt->statements, false );
+    return smt;
+}
+
+/* Given an ClassicForStatement, rewrite it to a while statement. */
+static statement lower_ClassicForStatement_action(
+    ClassicForStatement smt,
+    lower_data *ctx
+)
+{
+    expression cond;
+
+    (void) lower_ClassicForStatement_walker;
+    if( smt->cond->tag == TAGOptExprNone ){
+	cond = new_BooleanExpression( true );
+    }
+    else {
+	cond = to_OptExpr( smt->cond )->x;
+    }
+    fre_optexpression( smt->cond );
+    WhileStatement the_while = new_WhileStatement(
+	smt->org,
+	smt->pragmas,
+	smt->labels,
+	cond,
+	smt->body,
+	smt->update
+    );
+
+    statement_list the_statements = smt->inits;
+    the_statements = append_statement_list( the_statements, the_while );
+    Block the_block = new_Block(
+	tmsymbolNIL,		// scope name
+	Pragma_listNIL,
+	the_statements
+    );
+    BlockStatement res = new_BlockStatement(
+	rdup_origin( smt->org ),
+	Pragma_listNIL,
+	origsymbol_listNIL,
+	the_block
+    );
+    fre_statement( smt );
+.call generate_descent_call "    " res BlockStatement BlockStatement
+    return res;
+}
+
+/* Given a statement list, lower it. */
+static statement_list lower_statement_list_action(
+    statement_list sl,
+    lower_data *ctx
+)
+{
+    unsigned int ix;
+    statement_list old_pre_spill = ctx->pre_spill_smts;
+    statement_list old_post_spill = ctx->post_spill_smts;
+
+    if( sl == statement_listNIL ){
+	return sl;
+    }
+    (void) lower_statement_list_walker;
+    ctx->pre_spill_smts = new_statement_list();
+    ctx->post_spill_smts = new_statement_list();
+    ix = 0;
+    while( ix<sl->sz ){
+.call generate_descent_call "	" sl->arr[ix] statement statement
+	if( ctx->post_spill_smts->sz != 0 ){
+	    sl = insertlist_statement_list( sl, ix+1, ctx->post_spill_smts );
+	    ctx->post_spill_smts = new_statement_list();
+	}
+	if( ctx->pre_spill_smts->sz != 0 ){
+	    sl = insertlist_statement_list( sl, ix, ctx->pre_spill_smts );
+	    ctx->pre_spill_smts = new_statement_list();
+	}
+	else {
+	    ix++;
+	}
+    }
+    rfre_statement_list( ctx->pre_spill_smts );
+    rfre_statement_list( ctx->post_spill_smts );
+    ctx->pre_spill_smts = old_pre_spill;
+    ctx->post_spill_smts = old_post_spill;
+    return sl;
+}
+
+
+/* Given a FieldDeclaration, rewrite array initializations to
+ * array assignment instructions.
+ */
+static FieldDeclaration lower_FieldDeclaration_action(
+    FieldDeclaration dcl,
+    lower_data *ctx
+)
+{
+    if( dcl->init->tag == TAGOptExpr ){
+	expression init = to_OptExpr( dcl->init )->x;
+
+	if( init->tag == TAGArrayInitExpression ){
+	    if( to_ArrayInitExpression(init)->t == typeNIL ){
+		// If nobody else has done it (e.g. the functions that
+		// generate ArrayInitExpressions for nested inits),
+		// put a type in the ArrayInit.
+		if( dcl->t->tag != TAGArrayType ){
+		    // TODO: take pragmas into account.
+		    origin_error( dcl->org, "Only an array can be initialized like this" );
+		    return dcl;
+		}
+		to_ArrayInitExpression(init)->t = rdup_type( dcl->t );
+	    }
+	}
+    }
+    if( dcl->init->tag == TAGOptExprNone ){
+	// If necessary, put in a default initialization expression
+	// Note that these defaults do not become compiletime constants
+	// since that would violate the Java semantics.
+	if( !is_routine_context( ctx->where ) ){
+	    rfre_optexpression( dcl->init );
+	    dcl->init = build_DefaultInit( dcl->t );
+	}
+    }
+.call generate_walker_call "    " dcl FieldDeclaration FieldDeclaration
+    return dcl;
+}
+
+static ConstructorDeclaration lower_ConstructorDeclaration_action(
+ ConstructorDeclaration fn,
+ lower_data *ctx
+)
+{
+    context oldwhere = ctx->where;
+    ctx->where = CTX_CONSTRUCTOR;                               
+.call generate_walker_call "    " fn ConstructorDeclaration ConstructorDeclaration
+    ctx->where = oldwhere;
+    return fn;
+}
+
+static FunctionDeclaration lower_FunctionDeclaration_action(
+ FunctionDeclaration fn,
+ lower_data *ctx
+)
+{
+    context oldwhere = ctx->where;
+    if( oldwhere == CTX_OBJECT && !has_any_flag (fn->flags, ACC_STATIC ) ){
+        ctx->where = CTX_DYNAMICROUTINE;                               
+    }
+    else {                                                                    
+        ctx->where = CTX_STATICROUTINE;
+    }
+.call generate_walker_call "    " fn FunctionDeclaration FunctionDeclaration
+    ctx->where = oldwhere;
+    return fn;
+}
+
+
+static ClassDeclaration lower_ClassDeclaration_action(
+ ClassDeclaration cl,
+ lower_data *ctx
+)
+{
+    context oldwhere = ctx->where;
+
+    if( oldwhere == CTX_GLOBAL ){
+	// This enforces a restriction of JLS2 8.1.1.
+	if( has_any_flag( cl->flags, ~(MODS_TOP_CLASS) ) ){
+	    complain_modifiers( cl->org, cl->flags & ~(MODS_TOP_CLASS), "outer class" );
+	}
+    }
+    else if( oldwhere == CTX_OBJECT ){
+	// This class is directly declared in another class/interface. Such
+	// classes are called member classes.
+	if( has_any_flag( cl->flags, ~(MODS_MEMBER_CLASS) ) ){
+	    complain_modifiers( cl->org, cl->flags & ~(MODS_MEMBER_CLASS), "member class" );
+	}
+	cl->flags |= ACC_MEMBER_OBJECT;
+	if( trace_innerclasses ){
+	    fprintf( stderr, "'%s' is a member class\n", cl->name->sym->name );
+	}
+	if( !has_any_flag( cl->flags, ACC_STATIC ) ){
+	    cl->flags |= ACC_INNER_CLASS;
+	    if( trace_innerclasses ){
+		fprintf( stderr, "'%s' is an inner class\n", cl->name->sym->name );
+	    }
+	}
+    }
+    else {
+	// This class is declared in code. Such a class is called a
+	// local class.
+	if( has_any_flag( cl->flags, ~(MODS_LOCAL_CLASS) ) ){
+	    complain_modifiers( cl->org, cl->flags & ~(MODS_LOCAL_CLASS), "local class" );
+	}
+	cl->flags |= ACC_LOCAL_OBJECT;
+	if( is_static_context( ctx->where ) ){
+	    // This ensures that no outer this is created.
+	    cl->flags |= ACC_STATIC;
+	}
+	if( trace_innerclasses ){
+	    fprintf(
+		stderr,
+		"Class '%s' is a local class\n",
+		cl->name->sym->name
+	    );
+	}
+    }
+    ctx->where = CTX_OBJECT;
+.call generate_walker_call "    " cl ClassDeclaration ClassDeclaration
+    ctx->where = oldwhere;
+    return cl;
+}
+
+static InterfaceDeclaration lower_InterfaceDeclaration_action(
+    InterfaceDeclaration inf,
+    lower_data *ctx
+)
+{
+    context oldwhere = ctx->where;
+    ctx->where = CTX_OBJECT;
+    if( oldwhere == CTX_GLOBAL ){
+	// This is an outer interface
+	if( has_any_flag( inf->flags, ~(MODS_TOP_INTERFACE) ) ){
+	    complain_modifiers( inf->org, inf->flags & ~(MODS_TOP_INTERFACE), "outer interface" );
+	}
+    }
+    else if( oldwhere == CTX_OBJECT ){
+	// This interface is directly declared in another class/interface. Such
+	// interfaces are called member interfaces.
+	inf->flags |= ACC_MEMBER_OBJECT;
+	if( trace_innerclasses ){
+	    fprintf( stderr, "Interface '%s' is a member interface\n", inf->name->sym->name );
+	}
+	if( has_any_flag( inf->flags, ~(MODS_MEMBER_INTERFACE) ) ){
+	    complain_modifiers( inf->org, inf->flags & ~(MODS_MEMBER_INTERFACE), "member interface" );
+	}
+    }
+    else {
+	// This interface is declared in code. Such an interface is called a
+	// local interface.
+	inf->flags |= ACC_LOCAL_OBJECT;
+	if( trace_innerclasses ){
+	    fprintf( stderr, "Interface '%s' is a local interface\n", inf->name->sym->name );
+	}
+	if( has_any_flag( inf->flags, ~(MODS_LOCAL_INTERFACE) ) ){
+	    complain_modifiers( inf->org, inf->flags & ~(MODS_LOCAL_INTERFACE), "local interface" );
+	}
+    }
+.call generate_walker_call "    " inf InterfaceDeclaration InterfaceDeclaration
+    ctx->where = oldwhere;
+    return inf;
+}
+
+// Lowering actions for node type MethodDeclaration
+static MethodDeclaration lower_MethodDeclaration_action( MethodDeclaration d, lower_data *ctx )
+{
+.call generate_walker_call "	" d MethodDeclaration MethodDeclaration
+    if( has_flags( ctx->classflags, ACC_FINAL ) ){
+	if( !has_flags( d->flags, ACC_STATIC ) ){
+	    // If the type is final, its MethodDeclarations can be labeled final
+	    // too. Implied by JLS2 8.1.1.2.
+	    d->flags |= ACC_FINAL;
+	}
+    }
+    return d;
+}
+
+// Lowering actions for node type TypeDeclaration
+static TypeDeclaration lower_TypeDeclaration_action( TypeDeclaration d, lower_data *ctx )
+{
+    modflags old_classflags = ctx->classflags;
+    ctx->classflags = d->flags;
+.call generate_walker_call "	" d TypeDeclaration TypeDeclaration
+    ctx->classflags = old_classflags;
+    return d;
+}
+
+// Do not enter TypeOf expressions for rewriting; the side-effects in
+// there are not worth expanding.
+static TypeOf lower_TypeOf_action( TypeOf t, lower_data *ctx )
+{
+    (void) lower_TypeOf_walker;
+    (void) ctx;
+    return t;
+}
+
+/* -------- End of action functions ---------- */
+
+.call generate_walker "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+/* Given a Spar program, lower it into a simpler version. */
+SparProgramUnit lower_SparProgramUnit( SparProgramUnit unit )
+{
+    lower_data the_ctx;
+    lower_data *ctx = &the_ctx;
+    the_ctx.pre_spill_smts = new_statement_list();
+    the_ctx.post_spill_smts = new_statement_list();
+    the_ctx.classflags = 0;
+    the_ctx.where = CTX_GLOBAL;
+
+.call generate_descent_call "    " unit SparProgramUnit SparProgramUnit
+    assert( the_ctx.pre_spill_smts->sz == 0 );
+    assert( the_ctx.post_spill_smts->sz == 0 );
+    assert( the_ctx.where == CTX_GLOBAL );
+    rfre_statement_list( the_ctx.pre_spill_smts );
+    rfre_statement_list( the_ctx.post_spill_smts );
+    return unit;
+}

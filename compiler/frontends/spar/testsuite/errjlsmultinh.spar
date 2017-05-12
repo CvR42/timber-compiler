@@ -1,0 +1,12 @@
+// After JLS2 8.3.3.3    Example: Multiply Inherited Fields
+
+interface Frob { float v = 2.0f; }
+
+class SuperTest { int v = 3; }
+
+public class errjlsmultinh extends SuperTest implements Frob {
+    public static void main(String[] args) {
+        new errjlsmultinh().printV();
+    }
+    void printV() { System.out.println(v); }
+}

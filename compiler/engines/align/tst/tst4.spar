@@ -1,0 +1,8 @@
+public class tst4 {
+  public static void main() {
+    int [*]<$ on = (lambda (i) dsp2D[i]) $> a;
+
+    foreach [i :- 0:10]
+      a[i] = a[i] + a[i+1];
+  }
+};

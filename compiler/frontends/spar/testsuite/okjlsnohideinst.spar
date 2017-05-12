@@ -1,0 +1,16 @@
+// After JLS2 8.3.3.2    Example: Hiding of Instance Variables
+
+class Point {
+    static int x = 2;
+}
+
+public class okjlsnohideinst extends Point {
+    void printBoth() {
+        __println(1,x , " " , super.x);
+    }
+    public static void main(String[] args) {
+        okjlsnohideinst sample = new okjlsnohideinst();
+        sample.printBoth();
+        __println(1, sample.x , " " , ((Point)sample).x);
+    }
+}

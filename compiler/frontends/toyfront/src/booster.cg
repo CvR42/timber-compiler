@@ -1,0 +1,648 @@
+/****
+
+$Author: leo $
+$Date: 1995/10/17 13:33:59 $
+$Log: booster.cg,v $
+Revision 1.1.1.1  1995/10/17 13:33:59  leo
+Initial frontend source tree.
+
+Revision 0.1  1995/06/23  11:41:27  joachim
+initial revision derived from arnauds frontend
+
+$Revision: 1.1.1.1 $
+$Source: /home/rama/timber/CVS/compiler/frontends/toyfront/src/booster.cg,v $ 
+
+****/
+
+MODULE AbstractSyntax 
+
+TREE 
+
+EXPORT{
+
+# ifdef __cplusplus
+extern "C" {
+# endif
+
+# include "MagicNumbers.h"
+# include "Idents.h"
+# include "Positions.h"
+
+/****
+*
+* Definitions:
+*
+* A "scope" is a table that maps identifiers to an object defining its
+* meaning in a particular context. An "environment" is a list of nested
+* scopes. The "meaning" of an identifier is defined by the occurrence in
+* the outermost scope. An "object" is either a function, procedure,
+* variable, constant, or type.
+*
+****/
+
+# define tEnv	        tTree  /* type to represent an environment */
+# define tScope         tTree  /* type to represent a scope        */
+# define tObject        tTree  /* type to represent the mapping of */
+                                       /* an identifier to an object       */
+
+# define NoEnv NoTree
+
+# ifdef __cplusplus
+}
+# endif
+
+}
+
+
+GLOBAL{
+# ifdef __cplusplus
+extern "C" {
+# endif
+
+# include "MagicNumbers.h"
+# include "Idents.h"
+# include "Positions.h"
+
+# ifdef __cplusplus
+}
+# endif
+
+}
+
+
+PROPERTY INPUT
+
+
+RULE
+
+
+/*********  1. Booster *********/
+
+Booster	= Module.
+
+
+Module = <
+    DefinitionModule     = DefinitionHeader DefinitionBody.
+    ImplementationModule = ImplementationHeader ImplementationBody.
+    AnnotationModule     = AnnotationHeader AnnotationBody.
+>.
+
+
+/******* 2. Definition Module *******/
+
+
+DefinitionHeader = [Pos: tPosition] [Ident: tIdent].
+
+
+DefinitionBody = [Pos: tPosition] [Ident: tIdent] DefinitionUnits.
+
+
+DefinitionUnits = <
+    NoDefUnit = .
+    DefUnit   = DefinitionUnit DefinitionUnits.
+>.
+
+
+DefinitionUnit = <
+    DefImport    = Import.
+    DefConstant  = Constants.
+    DefType      = Types.
+    DefVariable  = Variables.
+    DefProcedure = ProcedureHeader.
+    DefFunction  = FunctionHeader.
+>.
+
+
+/******* 3. Implementation Module *******/
+
+
+ImplementationHeader = [ModuleFlag: short] [Pos: tPosition] [Ident: tIdent].
+
+
+ImplementationBody = [Pos: tPosition] [Ident: tIdent] ImplementationUnits 
+                       Stats.
+
+
+ImplementationUnits = <
+    NoImplUnit = .
+    ImplUnit   =  ImplementationUnits ImplementationUnit.
+>.
+
+
+ImplementationUnit = <
+    ImplImport     = Import.
+    ImplConstant   = Constants.
+    ImplType       = Types.
+    ImplVariable   = Variables.
+    ImplProcedure  = Procedure.
+    ImplFunction   = Function.
+>.
+
+
+/******* 4. Annotation Module *******/
+
+AnnotationHeader = [Pos: tPosition] [Ident: tIdent].
+
+
+AnnotationBody = [Pos: tPosition] [Ident: tIdent]  AnnotationUnits 
+                   Annotations.
+
+
+AnnotationUnits = <
+    NoAnnotUnit = .
+    AnnotUnit   = AnnotationUnit AnnotationUnits.
+>.
+
+
+AnnotationUnit = <
+    AnnotImport = Import.
+    MachineDecl = MachineDeclarations.
+>.
+
+
+Annotations = <
+    NoAnnot = .
+    Annot   = ViewStatement Next: Annotations.
+>.
+
+
+/******* 5. Units *******/
+
+
+Import = <
+  ModuleImport = [Pos: tPosition] Identifiers.
+  UnitImport   = [Pos: tPosition] [Ident: tIdent] Identifiers.
+>.
+
+
+Identifiers =  <
+    Ident  = [Pos: tPosition] [Ident: tIdent].
+    Idents = [Pos: tPosition] [Ident: tIdent] Next: Identifiers.
+>.
+
+
+Constants =  <
+    NoConst = .
+    Const   = Next: Constants REV [Pos: tPosition] [Ident: tIdent] Expression.
+>.
+
+
+Types =  <
+    NoType = .
+    Type   = Next: Types [Pos: tPosition] [Ident: tIdent] TypeSpec.
+>.
+
+
+TypeSpec = <
+    TypeId     = [Pos: tPosition] [Ident: tIdent].
+    ShapeType = Cardinalities Type.
+    ViewType  = Cardinalities Type.
+>.
+ 
+
+Cardinalities = <
+    NoCard = .
+    Card   = Next: Cardinalities <
+      Arbitrary     = .
+      NatExpr       = Expression.
+      GenericConst  = [Pos: tPosition] [Ident: tIdent].
+      QualExpr      = [Pos: tPosition] [Ident: tIdent] Expression.
+    >.
+>.
+
+
+Variables =  <
+    NoVars  = .
+    Vars    = Decls.
+    ExtVars = Decls.
+>.
+
+
+Decls = <
+    NoDecl = .
+    Decl   = Next: Decls Identifiers TypeSpec.
+>.
+
+
+MachineDeclarations = Decls.
+
+
+Procedure = ProcedureHeader Body.
+
+
+ProcedureHeader	= [Pos: tPosition] [Ident: tIdent] [ExternFlag: short]
+                    Arguments.
+
+
+Function = FunctionHeader Body.
+
+
+FunctionHeader = [Pos: tPosition] [Ident: tIdent] [ExternFlag: short]
+                   Arguments [ResPos: tPosition] [ResIdent: tIdent] Type.
+
+
+Body = Variables Stats [Pos: tPosition] [Ident: tIdent].
+
+
+Arguments = <
+    NoArgs = .
+    Arg    = Next: Arguments [FlowType: short] [Pos: tPosition] Identifiers 
+               Type.
+>.
+
+
+/******* 6. Statements *******/
+
+Stats = <
+    NoStat = .
+    Stat   = Next: Stats REV <
+      While       = WhileStatement.
+      If          = IfStatement.
+      Iter        = IterStatement.
+      ViewStat    = ViewStatement.
+      ContentStat = ContentStatement.
+      ProcCall    = ProcedureCall.
+    >.
+>.
+
+
+WhileStatement = Expression Stats.
+
+
+IfStatement = Expression Stats ElseParts.
+
+
+ElseParts = <
+    NoElse = .
+    Else   = Stats.
+    ElseIf = Expression Stats ElseParts.
+>.
+
+
+IterStatement = <
+    IterTimes = Expression Stats.
+    IterOver  = [Pos: tPosition] [Ident: tIdent] Expression Stats.
+>.
+
+
+ViewStatement = ViewDesignator Structure.
+
+
+ViewDesignator = QualIdent Cardinalities.
+
+
+ContentStatement = <
+    Parallel   = Designator Expression.
+    Sequential = Designator Expression.
+>.
+
+
+Designator = QualIdent Selectors.
+
+
+Selectors = <
+    NoSelects = .
+    Select    = Selector Next: Selectors.
+>.
+
+
+Selector = <
+    Set   = Expression.
+    SetId = [Pos: tPosition] [Ident: tIdent] Expression.
+>.
+
+
+ProcedureCall = QualIdent Expressions.
+
+
+Expressions =  <
+    NoExpr = .
+    Expr   = Expression Next: Expressions.
+>. 
+
+
+QualIdent = <
+    SIdent = [Pos: tPosition] [Ident: tIdent].
+    QIdent = [Pos1: tPosition] [Ident1: tIdent] 
+               [Pos2: tPosition] [Ident2: tIdent].
+>.
+
+
+/********* 6. Expressions **********/
+
+
+Expression = <
+    Relation   = Expression RelOp ArithmeticExpression.
+    Arithmetic = ArithmeticExpression.
+>.
+
+
+ArithmeticExpression = <
+    Addition     = ArithmeticExpression AddOp Term.
+    MultOrFactor = Term.
+>.
+
+
+Term = <
+    Mult = Term MulOp Factor.
+    Fact = Factor.
+>.
+
+
+Factor = <
+    OpStruct   = UnOp Structure.
+    String     = [StringValue: tStringRef].
+    UnderScore = .
+>.
+  
+
+Structure = <
+    Complex        = RealPart: Expression ImaginaryPart: Expression.
+    ShapeAggregate = Expressions.
+    BracedExpr     = Expression.
+    NaturalNum     = [Value: int].
+    IntegerNum     = [Value: int].
+    RealNum        = [Value: float].
+    Dollar         = .
+    FuncCall       = FunctionCall.
+    Desig          = Designator.
+>.
+
+
+FunctionCall = <
+    Func       = QualIdent Expressions.
+    FuncSelect = QualIdent Expressions Selectors.
+>.
+
+
+/****** 7 Tokens ********/
+
+RelOp = [Operator: short] [Pos: tPosition].
+      	
+AddOp = [Operator: short] [Pos: tPosition].
+      	
+MulOp = [Operator: short] [Pos: tPosition].
+      	
+UnOp  = [Operator: short] [Pos: tPosition].
+
+Env = <
+  TopLevel     = .
+  NestedScopes = OuterScope: Scope Hidden: Env .
+>.
+
+Scope = [Printed: bool]  /* are the names of this scope already emitted? */
+        [ScopeId: int]   /* unique scope label                           */
+        Objects.         /* declarations of this scope                   */
+
+Objects = <
+  NoObject = .
+  Object   = Next: Objects [Ident: tIdent] [NameSpace: int] <  
+    TypeEntry  = Type .
+    ProcEntry  = Arguments .
+    FuncEntry  = Arguments Type .
+    VarEntry   = Type .
+    ConstEntry = Expression .
+  >.
+>.
+
+END AbstractSyntax
+
+/* ------------------------------------------------------------------------- */
+
+
+MODULE Environment
+
+EVAL BuildScopes
+
+GLOBAL{
+# ifdef __cplusplus
+extern "C" {
+# endif
+
+# include "MagicNumbers.h"
+# include "Tree.h"
+# include "Scope.h"
+
+extern tObject  nNoObject;
+
+# ifdef __cplusplus
+}
+# endif
+
+}
+
+
+BEGIN {
+  nNoObject = mNoObject();
+}
+
+DECLARE
+  
+Module = [ScopeIn: tEnv OUT].
+
+DefinitionBody, ImplementationBody, AnnotationBody, DefinitionUnits,
+DefinitionUnit, ImplementationUnits, ImplementationUnit,
+AnnotationUnits, AnnotationUnit, Import, Constants, Types, Variables,
+Procedure, ProcedureHeader, Function, FunctionHeader
+  = [ScopeIn: tEnv INH].
+
+Module, DefinitionBody, ImplementationBody, AnnotationBody,
+DefinitionUnits, DefinitionUnit, ImplementationUnits,
+ImplementationUnit, AnnotationUnits, AnnotationUnit
+  = [ScopeOut: tEnv SYN].
+
+
+Import, Constants, Types, Variables, Procedure, ProcedureHeader,
+Function, FunctionHeader
+  = [ScopeOut: tEnv OUT].
+
+
+RULE
+
+
+DefinitionModule = {
+  ScopeIn := EnterScope(mTopLevel());
+  DefinitionBody:ScopeIn :- ScopeIn;
+  ScopeOut :- DefinitionBody:ScopeOut;
+}.
+
+
+ImplementationModule = {
+  ScopeIn := EnterScope(mTopLevel());
+  ImplementationBody:ScopeIn :- ScopeIn;
+  ScopeOut :- ImplementationBody:ScopeOut;
+}.
+
+
+AnnotationModule = {
+  ScopeIn := EnterScope(mTopLevel());
+  AnnotationBody:ScopeIn :- ScopeIn;
+  ScopeOut :- AnnotationBody:ScopeOut;
+}.
+
+
+DefinitionBody = {
+  DefinitionUnits:ScopeIn :- ScopeIn;
+  ScopeOut :- DefinitionUnits:ScopeOut;
+}.
+
+
+NoDefUnit = {
+  ScopeOut :- ScopeIn;
+}.
+
+
+DefUnit = {
+  DefinitionUnit:ScopeIn :- ScopeIn;
+  DefinitionUnits:ScopeIn :- DefinitionUnit:ScopeOut;
+  ScopeOut :- DefinitionUnits:ScopeOut;
+}.
+
+
+DefImport = {
+  Import:ScopeIn :- ScopeIn;
+  ScopeOut :- Import:ScopeOut;
+}.
+
+
+DefConstant = {
+  Constants:ScopeIn :- ScopeIn;
+  ScopeOut :- Constants:ScopeOut;
+}.
+
+DefType = {
+  Types:ScopeIn :- ScopeIn;
+  ScopeOut :- Types:ScopeOut;
+}.
+
+
+DefVariable = {
+  Variables:ScopeIn :- ScopeIn;
+  ScopeOut :- Variables:ScopeOut;
+}.
+
+
+DefProcedure = {
+  ProcedureHeader:ScopeIn :- ScopeIn;
+  ScopeOut :- ProcedureHeader:ScopeOut;
+}.
+
+
+DefFunction = {
+  FunctionHeader:ScopeIn :- ScopeIn;
+  ScopeOut :- FunctionHeader:ScopeOut;
+}.
+
+
+ImplementationBody = {
+  ImplementationUnits:ScopeIn :- ScopeIn;
+  ScopeOut :- ImplementationUnits:ScopeOut;
+}.
+
+
+NoImplUnit = {
+  ScopeOut :- ScopeIn;
+}.
+
+
+ImplUnit = {
+  ImplementationUnits:ScopeIn :- ScopeIn;
+  ImplementationUnit:ScopeIn :- ImplementationUnits:ScopeOut;
+  ScopeOut :- ImplementationUnit:ScopeOut;
+}.
+
+
+ImplImport = {
+  Import:ScopeIn :- ScopeIn;
+  ScopeOut :- Import:ScopeOut;
+}.
+
+
+ImplConstant = {
+  Constants:ScopeIn :- ScopeIn;
+  ScopeOut :- Constants:ScopeOut;
+  CHECK 1 == 0 => WriteTree(stdout, ScopeOut);
+}.
+
+
+ImplType = {
+  Types:ScopeIn :- ScopeIn;
+  ScopeOut :- Types:ScopeOut;
+}.
+
+
+ImplVariable = {
+  Variables:ScopeIn :- ScopeIn;
+  ScopeOut :- Variables:ScopeOut;
+}.
+
+
+ImplProcedure = {
+  Procedure:ScopeIn :- ScopeIn;
+  ScopeOut :- Procedure:ScopeOut;
+}.
+
+
+ImplFunction = {
+  Function:ScopeIn :- ScopeIn;
+  ScopeOut :- Function:ScopeOut;
+}.
+
+
+AnnotationBody = {
+  AnnotationUnits:ScopeIn :- ScopeIn;
+  ScopeOut :- AnnotationUnits:ScopeOut;
+}.
+
+
+NoAnnotUnit = {
+  ScopeOut :- ScopeIn;
+}.
+
+
+AnnotUnit = {
+  AnnotationUnit:ScopeIn :- ScopeIn;
+  AnnotationUnits:ScopeIn :- AnnotationUnit:ScopeOut;
+  ScopeOut :- AnnotationUnits:ScopeOut;
+}.
+
+
+ModuleImport = {
+  ScopeOut :- ScopeIn;
+  Check false => Message((char *) ErrStr[61], xxError, Pos);
+}.
+
+
+UnitImport = {
+  ScopeOut :- ScopeIn;
+  Check false => Message((char *) ErrStr[61], xxError, Pos);
+}.
+
+
+NoConst = {
+  ScopeOut :- ScopeIn;
+}.
+
+
+Const = {
+  Next:ScopeIn :- ScopeIn;
+  ScopeOut := AddConstDecl(Ident, Pos, Expression, Next:ScopeOut);
+}.
+
+
+NoType ={
+  ScopeOut :- ScopeIn;
+}.
+
+
+Type = {
+  Next:ScopeIn :- ScopeIn;
+  ScopeOut := AddTypeDecl(Ident, Pos, TypeSpec, Next:ScopeOut);
+}.
+
+
+
+
+
+END Environment
+

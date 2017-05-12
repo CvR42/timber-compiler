@@ -1,0 +1,29 @@
+// File: okjlsclscope.spar
+//
+// After JLS2 7.6    Top Level Type Declarations 
+//
+// Demonstrates that two classes can point to eachother.
+
+
+class Point {
+    int x, y;		// Coordiates
+    PointColor color;	// color of this point
+    Point next;		// next point with this color.
+    static int nPoints;
+}
+
+class PointColor {
+    Point first;	// first point with this color
+    PointColor( int color ){
+	this.color = color;
+    }
+    private int color;	// Color components.
+}
+
+public class okjlsclscope {
+    public static void main(String[] args) {
+	PointColor c = new PointColor( 3 );
+
+        System.out.println( "c=" + c );
+    }
+}

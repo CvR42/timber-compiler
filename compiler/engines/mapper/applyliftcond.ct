@@ -1,0 +1,137 @@
+/* Applyliftcond test engine
+
+   Lift a condition out of a loop iff:
+   - loop has only 1 stmt, that stmt is an if statement
+   - condition is independent of cardinality variables
+   - loop has no scope-> no local variables to be dependent on
+   - no else part, otherwise we would have to duplicate code
+
+   CvR: TODO: The statement in the if should also not affect the
+   condition expression.
+   */
+
+.. File: applyftf.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtForeach
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "search.h"
+#include "applyftf.h"
+
+static bool hasFired = false;
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+/* Rewrite action for 'vnusprog'. */
+static statement rewrite_SmtForeach_action(
+    SmtForeach e, global_context gc )
+{
+.call generate_walker_call "    " e SmtForeach SmtForeach
+    if (e->body == blockNIL ||
+	e->body->scope != tmsymbolNIL ||
+	e->body->statements == statement_listNIL ||
+	e->body->statements->sz != 1 ||
+	e->body->statements->arr[0]->tag != TAGSmtIf)
+	return e;
+    SmtIf ifStmt = to_SmtIf(e->body->statements->arr[0]);
+    assert (ifStmt->cond != expressionNIL);
+    if (ifStmt->elsebody != blockNIL &&
+	ifStmt->elsebody->statements != statement_listNIL &&
+	ifStmt->elsebody->statements->sz != 0)
+	return e;
+
+    ExprReduction conditions = split_ExprBinop(ifStmt->cond, BINOP_SHORTAND);
+    ExprReduction toBeLifted = new_ExprReduction(
+	BINOP_SHORTAND,
+	new_expression_list());
+    rfre_expression(ifStmt->cond);
+    assert(conditions->operands != expression_listNIL);
+    for (unsigned i=0; i<conditions->operands->sz;)
+    {
+	bool dependent = false;
+	for (unsigned j=0; j<e->cards->sz; j++)
+	{
+	    if (search_expression(conditions->operands->arr[i],e->cards->arr[j]->name->sym))
+		dependent = true;
+	    for (unsigned k=0; k<e->cards->arr[j]->secondaries->sz; k++)
+	    {
+		if (search_expression(conditions->operands->arr[i],e->cards->arr[j]->secondaries->arr[k]->name->sym))
+		    dependent = true;
+	    }
+	}
+	if (dependent)
+	{
+	    if (warning_level >= WARN_DEBUG)
+		fprintf(stderr,"liftcond: cond %d is loop dependent\n",i);
+	    i++;
+	}
+	else
+	{
+	    if (warning_level >= WARN_RULE)
+		fprintf(stderr,"liftcond: cond %d can be lifted\n",i);
+	    toBeLifted->operands = append_expression_list(
+		toBeLifted->operands,
+		rdup_expression(conditions->operands->arr[i]));
+	    conditions->operands = delete_expression_list(conditions->operands, i);
+	}
+    }
+    if (conditions->operands->sz == 0)
+	ifStmt->cond = new_ExprBoolean(new_tmstring("TRUE"));
+    else
+	ifStmt->cond = form_ExprBinop(conditions);
+    rfre_ExprReduction(conditions);
+    statement ret = statementNIL;
+    if (toBeLifted->operands->sz == 0)
+    {
+	ret = e;
+    }
+    else
+    {
+	SmtIf newIfStmt = snew_SmtIf(
+	    form_ExprBinop(toBeLifted),
+	    snew_block(),
+	    snew_block());
+	newIfStmt->thenbody->statements = append_statement_list(
+	    newIfStmt->thenbody->statements,
+	    e);
+	ret = newIfStmt;
+	hasFired = true;
+    }
+    rfre_ExprReduction(toBeLifted);
+    return ret;
+}
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_liftcond( vnusprog elm, global_context gc )
+{
+    hasFired = false;
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}
+
+bool hasFired_liftcond()
+{
+    return hasFired;
+}

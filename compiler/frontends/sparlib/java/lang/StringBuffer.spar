@@ -1,0 +1,244 @@
+package java.lang;
+
+
+import spar.compiler.Service;
+import spar.util.Vector;
+
+/*
+ * Java core library component.
+ *
+ * Copyright (c) 1997, 1998
+ *      Transvirtual Technologies, Inc.  All rights reserved.
+ *
+ * See the file "license.terms" for information on usage and redistribution
+ * of this file.
+ *
+ * Heavily hacked by Kees van Reeuwijk to use Vector(| char |) as internal
+ * representation of the string buffer.
+ */
+public final class StringBuffer implements java.io.Serializable
+{
+    // This is what Sun's JDK1.1 "serialver java.lang.StringBuffer" says
+    private static final long serialVersionUID = 3388685877147921107L; 
+
+    private Vector(| char |) buffer;
+    private int used;
+    final private int SPARECAPACITY = 16;
+    final private int CAPACITYSTEP = 0;
+
+public StringBuffer()
+{
+    buffer=new Vector(| char |)( 0, CAPACITYSTEP );
+    buffer.ensureCapacity( SPARECAPACITY );
+}
+
+public StringBuffer(String str)
+{
+    this();
+    if ( str == null)
+	str = String.valueOf( str);
+    append( str );
+}
+
+public StringBuffer(int length)
+{
+    this();
+    if (length<0) throw new NegativeArraySizeException();
+    buffer.setSize( length );
+}
+
+public StringBuffer( __array(char) buf, int length )
+{
+    this( length );
+    for( ix :- 0:length ){
+	buffer[ix] = buf[ix];
+    }
+    used = length;
+}
+
+public synchronized StringBuffer append(Object obj) {
+    return append(String.valueOf(obj));
+}
+
+public synchronized StringBuffer append ( String str ) {
+    if (str == null) {
+	str = String.valueOf( str);
+    }
+    return (append( str.value, str.offset, str.count));
+}
+
+public StringBuffer append(boolean b)
+	{
+	return append(String.valueOf(b));
+}
+
+public synchronized /* inline */ StringBuffer append(char c)
+{
+	buffer.addElement( c );
+	used++;
+	return this;
+}
+
+public synchronized StringBuffer append(char str[])
+{
+    return append(str, 0, str.length);
+}
+
+public synchronized StringBuffer append( char str[], int offset, int len ) {
+
+	if( used + len > buffer.size() )
+		buffer.setSize(used+len);
+
+	for( i :- offset:offset+len ){
+	    buffer[used++] = str[i];
+	}
+	return this;
+}
+
+public StringBuffer append(double d)
+{
+    return append(String.valueOf(d));
+}
+
+public StringBuffer append(float f)
+{
+    return append(String.valueOf(f));
+}
+
+public StringBuffer append(int i)
+{
+    return append(String.valueOf(i));
+}
+
+public StringBuffer append(long l)
+{
+    return append(String.valueOf(l));
+}
+
+public /* inline */ int capacity()
+{
+    return buffer.capacity();
+}
+
+public synchronized char charAt(int index)
+{
+    checkIndex(index);
+    return buffer[index];
+}
+
+private synchronized void checkIndex(int index) throws StringIndexOutOfBoundsException
+{
+	if (index < 0 || index >= used)
+		throw new StringIndexOutOfBoundsException("index = " + index + ", used = " + used);
+}
+
+public synchronized void ensureCapacity ( int minimumCapacity ) {
+    buffer.ensureCapacity( minimumCapacity );
+}
+
+public synchronized void getChars(int srcBegin, int srcEnd, char dst[], int dstBegin)
+	{
+	checkIndex(srcBegin);
+	checkIndex(srcEnd-1);
+	int ix = dstBegin;
+	for( i :- srcBegin:srcEnd ){
+	   dst[ix++] = buffer[i];
+	}
+}
+
+public synchronized StringBuffer insert(int offset, Object obj)
+	{
+	return insert(offset, String.valueOf(obj));
+}
+
+public synchronized StringBuffer insert(int offset, String str)
+	{
+	if ( str == null)
+		str = String.valueOf( str);
+	return insert(offset, str.toCharArray());
+}
+
+public StringBuffer insert(int offset, boolean b)
+	{
+	return insert(offset, String.valueOf(b));
+}
+
+public synchronized StringBuffer insert(int offset, char c)
+	{
+	return insert(offset, String.valueOf(c));
+}
+
+public synchronized StringBuffer insert(int offset, char str[])
+{
+    if ((offset < 0) || (offset > used))
+	throw new StringIndexOutOfBoundsException();
+
+    ensureCapacity(used + str.length);
+
+    // Copy buffer up to make space.
+    buffer.insertElementsAt( str, offset );
+
+    used += str.length;
+
+    return (this);
+}
+
+public StringBuffer insert(int offset, double d)
+{
+    return insert(offset, String.valueOf(d));
+}
+
+public StringBuffer insert(int offset, float f)
+{
+    return insert(offset, String.valueOf(f));
+}
+
+public StringBuffer insert(int offset, int i)
+{
+    return insert(offset, String.valueOf(i));
+}
+
+public StringBuffer insert(int offset, long l)
+{
+    return insert(offset, String.valueOf(l));
+}
+
+public inline int length()
+{
+    return used;
+}
+
+public synchronized StringBuffer reverse()
+{
+    for (int pos = used/2 - 1; pos >= 0; pos--) {
+	char ch = buffer[pos];
+	buffer[pos] = buffer[used-pos-1];
+	buffer[used-pos-1] = ch;
+    }
+    return (this);
+}
+
+public synchronized void setCharAt(int index, char ch)
+{
+    checkIndex(index);
+    buffer[index]=ch;
+}
+
+public synchronized void setLength(int newLength) {
+    if (newLength < 0) {
+	throw new StringIndexOutOfBoundsException();
+    }
+    buffer.setSize( newLength );
+    if (newLength > used) {
+	/* Pad buffer */
+	for( pos :- used:newLength ) {
+	    buffer[pos] = (char) 0;
+	}
+    }
+    used = newLength;
+}
+
+public inline String toString() {
+    return new String(this);
+}
+}

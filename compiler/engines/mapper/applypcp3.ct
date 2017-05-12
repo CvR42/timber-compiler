@@ -1,0 +1,292 @@
+/*
+   Applypcp3 engine
+
+   Insert temporaries for shape references found in func/proc calls.
+
+   ALSO: pcp4: ditto for pointers to shape(elements). This needs both
+   pre-list as well as post-list processing.
+
+   ALSO: handle SmtPrint and SmtPrintLn
+   */
+
+.. File: applypcp3.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors ExprSelection statement_list block SmtProcedureCall
+.append actors ExprFunctionCall LocSelection
+.append actors expression
+..append actors SmtForeach
+.append actors ExprWrapper LocWrapper statement RoutineDeclaration
+.append actors SmtPrint SmtPrintLn
+.append actors LocNotNullAssert ExprNotNullAssert
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "vnusctl.h"
+#include "applypcp3.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+.call generate_cutoff_pragma_action SmtForeach reduction
+.call generate_cutoff_pragma_action ExprWrapper resident
+.call generate_cutoff_pragma_action LocWrapper resident
+.call generate_cutoff_pragma_action statement resident
+.call generate_cutoff_pragma_action RoutineDeclaration resident
+.call generate_admin_prelst_and_postlst_action statement_list
+.call generate_cutoff_dummy_action LocNotNullAssert
+.call generate_cutoff_dummy_action ExprNotNullAssert
+
+/*
+  Only go deeper if necessary
+  This is an optimisation, otherwise all expressions up to all depths
+  would be visited.
+  */
+static expression rewrite_expression_action(
+  expression e, global_context gc )
+{
+    if (!gc->add_to_prelst)
+        return e;
+    
+.call generate_walker_call "    " e expression expression
+
+    return e;
+}
+
+/*
+  Refences to shapes have to be put into the prelst.
+  This one handles value shape parameters.
+  */
+static expression rewrite_ExprSelection_action(
+    ExprSelection elm, global_context gc )
+{
+.call generate_walker_call "    " elm ExprSelection ExprSelection
+    
+#if 0
+    if (elm->shape->tag != TAGExprName) // This necessary?
+        return elm;
+#endif
+    
+.call conditional_init_scope
+.call conditional_init_prelst
+    type t = derive_type_expression(
+        gc->prog->declarations,
+        0, /*origin*/
+        elm);
+    DeclLocalVariable nld = new_DeclLocalVariable(
+        gen_origsymbol("__tmp_pcp3_"),
+        0,
+        new_Pragma_list(),
+        rdup_tmsymbol(gc->scope),
+        t,
+        new_OptExprNone());
+    SmtAssign nsa = new_SmtAssign(
+        0,
+        gen_origin(),
+        new_Pragma_list(),
+        new_OwnerExpr_list(),
+        new_LocName(
+            rdup_origsymbol(nld->name)),
+        elm);
+    FlagPragma np = new_FlagPragma(add_origsymbol("communication"));
+    nsa->pragmas = append_Pragma_list(nsa->pragmas, np);
+    ExprName nen = new_ExprName(
+        rdup_origsymbol(nld->name));
+    gc->prog->declarations = append_declaration_list(
+        gc->prog->declarations, nld);
+    gc->prelst = append_statement_list(gc->prelst, nsa);
+    return nen;
+}
+
+/*
+  Refences to shapes have to be put into the prelst and postlst.
+  Append to prelst, but insert at beginning of postlst.
+  This one handles reference shape parameters.
+  */
+static location rewrite_LocSelection_action(
+    LocSelection elm, global_context gc )
+{
+    if (!gc->add_to_prelst)
+        return elm;
+    
+.call generate_walker_call "    " elm LocSelection LocSelection
+    
+#if 0
+    if (elm->shape->tag != TAGExprName) // This necessary?
+        return elm;
+#endif
+    
+.call conditional_init_scope
+.call conditional_init_prelst
+.call conditional_init_postlst
+
+    type t = derive_type_location(
+        gc->prog->declarations,
+        0, /*origin*/
+        elm);
+    DeclLocalVariable nld = new_DeclLocalVariable(
+        gen_origsymbol("__tmp_pcp3_"),
+        0,
+        new_Pragma_list(),
+        rdup_tmsymbol(gc->scope),
+        t,
+        new_OptExprNone());
+
+    SmtAssign nsa = new_SmtAssign(
+        0,
+        gen_origin(),
+        new_Pragma_list(),
+        new_OwnerExpr_list(),
+        new_LocName(
+            rdup_origsymbol(nld->name)),
+        new_ExprSelection(
+            rdup_expression(elm->shape),
+            rdup_expression_list(elm->indices)));
+    FlagPragma np = new_FlagPragma(add_origsymbol("communication"));
+    nsa->pragmas = append_Pragma_list(nsa->pragmas, np);
+
+    SmtAssign nsa2 = new_SmtAssign(
+        0,
+        gen_origin(),
+        new_Pragma_list(),
+        new_OwnerExpr_list(),
+        elm,
+        new_ExprName(
+            rdup_origsymbol(nld->name)));
+    FlagPragma np2 = new_FlagPragma(add_origsymbol("receivekast"));
+    nsa2->pragmas = append_Pragma_list(nsa2->pragmas, np2);
+    
+    LocName nln = new_LocName(
+        rdup_origsymbol(nld->name));
+    gc->prog->declarations = append_declaration_list(
+        gc->prog->declarations, nld);
+    gc->prelst = append_statement_list(gc->prelst, nsa);
+    gc->postlst = insert_statement_list(gc->postlst, 0, nsa2);
+    return nln;
+}
+
+/*
+  Save previous scope and replace with current scope.
+  If current scope was assigned a name then this name has to be set.
+  */
+static block rewrite_block_action(
+  block e, global_context gc )
+{
+    if( e == 0 ){
+        return e;
+    }
+.call generate_cutoff_pragma_stmt resident
+.call push_scope
+.call generate_walker_call "    " e block block
+.call conditional_set_scope e->scope
+.call pop_scope
+    return e;
+}
+
+/*
+  Use gc->add_to_prelst to handle only Procedure calls.
+  */
+static SmtProcedureCall rewrite_SmtProcedureCall_action(
+  SmtProcedureCall e, global_context gc )
+{
+.call generate_descent_call "    " e->proc expression expression
+
+.call push_add_to_prelst
+    gc->add_to_prelst = true;
+    
+.call generate_descent_call "    " e->parameters expression_list expression_list
+
+.call pop_add_to_prelst
+
+    return e;
+}
+
+/*
+  And Function Calls too.
+  */
+static ExprFunctionCall rewrite_ExprFunctionCall_action(
+  ExprFunctionCall e, global_context gc )
+{
+.call generate_descent_call "    " e->function expression expression
+
+.call push_add_to_prelst
+    gc->add_to_prelst = true;
+    
+.call generate_descent_call "    " e->parameters expression_list expression_list
+
+.call pop_add_to_prelst
+
+    return e;
+}
+
+/*
+  And let's not forget SmtPrint.
+  */
+static SmtPrint rewrite_SmtPrint_action(
+  SmtPrint e, global_context gc )
+{
+.call push_add_to_prelst
+    gc->add_to_prelst = true;
+    
+.call generate_descent_call "    " e->argv expression_list expression_list
+
+.call pop_add_to_prelst
+
+    return e;
+}
+
+/*
+  And also SmtPrintLn.
+  */
+static SmtPrintLn rewrite_SmtPrintLn_action(
+  SmtPrintLn e, global_context gc )
+{
+.call push_add_to_prelst
+    gc->add_to_prelst = true;
+    
+.call generate_descent_call "    " e->argv expression_list expression_list
+
+.call pop_add_to_prelst
+
+    return e;
+}
+
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_pcp3(
+    vnusprog elm, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+    (void) rewrite_SmtProcedureCall_walker;
+    (void) rewrite_ExprFunctionCall_walker;
+    (void) rewrite_statement_list_walker;
+    (void) rewrite_SmtPrint_walker;
+    (void) rewrite_SmtPrintLn_walker;
+    (void) rewrite_ExprNotNullAssert_walker;
+    (void) rewrite_LocNotNullAssert_walker;
+
+.call init_scope
+.call init_prelst
+.call init_postlst
+.call init_add_to_prelst
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}

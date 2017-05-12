@@ -1,0 +1,9 @@
+// Describe the properties of special functions
+-function(exit,tm_fatal)
+-function(exit,internal_error)
+-function(exit,origsymbol_internal_error)
+-function(exit,origin_internal_error)
+//-strong(AJX)
+-strong(B,TMBOOL)	// TMBOOL is a boolean type
+//-strong(AJX,tmstring)
+//-printf(1,error)

@@ -1,0 +1,1 @@
+errbadthrows.spar:16: Exception TestException must be caught, or must be declared in the throws clause of this method

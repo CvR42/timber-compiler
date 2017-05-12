@@ -1,0 +1,132 @@
+/*
+   Applytaskpar engine
+
+   Find loop annotated with 'taskparallel' and give it either a cyclic
+   or a block distribution.
+   */
+
+.. File: applytaskpar.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtForeach
+.append actors DeclFunction DeclProcedure
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "vnusctl.h"
+#include "applytaskpar.h"
+#include "search.h"
+#include "replace.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+.call generate_admin_current_parms_action DeclFunction
+.call generate_admin_current_parms_action DeclProcedure
+/*
+  Bla, see comment at top of file.
+  */
+static SmtForeach rewrite_SmtForeach_action(
+  SmtForeach e, global_context gc )
+{
+        // Do NOT descend!!!!
+//    if (e->cards->sz != 1)
+//        return e;
+    int pos = pragma_list_find_index_tmsymbol(
+	e->pragmas, add_tmsymbol("taskparallel"));
+    if (pos == -1)
+        return e;
+    assert (e->pragmas->arr[pos]->tag == TAGValuePragma);
+    ValuePragma thePragma = to_ValuePragma(e->pragmas->arr[pos]);
+    assert (thePragma->x->tag == TAGNamePragmaExpression);
+    NamePragmaExpression thePExpr = to_NamePragmaExpression(thePragma->x);
+    expression theOwner;
+    if (thePExpr->name->sym == add_tmsymbol("cyclic"))
+    {
+	fprintf(stderr, "ApplyTaskPar: making loop cyclic\n");
+	theOwner = new_ExprBinop(
+	    new_ExprName(rdup_origsymbol(e->cards->arr[0]->name)),
+	    BINOP_MOD,
+	    build_numberOfProcessors_expression(gc));
+    }
+    else if (thePExpr->name->sym == add_tmsymbol("block"))
+    {
+	fprintf(stderr, "ApplyTaskPar: making loop block(not bomb-proof)\n");
+	theOwner = new_ExprBinop(
+	    new_ExprName(rdup_origsymbol(e->cards->arr[0]->name)),
+	    BINOP_DIVIDE,
+	    new_ExprBinop(
+		new_ExprBinop(
+		    rdup_expression(e->cards->arr[0]->upperbound),
+		    BINOP_PLUS,
+		    new_ExprBinop(
+			build_numberOfProcessors_expression(gc),
+			BINOP_MINUS,
+			new_ExprInt(1))),
+		BINOP_DIVIDE,
+		build_numberOfProcessors_expression(gc)));
+    }
+    else
+    {
+	fprintf(stderr, "ApplyTaskPar: unsupported distr\n");
+	exit(1);
+	return e;
+    }
+    
+    block nb = new_block(
+        0,
+        gen_origin(),
+        Pragma_listNIL,
+        OwnerExpr_listNIL,
+        new_statement_list());
+    SmtIf nif = new_SmtIf(
+        0,
+        gen_origin(),
+        Pragma_listNIL,
+        OwnerExpr_listNIL,
+        new_ExprBinop(
+	    theOwner,
+            BINOP_EQUAL,
+            build_currentProcessor_expression(gc)),
+        e->body,
+        new_block(
+            0,
+            gen_origin(),
+            Pragma_listNIL,
+            OwnerExpr_listNIL,
+            new_statement_list()));
+    e->body = nb;
+    nb->statements = append_statement_list(
+        nb->statements,
+        nif);
+    return e;
+}
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_taskpar(
+    vnusprog elm, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+    (void) rewrite_SmtForeach_walker;
+.call init_current_parms    
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}

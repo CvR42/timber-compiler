@@ -1,0 +1,15 @@
+public class genserialize implements java.io.Serializable {
+    int n = 3;
+    int ar[] = new int[2];
+    [int^2] b = [12,12];
+    [int,boolean] c = [1,false];
+    genserialize x = null;
+
+    public static void main( String args[] )
+    {
+	genserialize x = new genserialize();
+	__println( 1, x.b[0] );
+	__println( 1, x.c[0] );
+        __println( 1, "Hello world" );
+    }
+}

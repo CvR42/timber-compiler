@@ -1,0 +1,10 @@
+// Minimal test program.
+
+package spar.testsuite;
+
+public class rtehello {
+    public static void main()
+    {
+	__println( 42, "Hello world" );
+    }
+}

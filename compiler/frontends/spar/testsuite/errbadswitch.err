@@ -1,0 +1,3 @@
+errbadswitch.spar:6: Converting this int constant to a byte would cause loss of precision
+errbadswitch.spar:9: Converting this int constant to a byte would cause loss of precision
+errbadswitch.spar:12: switch expression must be char, byte, short or int

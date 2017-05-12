@@ -1,0 +1,7 @@
+.insert ../lib.t
+/* ioseq.cc
+ */
+
+#include "ioseq.h"
+
+.call gen_stubs v__ vs__

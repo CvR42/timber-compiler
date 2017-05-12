@@ -1,0 +1,7 @@
+dist.lst
+autom4te.cache
+Makefile
+configure
+config.status
+config.log
+config.cache

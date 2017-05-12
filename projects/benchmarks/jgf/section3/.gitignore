@@ -1,0 +1,6 @@
+*.compilelog
+*.runlog
+*-exe
+*.class
+*.time
+*.result

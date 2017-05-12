@@ -1,0 +1,55 @@
+# Common rules for the mapper engines
+
+# Sources we get dependency information from. The generated sources
+# still need to be incorporated into this scheme.
+DEPENDSRC = $(SRC) $(GENSRC)
+
+# Files to be deleted upon cleanup
+JUNK    = $(GENHDR) \
+	  $(GENSRC) $(OBJ)
+
+help:
+	@$(ECHO) " Possible make targets:"
+	@$(ECHO) "all              Create local running programs."
+	@$(ECHO) "clean            Delete all temporary files."
+	@$(ECHO) "empty            Delete all temporary files and executables."
+	@$(ECHO) "depend           Update dependencies in $(DEPENDFILE)."
+
+all: 	depend $(EXE)
+
+$(EXE): $(OBJ) $(LIBS)
+	$(LD) $(LDFLAGS) $(OBJ) $(LIBS) -o $(EXE)
+
+gfiles:	$(GENHDR) $(GENSRC)
+
+tmadmin.cc: tmadmin.ct $(DSFILES) tmadmin.t $(TMCXTRA)
+	$(TM) tmadmin.ds tmadmin.ct > $@
+
+tmadmin.h: tmadmin.ht $(DSFILES) tmadmin.t $(TMHXTRA)
+	$(TM) tmadmin.ds tmadmin.ht > $@
+
+search-g.cc: search.ct $(DSFILES) gensearch.t
+	$(TM) tmadmin.ds $< > $@
+
+%-g.cc:	%.ct $(DSFILES) $(TMGXTRA)
+	$(TM) tmadmin.ds $< > $@
+
+clean:	
+	rm -f $(JUNK)
+
+empty:	clean
+	rm -f $(EXE) $(DEPENDFILE)
+
+depend:	gfiles createdepend
+
+createdepend: $(DEPENDFILE)
+	@$(ECHO) -n "Checking/Updating dependencies... "
+	@$(CC) $(CFLAGS) -MM $(DEPENDSRC) > $(DEPENDFILE)
+	@$(ECHO) "done."
+
+$(DEPENDFILE):
+	touch $(DEPENDFILE)
+
+.PRECIOUS:	%.g.cc %.g.v
+
+-include $(DEPENDFILE)

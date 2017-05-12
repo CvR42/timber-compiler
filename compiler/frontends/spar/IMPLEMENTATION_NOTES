@@ -1,0 +1,211 @@
+
+* Dynamic functions do not invoke the static initializer, since we assume
+that this has already been invoked in the constructor that created
+this instance. This fails if a dynamic function is passed 'null' as
+`this' pointer, but I'm not sure that is allowed at all, and if dynamic
+function invocation is tried on a null pointer, the program will die
+horribly anyway.
+
+Similarly for references to non-static fields.
+
+* the instanceof operator on a class works by comparing class numbers:
+classes are numbered in depth-first order, so the subclasses of
+a class can be represented as a range of numbers. Given a class type
+and a class instance, it is therefore very simple to determine whether
+the instance is of a subclass by digging up the number of the particular
+class instance, and comparing it with the range of the given type.
+
+
+
+Phases in the Spar compiler
+===========================
+
+This document describes the function of each compiler phase.
+The phases are listed in the order they are invoked.
+
+
+Forward class registration
+--------------------------
+
+Implemented in 'fwdregtype.ct'
+
+Given a program unit, visit all classes and interfaces and program units,
+and register them as 'forward' definitions. This phase is required to
+avoid recursive attempts to compile the same program unit.
+
+
+Type binding
+------------
+
+Implemented in 'regtype.ct'
+
+Determine the fully qualified name of each symbol, and replace the
+original name with that name in the parse tree.
+
+Also, assign a mangled (unique, and acceptable to Vnus) name to the
+symbol, and register the association between the mangled name and the
+real name in a special database called the 'symbol table'.
+
+If necessary, on demand imports are executed, and the imported source code
+is recursively compiled. So that it is in the same phase as this code. In
+other words, Forward class registration, lowering and type binding
+is done on the imported class.
+
+
+Lowering
+--------
+
+Implemented in 'lower.ct'
+
+Rewrite the following constructs:
+
+- All expressions with side-effects to expressions without side-effects,
+  preceded by statements that implement the side-effects.
+
+  Function invocations should also be rewritten if they have side-effects,
+  but currently that's not done.
+
+- constructor 'new' expressions to memory allocation expression without a
+  constructor invocation, and a separate constructor invocation.
+
+- Statement blocks with declarations inbetween statements to nested
+  statement blocks where all declarations are at the top of the
+  block.
+
+- Classic 'for' statements to 'while' statements, according to the
+  traditional equivalence rule.
+
+- Array initializations such as int `a[] = {1,2,3};' to array 'new'
+  statements with the correct sizes, and separate assignements to
+  initialize the array.
+
+
+Name mangling
+-------------
+
+Replace all references to the original symbols with mangled names.
+These mangled names have been assigned in the 'type binding' phase.
+
+Name mangling may require the resolution of method overloading.
+
+
+Checking
+--------
+
+Apply a lot of program correctness checking. Note that some of the
+checking is done in separate phases, because the required information
+is already gathered, or an incorrect program causes an error condition
+in that phase.
+
+This phase is executed twice: once before the rewrite phase (see below),
+and once after. This is done to verify the correctness of the rewrite
+phase.
+
+
+Rewriting
+----------
+
+Apply the following transformations to the parse tree.
+
+- Rewrite all expressions in actual parameter lists,  operators, if and
+  while conditionals, assignments, switch values, and array subscripts
+  so that they contain explicit casts that implement the implied type
+  coersion of Java. This is done because Vnus has no implicit type
+  coersion at all.
+
+- Fold nested pragma expressions into one long pragma expression.
+
+- Replace 'typeof' expressions (generated internally by the compiler)
+  with the type of the expression they refer to.
+
+Vnus code generation
+--------------------
+
+Traverse the parse tree, and write Vnus code to the output stream.
+
+
+Representation of interfaces
+============================
+
+Since interface instances cannot have fields, all interface types
+can be mapped to one single Vnus record type: '__any_interface_type'.
+This type only contains a __vtable and __ivtable.
+
+
+Introspection
+=============
+
+The Java 1.1 language construct <classname>.class expresses a reference
+to a java.lang.Class instance that describes <classname>. The wording in
+the Java documentation suggest a references to a unique, precomputed,
+instance, but for now we simply construct it a new instance on demand
+through the new java.lang.Class constructor that has the class id as
+parameter.
+
+Vectors and tuples
+==================
+
+Vectors are considered a special case of tuples.
+
+Generic types
+=============
+
+Type substitution, as done for generic types and macros, only has to 
+consider the first part of a qualified name, since the type parameters
+that abstract an expression are always simple names.
+
+Macros
+======
+
+It is not possible to use the exact same substitution mechanism for
+macros as is used for generic types. This is because macros may have
+any type of parameter (this was done so that the compiler can also use
+the mechanism for inlining.)
+
+Instead, a hybrid inlining mechanism is used: if an actual parameter
+of a macro is a constant of a basetype, or if it is a type parameter,
+it is substituted as in generic types. For other formal parameters a
+local variable declaration with an initialization expression is generated.
+
+
+Analysis
+========
+
+Chapter 16 of the Java Language Specification, ''Definite Assignment'',
+in essence describes an analysis pass over a Java program to verify that
+all local variables are assigned before they are used. This analysis pass
+must be implemented by a compiler to conform to the language specification.
+
+Once this analysis pass is in place, we may as well use it to push around
+some additional analysis information. The most obvious things to do are
+
+- Is zero? yes/no/perhaps
+- Is null? yes/no/perhaps
+- Is false? yes/no/perhaps
+- Has a class been static initialized? yes/no
+- Has a variable been initialized? yes/no/perhaps ('perhaps' only for error message)
+- If a variable has been initialized to a constant, what is it's value.
+- For a class reference, what is the actual type of the variable?
+
+This information can then be used to propagate constants, remove null
+pointer checks, determine trip counts of some types of loop, avoid
+virtual function calls and remove some static initialization calls.
+
+A more complex goal would be to remove bounds checks, if only in common
+cases such as
+
+foreach( i<~0:a.length ) a[i] = 0;
+
+The check on the lower bound of 'a[i]' is easily removed, since we can
+easily label 'i' as 'negative=no'. The upper bound is more complex, though.
+Perhaps we should simply recognize such a phrase.
+
+Moreover, there currently is little point in eliminating the check
+on the lower bound, since the cost of the check would not be reduced
+significantly.
+
+If a statement label is used for a break or continue statement, we must
+assume that anything within that statement may not have been executed.
+This could in fact be refined, since we know that anything up to the
+first break or continue or throw is always executed, but for now that's
+too complicated.

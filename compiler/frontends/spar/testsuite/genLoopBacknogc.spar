@@ -1,0 +1,31 @@
+public class genLoopBacknogc {
+
+	static double Sum(int N, PreReductionFunc f) {
+		double r = 0.0;
+		for (int i=0;i<N;i++)
+			r += f.Func(i);
+		return r;
+	}
+
+	static public void main(String [] args) {
+		double x, y;
+		x = Sum(10,new Identity());
+		y = Sum(10,new Squared());
+	}
+}
+
+interface PreReductionFunc {
+	double Func(int i);
+}
+
+class Identity implements PreReductionFunc {
+	public double Func(int i) {
+		return (double) i;
+	}
+}
+
+class Squared implements PreReductionFunc {
+	public double Func(int i) {
+		return (double) i*i;
+	}
+}

@@ -1,0 +1,2 @@
+errwrongfile.spar:5: A public type 'Cl' should be in file 'Cl.java' or 'Cl.spar', not 'errwrongfile.spar'
+errwrongfile.spar:10: A public type 'Inf' should be in file 'Inf.java' or 'Inf.spar', not 'errwrongfile.spar'

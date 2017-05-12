@@ -1,0 +1,18 @@
+package spar.testsuite;
+
+class t1 {
+    static int v( int n ){
+	__println( 1, "Hi! I'm a side-effect" );
+	return n;
+    }
+}
+
+public class okdyninit {
+    int c[*,*] = { {1,2}, {2,3} };
+    int b[] = {1,2};
+    int a = t1.v( 1+2 );
+    public static void main()
+    {
+	okdyninit x = new okdyninit();
+    }
+}

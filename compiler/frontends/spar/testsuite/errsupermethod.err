@@ -1,0 +1,2 @@
+errsupermethod.spar:21: Cannot make a static reference to an instance superclass method: 'dyna_hello'
+errsupermethod.spar:34: no method in java.lang.Object matches hello()

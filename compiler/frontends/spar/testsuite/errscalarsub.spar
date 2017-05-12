@@ -1,0 +1,7 @@
+public class errscalarsub {
+    public static void main(){
+	String argv = "bla";
+
+	argv[0] = "bla";
+    }
+}

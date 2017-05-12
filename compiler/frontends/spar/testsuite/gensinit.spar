@@ -1,0 +1,21 @@
+//package spar.testsuite;
+
+import java.io.*;
+
+class c {
+    static {
+	__println( 1, "hohoho" );
+    }
+    static int v[] = { 1,2,3 };
+}
+
+public class gensinit {
+    public static void main(){
+	if( 1.0 == 1.0 ){
+	    __println( 1, c.v[0] );
+	}
+	else {
+	    __println( 1, c.v[0] );
+	}
+    }
+}

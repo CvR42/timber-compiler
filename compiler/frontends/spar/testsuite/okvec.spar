@@ -1,0 +1,19 @@
+globalpragmas <$boundscheck=false$>;
+
+package spar.testsuite;
+
+public class okvec 
+{
+    static double A[] = new double[30000];
+
+    public static void main()
+        {
+            for( loop :- 0:2 ){
+            
+                for( i :- 0:30000 )
+                    A[i] = i * 1.1d;
+            }
+            __println( 1, "Checksum: ", A[1500] );
+        }
+}
+

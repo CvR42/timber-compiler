@@ -1,0 +1,25 @@
+// Test the things you can do wrong with references to 'super fields'.
+
+package spar.testsuite;
+
+class t1 {
+    int n;
+}
+
+class t extends t1 {
+    int n;
+    void set_n( int n ){ this.n = n; }
+    void set_super_n( int n ){ super.n = n; }
+    static void set_super_z( int z ){ super.z = z; }	// Non-existent field
+}
+
+public class errsuperfield {
+    public static void main()
+    {
+	super.x = 2;	// What superclass?
+	t x = new t();
+	x.set_n( 42 );
+	x.set_super_n( 42 );
+	t.set_super_z( 42 );
+    }
+}

@@ -1,0 +1,60 @@
+// After JLS2 14.14    The break Statement
+//
+// This causes an error by the Timber compiler, since it does not
+// realize that the loop can only terminate in one of the two
+// 'if' statements, due to the 'break edgelist' statement.
+
+
+class Graph {
+    int edges[][];
+    public Graph(int[][] edges) { this.edges = edges; }
+    public Graph loseEdges(int i, int j) {
+        int n = edges.length;
+        int[][] newedges = new int[n][];
+        for (int k = 0; k < n; ++k) {
+            edgelist: {
+                int z;
+                search: {
+                    if (k == i) {
+                        for (z = 0; z < edges[k].length; ++z)
+                            if (edges[k][z] == j)
+                                break search;
+                    } else if (k == j) {
+                        for (z = 0; z < edges[k].length; ++z)
+                            if (edges[k][z] == i)
+                                break search;
+                    }
+                    // No edge to be deleted; share this list.
+                    newedges[k] = edges[k];
+                    break edgelist;
+                } //search
+                // Copy the list, omitting the edge at position z.
+                int m = edges[k].length - 1;
+                int ne[] = new int[m];
+                System.arraycopy(edges[k], 0, ne, 0, z);
+                System.arraycopy(edges[k], z+1, ne, z, m-z);
+                newedges[k] = ne;
+            } //edgelist
+        }
+        return new Graph(newedges);
+    }
+    public void dump()
+    {
+	 for( int k=0; k<edges.length; k++ ){
+	     int l[] = edges[k];
+	     for( int i=0; i<l.length; i++ ){
+		 System.out.println( k + "->" + l[i] );
+	     }
+	 }
+    }
+}
+
+public class okjlsloseedges {
+    public static void main( String args[] ){
+	int edges[][] = { { 1, 3 }, { 0, 4 }, { 0, 1 }, {} };
+	Graph g = new Graph( edges );
+	g.dump();
+	Graph g1 = g.loseEdges( 0, 2 );
+	g1.dump();
+    }
+}

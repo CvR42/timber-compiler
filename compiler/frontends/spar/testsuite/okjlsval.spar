@@ -1,0 +1,19 @@
+// After JLS2 4.3.1    Objects
+
+class Value { int val; }
+
+public class okjlsval {
+    public static void main(String[] args) {
+        int i1 = 3;
+        int i2 = i1;
+        i2 = 4;
+        __print(1,"i1==" , i1);
+        __println(1," but i2==" , i2);
+        Value v1 = new Value();
+        v1.val = 5;
+        Value v2 = v1;
+        v2.val = 6;
+        __print(1,"v1.val==" , v1.val);
+        __println(1," and v2.val==" , v2.val);
+    }
+}

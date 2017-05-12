@@ -1,0 +1,19 @@
+globalpragmas <$
+  boundscheck = false,
+  processortypes = ((gpp "trimedia") (dsp "TI_C60")),
+  processors = (((gpp) gpp1) ((dsp 4) dsp1D) ((dsp 2 3) dsp2D))
+$>;
+
+package my;
+
+public class okvec {
+  public static void main() {
+    double A[] = new double[30000]<$map = ((i) dsp2D (_block (3*i+7) _all)
+
+    for [i:30000]
+    <$ on = dsp2D (_block (3*i+7) _all) $> {
+      A[i] = i * 1.1d;
+    }
+  }
+}
+

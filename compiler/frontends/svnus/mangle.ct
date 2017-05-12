@@ -1,0 +1,589 @@
+.. File: mangle.ct
+..
+.. Variable name mangling
+..
+.. Return 'walk' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the datastructure we're walking on, and a type 't', of that variable,
+.. generate a return statement/
+.macro generate_walker_return indent var t
+$(indent)return $(var);
+.endmacro
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+.if ${member ${stemname $t} ${typelist}}
+$(indent)if( $(var) == 0 ){
+$(indent)    return $(var);
+$(indent)}
+.endif
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+static $t mangle_$t_walker( $t $(var), tmsymbol scope )
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we're walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+static $t mangle_$t_walker( $t $(var), tmsymbol scope );
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) mangle_$(type)_action( $(var), scope );
+.else
+$(indent)$(var) = ($(type)) mangle_$(type)_action( to_$(type)( $(var) ), scope );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) mangle_$(type)_walker( $(var), scope );
+.else
+$(indent)$(var) = ($(type)) mangle_$(type)_walker( to_$(type)( $(var) ), scope );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.endmacro
+..
+.. For which types are there actions defines?
+.set actors varname pragma DeclFunction DeclProcedure cardinality view
+.append actors ForStatement ForallStatement ForeachStatement ForkallStatement
+.append actors ViewStatement DeclExternalProcedure DeclExternalFunction block
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+/* File: mangle.c
+ *
+ * Mangle symbols in a Vnus program. This mangling has two
+ * purposes:
+ * 1. Ensure that all variable names have at least one '_' in their name.
+ * 2. Ensure that all local variables are unique, so that one global
+ *    symbol table can be used.
+ *
+ * To this end, three different classes of symbols are mangled
+ * differently.
+ * - Global variables get two '_' in front.
+ * - Local variables get their function name bolted on.
+ * - Cardinality variables get a gensym equivalent.
+ * 
+ * To distinguish between the various types of symbol, global and
+ * cardinality variables are added to a translation table. Anything
+ * that isn't in the translation table is assumed to be local.
+ */
+
+#include <stdio.h>
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "vnus_types.h"
+#include "tmadmin.h"
+#include "error.h"
+#include "symbol_table.h"
+#include "global.h"
+#include "mangle.h"
+#include "collect.h"
+#include "typederive.h"
+
+.foreach t ${aliases}
+typedef ${alias $t} $t;
+.endforeach
+
+static translation_list nametab = translation_listNIL;
+static unsigned long cardctr;
+static int scopelevel;
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* Given a translation 'from' to 'to', add it to the translation list. */
+static void add_translation( const tmsymbol from, const tmsymbol to )
+{
+    translation tr;
+
+    assert( from != tmsymbolNIL );
+    assert( to != tmsymbolNIL );
+    tr = new_translation( from, to, scopelevel );
+    nametab = append_translation_list( nametab, tr );
+    if( showmangling ){
+	fprintf(
+	    stderr,
+	    "translation [%d]: %s->%s\n",
+	    scopelevel,
+	    from->name,
+	    to->name
+	);
+    }
+}
+
+/* Given a tmsymbol 's', return TRUE if the tmsymbol has a translation, and
+ * set *pos to the index in de list, or return FALSE if the symbol
+ * has no translation, and do not touch *pos.
+ *
+ * The list is searched back to front to ensure that the most recent
+ * translation of a tmsymbol is used.
+ */
+static bool search_translation( const tmsymbol s, unsigned int *pos )
+{
+    unsigned int ix;
+
+    ix = nametab->sz;
+    while( ix>0 ){
+	ix--;
+	if( nametab->arr[ix]->from == s ){
+	    *pos = ix;
+	    return TRUE;
+	}
+    }
+    return FALSE;
+}
+
+/* Given a tmsymbol 's', return the translation of that symbol, or
+ * return symbolNIL if it has no translation.
+ */
+static tmsymbol translate_symbol( const tmsymbol s )
+{
+    unsigned int ix;
+
+    if( search_translation( s, &ix ) ){
+	if( showmangling ){
+	    fprintf(
+		stderr,
+		"mangled %s to %s\n",
+		s->name,
+		nametab->arr[ix]->to->name
+	    );
+	}
+	return nametab->arr[ix]->to;
+    }
+    if( showmangling ){
+	fprintf( stderr, "cannot mangle %s\n", s->name );
+    }
+    return tmsymbolNIL;
+}
+
+/* Given a scope level, delete all entries with higher scope levels. */
+static void delete_scope_levels( const int level )
+{
+    unsigned int ix;
+    translation tr;
+
+    ix = 0;
+    if( showmangling ){
+	fprintf(
+	    stderr,
+	    "deleting all translation levels higher than %d\n",
+	    level
+	);
+    }
+    while( ix<nametab->sz ){
+	tr = nametab->arr[ix];
+	if( tr->level > level ){
+	    if( showmangling ){
+		fprintf( stderr, "Deleting translation\n" );
+	    }
+	    nametab = delete_translation_list( nametab, ix );
+	}
+	else {
+	    ix++;
+	}
+    }
+    scopelevel = level;
+}
+
+/* Given a known local symbol, mangle it. */
+static tmsymbol mangle_local_symbol( const tmsymbol s, const tmsymbol scope )
+{
+    char buf[2024];
+    tmsymbol ans;
+
+    assert( scope != tmsymbolNIL );
+    assert( s != tmsymbolNIL );
+    sprintf( buf, "%s_", s->name );
+    ans = gen_tmsymbol( buf );
+    assert( ans != tmsymbolNIL );
+    return ans;
+}
+
+/* Given a global symbol, mangle it.  */
+static tmsymbol mangle_global_symbol( const tmsymbol s )
+{
+    char buf[1024];
+    tmsymbol ans;
+
+    sprintf( buf, "%s_", s->name );
+    ans = gen_tmsymbol( buf );
+    assert( ans != tmsymbolNIL );
+    return ans;
+}
+
+/* Given a known cardinality symbol, mangle it. */
+static tmsymbol mangle_cardinality_symbol( const tmsymbol s )
+{
+    char buf[2024];
+    tmsymbol ans;
+
+    assert( s != tmsymbolNIL );
+    sprintf( buf, "%s_", s->name );
+    ans = gen_tmsymbol( buf );
+    assert( ans != tmsymbolNIL );
+    return ans;
+}
+
+/* Given a tmsymbol of a local definition, create and enter
+ * its translation in the list.
+ */
+static void build_local_translation( const origsymbol s, const tmsymbol scope )
+{
+    tmsymbol nw;
+
+    nw = mangle_local_symbol( s->sym, scope );
+    add_translation( s->sym, nw );
+}
+
+/* Given a list of symbols that are for local definitions, enter
+ * them in the list of translations.
+ */
+static void build_local_translations( origsymbol_list sl, const tmsymbol scope )
+{
+    unsigned int ix;
+
+    scopelevel++;
+    for( ix=0; ix<sl->sz; ix++ ){
+	build_local_translation( sl->arr[ix], scope );
+    }
+}
+
+/* Given a tmsymbol of a global definition, create and enter
+ * its translation in the list.
+ */
+static void build_global_translation( origsymbol s )
+{
+    tmsymbol nw;
+
+    nw = mangle_global_symbol( s->sym );
+    add_translation( s->sym, nw );
+}
+
+/* Given a list of symbols that are for global definitions, enter
+ * them in the list of translations.
+ */
+static void build_global_translations( origsymbol_list sl )
+{
+    unsigned int ix;
+
+    for( ix=0; ix<sl->sz; ix++ ){
+	build_global_translation( sl->arr[ix] );
+    }
+}
+
+/* Given a tmsymbol of a external definition, create and enter
+ * its translation in the list.
+ */
+static void build_external_translation( origsymbol s )
+{
+    add_translation( s->sym, s->sym );
+}
+
+/* Given a list of symbols that are for external definitions, enter
+ * them in the list of translations.
+ */
+static void build_external_translations( origsymbol_list sl )
+{
+    unsigned int ix;
+
+    for( ix=0; ix<sl->sz; ix++ ){
+	build_external_translation( sl->arr[ix] );
+    }
+}
+
+/* Given a tmsymbol of unknown class, return the mangled version. */
+static tmsymbol mangle_symbol( const tmsymbol s, const origin org )
+{
+    tmsymbol ans;
+    
+    ans = translate_symbol( s );
+    if( ans == tmsymbolNIL ){
+	orig_errpos( org );
+	sprintf( errarg, "'%s'", s->name );
+	error( "undefined symbol" );
+	ans = rdup_tmsymbol( s );
+    }
+    return ans;
+}
+
+/* -------- actors ---------- */
+
+
+/* The following expression pragmas must have their expression
+ * name-mangled, because they talk about variable names.
+ *
+ * To add more pragmas simply put them in the list. Leave the NULL
+ * at the end of the list.
+ */
+static const char *mangled_pragmas[] = {
+    "testpragmamangling",
+    NULL			/* end of list. */
+};
+
+/* Action for a pragma. */
+static pragma mangle_pragma_action( pragma p, const tmsymbol scope )
+{
+    unsigned int ix;
+    const char *pragmastr = p->name->sym->name;
+    bool mangle_it = FALSE;
+
+    ix = 0;
+    while( mangled_pragmas[ix] != NULL && !mangle_it ){
+	if( strcmp( mangled_pragmas[ix], pragmastr ) == 0 ){
+	    mangle_it = TRUE;
+	    break;
+	}
+	ix++;
+    }
+    if( mangle_it ){
+.call generate_walker_call "            " p pragma pragma
+    }
+    return p;
+}
+
+/* Mangle action for a DeclFunction */
+static DeclFunction mangle_DeclFunction_action( DeclFunction fn, const tmsymbol oldscope )
+{
+    tmsymbol scope;
+    int oldlevel;
+    origsymbol_list locals;
+    block blk = fn->body;
+
+    (void) oldscope;
+    assert( blk->scope != tmsymbolNIL );
+    scope = blk->scope;
+    locals = collect_function_names( fn->parms, fn->retval, 0 );
+    oldlevel = scopelevel;
+    build_local_translations( locals, scope );
+    rfre_origsymbol_list( locals );
+.call generate_walker_call "            " fn DeclFunction DeclFunction
+    delete_scope_levels( oldlevel );
+    return fn;
+}
+
+/* Mangle a DeclProcedure */
+static DeclProcedure mangle_DeclProcedure_action( DeclProcedure proc, const tmsymbol oldscope )
+{
+    tmsymbol scope;
+    int oldlevel;
+    origsymbol_list locals;
+    block blk = proc->body;
+
+    (void) oldscope;
+    assert( blk->scope != tmsymbolNIL );
+    scope = blk->scope;
+    locals = collect_procedure_names(
+	proc->parms,
+	0
+    );
+    oldlevel = scopelevel;
+    build_local_translations( locals, scope );
+    rfre_origsymbol_list( locals );
+.call generate_walker_call "            " proc DeclProcedure DeclProcedure
+    delete_scope_levels( oldlevel );
+    return proc;
+}
+
+static varname mangle_varname_action( varname s, const tmsymbol scope )
+{
+    if( s == 0 ){
+	return s;
+    }
+    s->sym = mangle_symbol( s->sym, s->orig );
+.call generate_walker_call "    " s varname varname
+    return s;
+}
+
+/* Mangle a 'cardinality'. */
+static cardinality mangle_cardinality_action( cardinality t, const tmsymbol scope )
+{
+    tmsymbol nw = t->name->sym;
+
+    nw = mangle_cardinality_symbol( t->name->sym );
+    scopelevel++;
+    add_translation( t->name->sym, nw );
+.call generate_walker_call "    " t cardinality cardinality
+    return t;
+}
+
+/* Mangle a 'view' */
+static view mangle_view_action( view t, const tmsymbol scope )
+{
+    unsigned int oldlevel = scopelevel;
+
+.call generate_walker_call "    " t view view
+    delete_scope_levels( oldlevel );
+    return t;
+}
+
+static DeclExternalFunction mangle_DeclExternalFunction_action( DeclExternalFunction fn, const tmsymbol oldscope )
+{
+    tmsymbol scope;
+    int oldlevel;
+    origsymbol_list locals;
+
+    (void) oldscope;
+    scope = fn->name->sym;
+    locals = collect_function_names(
+	fn->parms,
+	fn->retval,
+	declaration_listNIL
+    );
+    oldlevel = scopelevel;
+    build_local_translations( locals, scope );
+    rfre_origsymbol_list( locals );
+.call generate_walker_call "    " fn DeclExternalFunction DeclExternalFunction
+    delete_scope_levels( oldlevel );
+    return fn;
+}
+
+static DeclExternalProcedure mangle_DeclExternalProcedure_action(
+ DeclExternalProcedure proc,
+ const tmsymbol oldscope
+)
+{
+    tmsymbol scope;
+    int oldlevel;
+    origsymbol_list locals;
+
+    (void) oldscope;
+    scope = proc->name->sym;
+    locals = collect_procedure_names( proc->parms, declaration_listNIL );
+    oldlevel = scopelevel;
+    build_local_translations( locals, scope );
+    rfre_origsymbol_list( locals );
+.call generate_walker_call "    " proc DeclExternalProcedure DeclExternalProcedure
+    delete_scope_levels( oldlevel );
+    return proc;
+}
+
+/* Mangle a block. */
+static block mangle_block_action( block blk, const tmsymbol oldscope )
+{
+    tmsymbol scope = oldscope;
+    int oldlevel;
+    origsymbol_list locals;
+
+    if( blk->declarations->sz == 0 ){
+.call generate_walker_call "        " blk block block
+	return blk;
+    }
+    if( blk->scope == tmsymbolNIL ){
+	blk->scope = gen_tmsymbol( "scope" );
+    }
+    scope = blk->scope;
+    locals = new_origsymbol_list();
+    locals = collect_declaration_names( locals, blk->declarations );
+    oldlevel = scopelevel;
+    build_local_translations( locals, scope );
+    rfre_origsymbol_list( locals );
+.call generate_walker_call "    " blk block block
+    delete_scope_levels( oldlevel );
+    return blk;
+}
+
+static ForStatement mangle_ForStatement_action( ForStatement smt, tmsymbol scope )
+{
+    int oldlevel = scopelevel;
+
+.call generate_walker_call "    " smt ForStatement ForStatement
+    delete_scope_levels( oldlevel );
+    return smt;
+}
+
+static ForallStatement mangle_ForallStatement_action( ForallStatement smt, tmsymbol scope )
+{
+    int oldlevel = scopelevel;
+
+.call generate_walker_call "    " smt ForallStatement ForallStatement
+    delete_scope_levels( oldlevel );
+    return smt;
+}
+
+static ForkallStatement mangle_ForkallStatement_action( ForkallStatement smt, tmsymbol scope )
+{
+    int oldlevel = scopelevel;
+
+.call generate_walker_call "    " smt ForkallStatement ForkallStatement
+    delete_scope_levels( oldlevel );
+    return smt;
+}
+
+static ForeachStatement mangle_ForeachStatement_action( ForeachStatement smt, tmsymbol scope )
+{
+    int oldlevel = scopelevel;
+
+.call generate_walker_call "    " smt ForeachStatement ForeachStatement
+    delete_scope_levels( oldlevel );
+    return smt;
+}
+
+static ViewStatement mangle_ViewStatement_action( ViewStatement smt, tmsymbol scope )
+{
+    int oldlevel = scopelevel;
+
+.call generate_walker_call "    " smt ViewStatement ViewStatement
+    delete_scope_levels( oldlevel );
+    return smt;
+}
+
+/* -------- End of action functions ---------- */
+
+.call generate_walker "$(visit_types)"
+
+/* Mangle a vnusprog. */
+vnusprog mangle_vnusprog( vnusprog prog )
+{
+    origsymbol_list globals;
+    origsymbol_list externals;
+    const tmsymbol scope = 0;
+
+    nametab = new_translation_list();
+    cardctr = 0;
+    scopelevel = 0;
+    collect_global_symbols( &globals, &externals, prog );
+    build_global_translations( globals );
+    build_external_translations( externals );
+    rfre_origsymbol_list( externals );
+    rfre_origsymbol_list( globals );
+.call generate_descent_call "    " prog vnusprog vnusprog
+    rfre_translation_list( nametab );
+    return prog;
+}

@@ -1,0 +1,51 @@
+// Minimal test program.
+
+globalpragmas <$
+  boundscheck   = false,
+  ProcessorType = ((dsp "TI_C60")),
+  Processors    = ((dsp P[6]))
+$>;
+
+package spar.testsuite;
+
+public class vecmul
+{
+    static final int ITER = 10;
+    static final int N = 3000;
+    static final boolean NAH = false;
+    static double A[*] <$ on = (lambda (i) P[(cyclic i)])$> = 
+                      new double[N] <$ on = (lambda (i) P[(cyclic i)])$>;
+    static double B[*] <$ on = (lambda (i) P[(block  i)])$> = 
+                      new double[N] <$ on = (lambda (i) P[(block  i)])$>;
+    static double C[*] <$ on = (lambda (i) P[        0 ])$> =
+                      new double[N] <$ on = (lambda (i) P[        0 ])$>;
+//    static String S = "Hopppa";
+
+    public static void main()
+        {
+//	    S = S;
+            for (loop:-:ITER) 
+            {
+	    __print(1,"loop:");
+	    __println(1,loop);
+                <$ independent $> foreach (i:-:N)
+                    A[i] = i * 1.1d;
+                <$ independent $> foreach (i:-:N)
+                    B[i] = i * 2.3d;
+                <$ independent $> foreach (i:-:N)
+                    A[i] = A[i]*B[i];
+                <$ independent $> foreach (i:-:N)
+                    C[i] = A[i];
+            }
+            __print(1, "Endresult: ");
+	    if (NAH){
+		for (i:-:N){
+		    __print(1,i);
+		    __print(1," ");
+		    __println(1, C[i]);
+//		    System.out.println(i + " " + C[i]);
+		}
+	    }
+        }
+}
+

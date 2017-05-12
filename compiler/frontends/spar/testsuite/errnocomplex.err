@@ -1,0 +1,6 @@
+errnocomplex.spar:12: cannot assign to a literal
+	c = 12i;
+	      ^
+errnocomplex.spar:12: syntax error
+	c = 12i;
+	      ^

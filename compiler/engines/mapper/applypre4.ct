@@ -1,0 +1,84 @@
+/* Applypre4 engine
+
+   Move the 'main' statement block to a separate procedure and create a
+   new 'main' statement block that contains a call to this procedure.
+   */
+.. File: applypre4.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors vnusprog
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "applypre4.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+//* ----------- Actors ----------- */
+
+/* Rewrite action for 'vnusprog':
+   Move the 'main' statement block to a separate procedure and create a
+   new 'main' statement block that contains a call to this procedure.
+   */
+static vnusprog rewrite_vnusprog_action(
+    vnusprog elm, global_context /*gc*/ )
+{
+    origsymbol npn = gen_origsymbol("__rc_main");
+    SmtProcedureCall npc = new_SmtProcedureCall(
+        0,
+        gen_origin(),
+        new_Pragma_list(),
+        new_OwnerExpr_list(),
+        new_ExprName(npn),
+        new_expression_list());
+    DeclProcedure npdcl = new_DeclProcedure(
+        rdup_origsymbol(npn),
+        0,
+        new_Pragma_list(),
+        new_origsymbol_list(),
+        new_block(
+            rdup_tmsymbol(npn->sym),
+            gen_origin(),
+            new_Pragma_list(),
+            new_OwnerExpr_list(),
+            elm->statements->statements));
+    elm->statements->statements = new_statement_list();
+    elm->declarations = append_declaration_list(
+        elm->declarations,
+        npdcl);
+    elm->statements->statements = append_statement_list(
+        elm->statements->statements,
+        npc);
+    return elm;
+}
+
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_pre4(
+    vnusprog elm, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+    (void) rewrite_vnusprog_walker;
+    
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}
+

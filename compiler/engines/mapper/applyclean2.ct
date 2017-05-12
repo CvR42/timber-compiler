@@ -1,0 +1,165 @@
+/*
+   Applyclean2 engine
+
+   Clean up if statements with TRUE or FALSE conditions.
+   */
+
+.. File: applyclean2.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtIf ExprBinop
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "collectscopes.h"
+#include "applyclean2.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Helpers ----------- */
+
+/*
+  Kill all variables in block.
+  Should be recursive...
+  Actually, should use collectscopes from vnus backend
+  */
+void zapdecls(block b, global_context gc)
+{
+    if (b == blockNIL)
+	return;
+    tmsymbol_list scope_names = collectscopes_block(b);
+    if (scope_names == tmsymbol_listNIL)
+	return;
+    for (unsigned i=0; i<gc->prog->declarations->sz; i++)
+    {
+	if (gc->prog->declarations->arr[i] != declarationNIL &&
+	    gc->prog->declarations->arr[i]->tag == TAGDeclLocalVariable &&
+	    member_tmsymbol_list(
+		scope_names,
+		to_DeclLocalVariable(gc->prog->declarations->arr[i])->scope))
+	{
+	    mark_declaration_list(gc->prog->declarations, i);
+	}
+    }
+    rfre_tmsymbol_list(scope_names);
+}
+
+
+/* ----------- Actors ----------- */
+
+static statement rewrite_SmtIf_action(
+    SmtIf elm, global_context gc )
+{
+.call generate_walker_call "    " elm SmtIf SmtIf
+    if (elm->cond->tag == TAGExprBoolean)
+    {
+        SmtBlock nb = snew_SmtBlock(
+            blockNIL);
+        if (isBooleanValue(elm->cond, true))
+        {
+            nb->body = rdup_block(elm->thenbody);
+	    zapdecls(elm->elsebody, gc);
+	    if (warning_level >= WARN_RULE)
+		fprintf(stderr, "Applyclean2: doing boolean TRUE cleanup\n");
+        }
+        else if (isBooleanValue(elm->cond, false))
+        {
+            nb->body = rdup_block(elm->elsebody);
+	    zapdecls(elm->thenbody, gc);
+	    if (warning_level >= WARN_RULE)
+		fprintf(stderr, "Applyclean2: doing boolean FALSE cleanup\n");
+        }
+	else
+	{
+	    internal_error("Applyclean2: boolean unequal true or false");
+	}
+        rfre_SmtIf(elm);
+        return nb;
+    }
+    return elm;
+}
+
+/*
+  Just some boolean constant folding.
+  */
+static expression rewrite_ExprBinop_action(
+    ExprBinop elm, global_context gc )
+{
+.call generate_walker_call "    " elm ExprBinop ExprBinop
+    switch (elm->optor)
+    {
+	case BINOP_SHORTAND:
+	    if (isBooleanValue(elm->left, false) ||
+		isBooleanValue(elm->right, false))
+	    {
+		rfre_expression(elm);
+		return new_ExprBoolean(false);
+	    }
+	    if (isBooleanValue(elm->left, true))
+	    {
+		expression ret = rdup_expression(elm->right);
+		rfre_expression(elm);
+		return ret;
+	    }
+	    if (isBooleanValue(elm->right, true))
+	    {
+		expression ret = rdup_expression(elm->left);
+		rfre_expression(elm);
+		return ret;
+	    }		
+	    break;
+	case BINOP_SHORTOR:
+	    if (isBooleanValue(elm->left, true) ||
+		isBooleanValue(elm->right, true))
+	    {
+		rfre_expression(elm);
+		return new_ExprBoolean(true);
+	    }
+	    if (isBooleanValue(elm->left, false))
+	    {
+		expression ret = rdup_expression(elm->right);
+		rfre_expression(elm);
+		return ret;
+	    }
+	    if (isBooleanValue(elm->right, false))
+	    {
+		expression ret = rdup_expression(elm->left);
+		rfre_expression(elm);
+		return ret;
+	    }		
+	    break;
+	default:
+	    break;
+    }
+    return elm;
+}
+
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_clean2(
+    vnusprog elm, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+    
+.call generate_descent_call "    " elm vnusprog vnusprog
+    gc->prog->declarations = delete_marked_declaration_list(gc->prog->declarations);
+    return elm;
+}

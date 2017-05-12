@@ -1,0 +1,14 @@
+.insert ../lib.t
+/* iopar.h
+ */
+
+#ifndef __IOPAR_H__
+#define __IOPAR_H__
+
+#include <stdarg.h>
+#include "vnusstd.h"
+#include "vnustypes.h"
+
+.call gen_extern_decls vp__
+
+#endif

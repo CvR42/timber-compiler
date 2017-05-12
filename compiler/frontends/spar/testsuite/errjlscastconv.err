@@ -1,0 +1,3 @@
+errjlscastconv.spar:38: cannot cast a Point to a java.lang.Long
+errjlscastconv.spar:40: cannot cast a EndPoint to a Colorable
+errjlscastconv.spar:38: cannot cast a Point to a java.lang.Long

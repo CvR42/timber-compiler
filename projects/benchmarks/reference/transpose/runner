@@ -1,0 +1,127 @@
+#!/bin/sh
+#CFLAGS="-O6 -fstrict-aliasing -funroll-loops -fomit-frame-pointer"
+CFLAGS="-O6 -funroll-loops -fomit-frame-pointer"
+JAVACFLAGS="-O"
+RESULTFILE=log$$
+HISTORYFILE=fulllog
+TIME="/usr/bin/time -a -o$RESULTFILE"
+export SPARPATH=..
+
+echo -n "-------------------- Date: " > $RESULTFILE
+date >> $RESULTFILE
+
+echo Compiling Mat2
+spar $CFLAGS Mat2.java -o Mat2
+echo spar $CFLAGS Mat2.java -o Mat2 >> $RESULTFILE
+echo -n Running...
+$TIME Mat2 >> $RESULTFILE
+echo >> $RESULTFILE
+echo 
+
+echo Compiling Mat2 with --noboundscheck
+echo spar $CFLAGS --noboundscheck Mat2.java -o Mat2 >> $RESULTFILE
+spar --noboundscheck $CFLAGS Mat2.java -o Mat2
+echo -n Running...
+$TIME Mat2 >> $RESULTFILE
+echo >> $RESULTFILE
+echo 
+
+echo Compiling Mat2d
+spar $CFLAGS Mat2d.spar -o Mat2d
+echo spar $CFLAGS Mat2d.spar -o Mat2d >> $RESULTFILE
+echo -n Running...
+$TIME Mat2d >> $RESULTFILE
+echo >> $RESULTFILE
+echo 
+
+echo Compiling Mat2d with --noboundscheck
+echo spar $CFLAGS --noboundscheck Mat2d.spar -o Mat2d >> $RESULTFILE
+spar --noboundscheck $CFLAGS Mat2d.spar -o Mat2d
+echo -n Running...
+$TIME Mat2d >> $RESULTFILE
+echo >> $RESULTFILE
+echo 
+
+echo Compiling Mat2e
+spar $CFLAGS Mat2e.spar -o Mat2e
+echo spar $CFLAGS Mat2e.spar -o Mat2e >> $RESULTFILE
+echo -n Running...
+$TIME Mat2e >> $RESULTFILE
+echo >> $RESULTFILE
+echo 
+
+echo Compiling Mat2e with --noboundscheck
+echo spar $CFLAGS --noboundscheck Mat2e.spar -o Mat2e >> $RESULTFILE
+spar --noboundscheck $CFLAGS Mat2e.spar -o Mat2e
+echo -n Running...
+$TIME Mat2e >> $RESULTFILE
+echo >> $RESULTFILE
+echo 
+
+echo Java compilation
+echo javac $JAVACFLAGS Mat2.java >> $RESULTFILE
+javac $JAVACFLAGS Mat2.java
+echo -n Running...
+$TIME java Mat2
+echo >> $RESULTFILE
+echo 
+
+echo Compiling Mat3
+spar $CFLAGS Mat3.java -o Mat3
+echo spar $CFLAGS Mat3.java -o Mat3 >> $RESULTFILE
+echo -n Running...
+$TIME Mat3 >> $RESULTFILE
+echo >> $RESULTFILE
+echo 
+
+echo Compiling Mat3 with --noboundscheck
+echo spar $CFLAGS --noboundscheck Mat3.java -o Mat3 >> $RESULTFILE
+spar --noboundscheck $CFLAGS Mat3.java -o Mat3
+echo -n Running...
+$TIME Mat3 >> $RESULTFILE
+echo >> $RESULTFILE
+echo 
+
+echo Compiling Mat3d
+spar $CFLAGS Mat3d.spar -o Mat3d
+echo spar $CFLAGS Mat3d.spar -o Mat3d >> $RESULTFILE
+echo -n Running...
+$TIME Mat3d >> $RESULTFILE
+echo >> $RESULTFILE
+echo 
+
+echo Compiling Mat3d with --noboundscheck
+echo spar $CFLAGS --noboundscheck Mat3d.spar -o Mat3d >> $RESULTFILE
+spar --noboundscheck $CFLAGS Mat3d.spar -o Mat3d
+echo -n Running...
+$TIME Mat3d >> $RESULTFILE
+echo >> $RESULTFILE
+echo 
+
+echo Compiling Mat3e
+spar $CFLAGS Mat3e.spar -o Mat3e
+echo spar $CFLAGS Mat3e.spar -o Mat3e >> $RESULTFILE
+echo -n Running...
+$TIME Mat3e >> $RESULTFILE
+echo >> $RESULTFILE
+echo 
+
+echo Compiling Mat3e with --noboundscheck
+echo spar $CFLAGS --noboundscheck Mat3e.spar -o Mat3e >> $RESULTFILE
+spar --noboundscheck $CFLAGS Mat3e.spar -o Mat3e
+echo -n Running...
+$TIME Mat3e >> $RESULTFILE
+echo >> $RESULTFILE
+echo 
+
+echo Java compilation
+echo javac $JAVACFLAGS Mat3.java >> $RESULTFILE
+javac $JAVACFLAGS Mat3.java
+echo -n Running...
+$TIME java Mat3
+echo >> $RESULTFILE
+echo 
+
+cat $RESULTFILE
+cat $RESULTFILE >> $HISTORYFILE
+rm -f $RESULTFILE

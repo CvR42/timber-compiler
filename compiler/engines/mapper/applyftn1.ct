@@ -1,0 +1,186 @@
+/*
+   Applyftn1 engine
+
+   This walker transforms function calls into normal form.
+   Each function call is transformed into a separate assignment statement.
+   Temporaries are created where necessary.
+
+   The condition in SmtWhile and SmtDoWhile needs special care.
+   
+   Also make only new scope when local variables are made.Done.
+
+   Optimised for function calls that are already in normal form.
+
+   TODO:
+   Also don't forget to take 'continue' into account.
+
+   Also with bare function calls, check if there is a declaration and no
+   external declaration. Well, maybe only with functions to procedures...
+
+   Nasty remark from Koen: this won't work for logical expressions...
+   */
+
+.. File: applyftn1.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors ExprFunctionCall statement_list block SmtAssign
+.append actors SmtWhile SmtDoWhile
+.append actors ExprWrapper
+.append actors LocNotNullAssert ExprNotNullAssert
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "vnusctl.h"
+#include "applyftn1.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+.call generate_admin_prelst_action statement_list
+.call generate_admin_scope_action block
+.call generate_cutoff_pragma_action ExprWrapper resident
+.call generate_cutoff_dummy_action LocNotNullAssert
+.call generate_cutoff_dummy_action ExprNotNullAssert
+
+/*
+  Replace function call with temporary, and insert assignment of function
+  call to temporary just before statement the call occurred in.
+  Create temporary in current scope.
+  If current scope has no name, give it a name.
+  */
+static expression rewrite_ExprFunctionCall_action(
+    ExprFunctionCall elm, global_context gc )
+{
+.call generate_walker_call "    " elm ExprFunctionCall ExprFunctionCall
+.call conditional_init_scope
+.call conditional_init_prelst
+    type t = derive_type_expression(
+        gc->prog->declarations,
+        0, /*origin*/
+        elm->function);
+    if (t->tag != TAGTypeFunction)
+        internal_error("applyftn1: FunctionCall expr is incorrect type");
+    type rt = to_TypeFunction(t)->rettype;
+    DeclLocalVariable nld = new_DeclLocalVariable(
+        gen_origsymbol("__fcres_"),
+        0,
+        new_Pragma_list(),
+        rdup_tmsymbol(gc->scope),
+        rdup_type(rt),
+        new_OptExprNone());
+    SmtAssign nsa = new_SmtAssign(
+        0,
+        gen_origin(),
+        new_Pragma_list(),
+        new_OwnerExpr_list(),
+        new_LocName(
+            rdup_origsymbol(nld->name)),
+        elm);
+    ExprName nen = new_ExprName(
+        rdup_origsymbol(nld->name));
+    gc->prog->declarations = append_declaration_list(
+        gc->prog->declarations, nld);
+    gc->prelst = append_statement_list(gc->prelst, nsa);
+    rfre_type(t);
+    return nen;
+}
+
+/*
+  If an assignment is in normal form (lhs = f(...)) then only process
+  subparts of the function call, otherwise process the whole statement.
+  This i an optimisation.
+  */
+static SmtAssign rewrite_SmtAssign_action(
+  SmtAssign e, global_context gc )
+{
+    if (e->lhs->tag == TAGLocName && e->rhs->tag == TAGExprFunctionCall)
+    {
+        ExprFunctionCall efc = to_ExprFunctionCall(e->rhs);
+.call generate_walker_call "        " efc ExprFunctionCall ExprFunctionCall
+    }
+    else
+    {
+.call generate_walker_call "        " e SmtAssign SmtAssign
+    }
+    
+    return e;
+}
+
+/*
+  Process the condition
+  Has to be put just before while statement and at end of while body
+  */
+static SmtWhile rewrite_SmtWhile_action(
+  SmtWhile e, global_context gc )
+{
+.call generate_descent_call "    " e->body block block
+
+    assert(gc->prelst == NULL);
+.call generate_descent_call "    " e->cond expression expression
+    if (gc->prelst != NULL) 
+    {
+        e->body->statements = concat_statement_list(
+            e->body->statements,
+            rdup_statement_list(gc->prelst));
+    }
+        
+    return e;
+}
+
+/*
+  Process the condition
+  Has to be put at end of while body
+  */
+static SmtDoWhile rewrite_SmtDoWhile_action(
+  SmtDoWhile e, global_context gc )
+{
+.call generate_descent_call "    " e->body block block
+
+    assert(gc->prelst == NULL);
+.call generate_descent_call "    " e->cond expression expression
+    if (gc->prelst != NULL)
+    {
+        e->body->statements = concat_statement_list(
+            e->body->statements,
+            gc->prelst);
+    }
+    gc->prelst = 0;
+
+    return e;
+}
+
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_ftn1(
+    vnusprog elm, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+    (void) rewrite_SmtWhile_walker;
+    (void) rewrite_SmtDoWhile_walker;
+    (void) rewrite_statement_list_walker;
+    (void) rewrite_ExprNotNullAssert_walker;
+    (void) rewrite_LocNotNullAssert_walker;
+
+.call init_scope
+.call init_prelst
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}

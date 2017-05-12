@@ -1,0 +1,18 @@
+// After JLS 10.10    Array Store Exception
+
+class Point { int x, y; }
+
+class ColoredPoint extends Point { int color; }
+
+public class okjlssx {
+    public static void main() {
+        ColoredPoint[] cpa = new ColoredPoint[10];
+        Point[] pa = cpa;
+        System.out.println(pa[1] == null);
+        try {
+            pa[0] = new Point();
+        } catch (ArrayStoreException e) {
+            System.out.println(e);
+        }
+    }
+}

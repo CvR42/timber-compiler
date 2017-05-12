@@ -1,0 +1,493 @@
+.. File: addgc.ct
+..
+.. Add administration to the code for maintaining a precise root set
+.. for garbage collection.
+..
+..
+.. Return 'walk' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the datastructure we're walking on, and a type 't', of that variable,
+.. generate a return statement.
+.macro generate_walker_return indent var t
+$(indent)return;
+.endmacro
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+.if ${member ${stemname $t} ${typelist}}
+$(indent)if( $(var) == NULL ){
+$(indent)    return;
+$(indent)}
+.endif
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+static void addgc_$t_walker( $t $(var), Entry_list symtab, addgc_data *ctx, bool gcadmin_ok, bool *have_local_links )
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we're walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+static void addgc_$t_walker( $t $(var), Entry_list symtab, addgc_data *ctx, bool gcadmin_ok, bool *have_local_links );
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)addgc_$(type)_action( $(var), symtab, ctx, gcadmin_ok, have_local_links );
+.else
+$(indent)addgc_$(type)_action( to_$(type)( $(var) ), symtab, ctx, gcadmin_ok, have_local_links );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)addgc_$(type)_walker( $(var), symtab, ctx, gcadmin_ok, have_local_links );
+.else
+$(indent)addgc_$(type)_walker( to_$(type)( $(var) ), symtab, ctx, gcadmin_ok, have_local_links );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var', and a type 'type', generate
+.. the body of an empty walker function.
+.macro generate_empty_walker_body indent var type
+$(indent)(void) symtab;
+.endmacro
+..
+.set actors
+.append actors Block
+.append actors FunctionEntry
+.append actors SimpleTryStatement
+.append actors statement_list
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "Entry_list" "$(actors)"}
+..
+// ->->-> This is a GENERATED FILE <-<-<-
+
+/* File: addgc.c
+ *
+ * Replace a return with a goto.
+ */
+
+#include <tmc.h>
+#include <assert.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "addgc.h"
+#include "service.h"
+#include "isgc.h"
+#include "isgcsetting.h"
+#include "analyze.h"
+#include "symbol_table.h"
+#include "pragma.h"
+#include "global.h"
+#include "error.h"
+
+// 'linkp' points to the name of the topmost link. The name is only
+// filled in if necessary. 'linkp' is NULL if there is no need (yet)
+// for a local chain.
+//
+// 'toplinkp' points to the name of the variable that points to
+// the link chain as it was upon entry of the function. It is used
+// to restore the proper link chain when necessary when there are
+// no local links in the chain yet.
+typedef struct str_addgc_data {
+    tmsymbol *linkp;
+    tmsymbol *toplinkp;
+} addgc_data;
+
+.call generate_walker_forwards "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+static tmsymbol calc_linkname( addgc_data *ctx )
+{
+    if( ctx->linkp != NULL ){
+	if( *(ctx->linkp) == tmsymbolNIL ){
+	    *(ctx->linkp) = gen_tmsymbol( "link" );
+	}
+	return *(ctx->linkp);
+    }
+    return tmsymbolNIL;
+}
+
+static bool is_iterating_statement( const_statement smt )
+{
+    return
+	smt->tag == TAGForeachStatement ||
+	smt->tag == TAGForStatement ||
+	smt->tag == TAGWhileStatement ||
+	smt->tag == TAGDoWhileStatement ||
+	smt->tag == TAGClassicForStatement;
+}
+
+// Given a context, return a statement that brings the GC chain up to date.
+static statement build_chain_update( addgc_data *ctx, bool *have_local_links )
+{
+    statement res;
+
+    if( ctx->linkp == NULL ){
+	// There are no local links; restore from the
+	// original global link pointer.
+	// If we must restore something, it is the global link
+	// pointer.
+	if( ctx->toplinkp == NULL ){
+	    internal_error( "no toplink in this context" );
+	}
+	if( *(ctx->toplinkp) == tmsymbolNIL ){
+	    *(ctx->toplinkp) = gen_tmsymbol( "toplink" );
+	}
+	res = new_GCSetTopRefChainLinkStatement(
+	    originNIL,
+	    Pragma_listNIL,
+	    origsymbol_listNIL,     // Labels
+	    *(ctx->toplinkp)
+	);
+    }
+    else {
+	res = new_GCSetRefChainLinkStatement(
+	    originNIL,
+	    Pragma_listNIL,
+	    origsymbol_listNIL,     // Labels
+	    calc_linkname( ctx )
+	);
+	*have_local_links = true;
+    }
+    return res;
+}
+
+// Given a context, return a statement that restores the GC chain to
+// the state of entry to this method.
+static statement build_chain_unwind( addgc_data *ctx )
+{
+    assert( ctx->toplinkp != NULL );
+    if( *(ctx->toplinkp) == tmsymbolNIL ){
+	*(ctx->toplinkp) = gen_tmsymbol( "toplink" );
+    }
+    statement res = new_GCSetTopRefChainLinkStatement(
+	originNIL,
+	Pragma_listNIL,
+	origsymbol_listNIL,     // Labels
+	*(ctx->toplinkp)
+    );
+    return res;
+}
+
+/* -------- actors ---------- */
+
+/* Action for type Block. */
+static void addgc_Block_action(
+ Block blk,
+ Entry_list symtab,
+ addgc_data *ctx,
+ bool gcadmin_ok,
+ bool *have_local_links
+)
+{
+    tmsymbol_list gc_candidates = tmsymbol_listNIL;
+
+    if( blk == BlockNIL ){
+	return;
+    }
+    tmsymbol link = tmsymbolNIL;
+    tmsymbol *old_linkp = ctx->linkp;
+    if( blk->scope != tmsymbolNIL && blk->statements->sz != 0 ){
+	gc_candidates = get_GC_links( symtab, blk->scope );
+	if( gc_candidates->sz>0 ){
+	    // We may have to create our own link in the chain.
+	    // point to the potential name of that link.
+	    ctx->linkp = &link;
+	    gcadmin_ok = false;
+	}
+    }
+.call generate_walker_call "    " blk Block Block
+    ctx->linkp = old_linkp;
+    if( link != tmsymbolNIL ){
+	// Somebody needed the link chain, so we must 
+	// materialize our link in the chain.
+
+	if( trace_gcadmin ){
+	    fprintf( stderr, "Materializing link `%s'\n", link->name );
+	}
+	// TODO: we don't have to null variables that have already been
+	// initialized. Also, are we only nulling gc_candidates?
+	null_GC_links( symtab, blk->scope );
+	tmsymbol backlink = calc_linkname( ctx );
+	GCBuildRefChainLinkStatement cs = new_GCBuildRefChainLinkStatement(
+	    originNIL,
+	    Pragma_listNIL,
+	    origsymbol_listNIL,	// Labels
+	    gc_candidates,
+	    link,
+	    backlink
+	);
+	gc_candidates = tmsymbol_listNIL;
+	statement_list sl = blk->statements;
+	sl = insert_statement_list( sl, 0, cs );
+	GCLinkEntry ne = new_GCLinkEntry(
+	    link,
+	    Pragma_listNIL,
+	    VAR_GENERATED,
+	    tmsymbolNIL,
+	    tmsymbolNIL,
+	    true,		// Variable is used.
+	    add_origsymbol( "link" ),
+	    blk->scope
+	);
+	symtab = add_symtab( symtab, ne );
+    }
+    if( gc_candidates != tmsymbol_listNIL ){
+	rfre_tmsymbol_list( gc_candidates );
+    }
+}
+
+/* Action for type SimpleTryStatement. */
+static void addgc_SimpleTryStatement_action(
+ SimpleTryStatement smt,
+ Entry_list symtab,
+ addgc_data *ctx,
+ bool gcadmin_ok,
+ bool *have_local_links
+)
+{
+    // We don't use the standard walker since we must change gcadmin_ok
+    // halfway through.
+    (void) addgc_SimpleTryStatement_walker;
+    if( smt == NULL ){
+        return;
+    }
+.call generate_descent_call "    " smt->catchvar FormalParameter FormalParameter
+.call generate_descent_call "	" smt->caught type_list type_list
+.call generate_descent_call "	" smt->body Block Block
+    // Don't trust the state that the try block left.
+    gcadmin_ok = false;
+.call generate_descent_call "	" smt->catches Block Block
+}
+
+/* Action for type statement_list. */
+static void addgc_statement_list_action(
+ statement_list sl,
+ Entry_list symtab,
+ addgc_data *ctx,
+ bool gcadmin_ok,
+ bool *have_local_links
+)
+{
+    if( sl == statement_listNIL || sl->sz == 0 ){
+	return;
+    }
+    unsigned int ix=0;
+
+    (void) addgc_statement_list_walker;
+    while( ix<sl->sz ){
+	statement smt = sl->arr[ix];
+
+	if( is_GC_statement( symtab, smt ) ){
+	    // This statement may do garbage collection, so make sure
+	    // the set of active links is properly administrated.
+	    if( !gcadmin_ok ){
+		if( trace_gcadmin ){
+		    origin org = smt->org;
+		    if( org == originNIL ){
+			fprintf(
+			    stderr,
+			    "Statement may require GC - inserting statement to get admin straight\n"
+			);
+		    }
+		    else {
+			fprintf(
+			    stderr,
+			    "Statement at %s:%ld may require GC - inserting statement to get admin straight\n",
+			    org->file->name,
+			    (long) org->line
+			);
+		    }
+		}
+		statement updt = build_chain_update( ctx, have_local_links );
+		sl = insert_statement_list( sl, ix, updt );
+		gcadmin_ok = true;
+		ix++;
+	    }
+	    else {
+		if( trace_gcadmin ){
+		    origin org = smt->org;
+		    if( org == originNIL ){
+			fprintf(
+			    stderr,
+			    "Statement may require GC - but admin is ok\n"
+			);
+		    }
+		    else {
+			fprintf(
+			    stderr,
+			    "Statement at %s:%ld may require GC - but admin is ok\n",
+			    org->file->name,
+			    (long) org->line
+			);
+		    }
+		}
+	    }
+	}
+	else {
+	    if( trace_gcadmin ){
+		origin org = smt->org;
+		if( org == originNIL ){
+		    fprintf( stderr, "Statement does not require GC\n" );
+		}
+		else {
+		    fprintf(
+			stderr,
+			"Statement at %s:%ld does not require GC\n",
+			org->file->name,
+			(long) org->line
+		    );
+		}
+	    }
+	}
+	if( is_iterating_statement( smt ) ){
+	    if( is_GCsetting_statement( symtab, smt ) ){
+		gcadmin_ok = false;
+	    }
+	}
+	if( smt->tag == TAGValueReturnStatement ){
+	    if( *have_local_links ){
+		statement updt = build_chain_unwind( ctx );
+		sl = insert_statement_list( sl, ix, updt );
+		//gcadmin_ok = false;
+		ix += 2;
+		continue;
+	    }
+	}
+.call generate_descent_call "	" smt statement statement
+	// May this statement affect __gc_reflink_chain?
+	bool is_setting = is_GCsetting_statement( symtab, smt );
+	if( trace_gcadmin ){
+	    origin org = smt->org;
+	    if( org == originNIL ){
+		fprintf(
+		    stderr,
+		    "Statement %s set __gc_reflink_chain\n",
+		    is_setting?"may":"does not"
+		);
+	    }
+	    else {
+		fprintf(
+		    stderr,
+		    "Statement at %s:%ld %s set __gc_reflink_chain\n",
+		    org->file->name,
+		    (long) org->line,
+		    is_setting?"may":"does not"
+		);
+	    }
+	}
+	if( is_setting ){
+	    // Yep, we will have to set __gcreflink_chain again
+	    // if it is needed.
+	    gcadmin_ok = false;
+	}
+	ix++;
+    }
+}
+
+/* Action for type FunctionEntry. */
+static void addgc_FunctionEntry_action(
+ FunctionEntry me,
+ Entry_list symtab,
+ addgc_data *ctx,
+ bool gcadmin_ok,
+ bool *old_have_local_links
+)
+{
+    (void) old_have_local_links;
+
+    if( me == FunctionEntryNIL ){
+	return;
+    }
+    if( get_flag_pragma( Pragma_listNIL, me->pragmas, "no_GC_admin" ) ){
+	// Don't generate GC administration for this function (because
+	// it's part of the GC implementation).
+	return;
+    }
+    if( !me->isvirtuallyused && me->directusecount == 0 ){
+	return;
+    }
+    tmsymbol link = tmsymbolNIL;
+    bool my_have_local_links = false;
+    bool *have_local_links = &my_have_local_links;
+    tmsymbol *old_toplinkp = ctx->toplinkp;
+    ctx->toplinkp = &link;
+    gcadmin_ok = true;
+
+.call generate_walker_call "	    " me FunctionEntry FunctionEntry
+    ctx->toplinkp = old_toplinkp;
+    if( link != tmsymbolNIL ){
+	// Somebody needed the link chain, so we must 
+	// materialize our definition of the toplink variable.
+
+	if( me->body->scope == tmsymbolNIL ){
+	    me->body->scope = gen_tmsymbol( "scope" );
+	}
+	GCTopLinkEntry ne = new_GCTopLinkEntry(
+	    link,
+	    Pragma_listNIL,
+	    VAR_GENERATED,
+	    tmsymbolNIL,
+	    tmsymbolNIL,
+	    true,		// Variable is used.
+	    add_origsymbol( "link" ),
+	    me->body->scope
+	);
+	symtab = add_symtab( symtab, ne );
+    }
+}
+
+/* -------- End of action functions ---------- */
+
+.call generate_walker "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+/* Given a type declaration, substitute all given parameters. */
+void addgc_SparProgram( SparProgram prog )
+{
+    Entry_list symtab = prog->symtab;
+    addgc_data the_ctx;
+    the_ctx.linkp = (tmsymbol *) NULL;
+    the_ctx.toplinkp = (tmsymbol *) NULL;
+    addgc_data *ctx = &the_ctx;
+    bool gcadmin_ok = false;
+    bool val_have_local_links = false;
+    bool *have_local_links = &val_have_local_links;
+
+.call generate_descent_call "    " symtab Entry_list Entry_list
+}

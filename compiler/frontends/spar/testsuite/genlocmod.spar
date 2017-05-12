@@ -1,0 +1,7 @@
+// Test wether modifiers on local variables are allowed.
+
+public class genlocmod {
+    public static void main(){
+	final int n = 2;
+    }
+}

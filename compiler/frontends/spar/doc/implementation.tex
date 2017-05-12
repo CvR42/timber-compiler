@@ -1,0 +1,180 @@
+\documentclass{article}
+\newcommand{\spar}{{\sf Spar}}
+\title{Spar implementation issues}
+\author{C. van Reeuwijk}
+\begin{document}
+\maketitle
+\section{Introduction}
+This document discusses the more complicated issues of the implementation
+of {\spar}.
+\section{Compiler phases}
+The {\spar} frontend consists of the following phases:
+\begin{itemize}
+\item Parsing. Implemented in \verb'parser.y'. Parses an input file,
+     and constructs an abstract syntax tree.
+\item Lowering. Implemented in \verb'lower.ct'. Ensures the following
+      Spar language constructs are rewritten: \verb'for()' and
+      \verb'foreach()' statements in classical notation; expressions
+      with side-effects, and declarations after statements.
+\item Name mangling and symbol table construction. Implemented in
+     \verb'mangle.ct'. Rewrites the
+      program code, so that a single program-wide symbol table can be used.
+      When necessary, symbols are renamed so to avoid name clashes.
+      Also constructs the global symbol table.
+\item Semantic checking. Implemented in \verb'check.ct'. The context-dependent
+      language restrictions are enforced, and some warnings are generated.
+\item Rewriting. Implemented in \verb'rewrite.ct'. Rewrites a couple
+      of constructs to a form the backend can handle: currently only
+      strict type casting, and TypeOf elimination.
+\item Semantic checking. Implemented in \verb'check.ct'. The check is
+      repeated as a check on the rewrite phase above.
+\end{itemize}
+
+\section{Module handling and name mangling}
+
+
+\section{Evaluation order of expressions}
+\subsection{Description of the problem}
+Java prescribes the evaluation order of an expression. This evaluation
+order is only of interest for expressions with side-effects (where an
+exception is a side-effect).
+For example:
+\begin{verbatim}
+int i = 2;
+int j = (i=3)*i;
+...
+\end{verbatim}
+will cause \verb'j' to be 9, since binary expressions are evaluated
+from left to right. In C and C++, \verb'j' may also have the value 6,
+since the evaluation order is explicitly left unspecified.
+
+The evaluation order of Vnus is also unspecified, but this is only of
+interest for expressions containing function calls, since these are the
+only expressions that may have side effects. Other side effects in
+Spar expressions must have been eliminated before they reach Vnus,
+see below.
+
+\subsection{Solution}
+To ensure that the evaluation order of Java is observed, statements
+like the one above are rewritten to a form where the evaluation order
+is ensured. This is done by isolating critical expressions in separate
+assignment statements, that are evaluated in a known order.
+
+If it is known that an expression has no side effects, or is evaluated
+in a fixed order, it is not modified. This is done for cosmetic reasons:
+this way the Vnus code is much clearer, and is easier to inspect.
+
+The following expressions are known to have no side effects (are 'pure'):
+\begin{itemize}
+\item Literals.
+\item Variable references.
+\item Binary operators on pure sub-expressions.
+\item Parameter list constructors with pure sub-expressions.
+\item Field references with a pure class expression.
+\item etc.
+\end{itemize}
+
+For example, the previous example must be rewritten to something like:
+\begin{verbatim}
+int i = 2;
+i = 3;
+{
+    int j = i*i;
+    ...
+}
+\end{verbatim}
+while the statements
+\begin{verbatim}
+int i = 2;
+int j = i*(i=3);
+\end{verbatim}
+must be rewritten to:
+\begin{verbatim}
+int i = 2;
+int tmp = i;
+int i = 3;
+int j = tmp*i;
+\end{verbatim}
+\section{Side-effects in expressions}
+\subsection{Description of the problem}
+Evaluating Spar expressions may have side effects. For example, the following
+statement is valid:
+\begin{verbatim}
+n = (a++)+3;
+\end{verbatim}
+Since Vnus only allows side effects in function evaluations, and
+otherwise does not allow side effects in expressions, this statement
+must be rewritten to:
+\begin{verbatim}
+{
+    int tmp = a;
+
+    a++;
+    n = tmp+3;
+}
+\end{verbatim}
+Where \verb'tmp' is a new variable name.
+In initializations a slightly different translation must be used:
+\begin{verbatim}
+{
+    int n = (a++)+3;
+}
+\end{verbatim}
+must be rewritten
+\begin{verbatim}
+{
+    int tmp1 = a;
+
+    a++;
+    {
+        int n = tmp1+3;
+    }
+}
+\end{verbatim}
+\subsection{Solution specification}
+The following expressions cause side effects:
+\begin{itemize}
+\item The assignment operator \verb'='.
+\item Function calls (although we could exclude 'pure' functions).
+\item The compound-assignment operators such as \verb'+='.
+\item The increment and decrement operators.
+\end{itemize}
+In general, the following rewrites must be implemented to eliminate
+side effects:
+\begin{enumerate}
+\item
+To enforce strict Java evaluation order: any binary operator
+expression that contains a side effect at its lefthand side, must be
+exploded. Similarly for parameter lists to functions.
+\item Rewrite pre-increment and pre-decrement expressions to compound-assignment
+      form: \verb'++i' is rewritten to \verb'i += 1'
+\item Rewrite post-increment and post-decrement expressions to use a
+      temporary variable. For example, an expression containing a
+      post-increment:
+\begin{verbatim}
+n = a++ +3;
+\end{verbatim}
+is rewritten to:
+\begin{verbatim}
+int tmp = a;
+a += 1;
+n = tmp +3;
+\end{verbatim}
+\item Rewrite (compound) assignment expressions as separate
+      assignments and a use of the variable. For example:
+\begin{verbatim}
+int i = 2;
+int j = (i=3)*i;
+...
+\end{verbatim}
+is rewritten to:
+\begin{verbatim}
+int i = 2;
+i = 3;
+{
+    int j = i*i;
+    ...
+}
+\end{verbatim}
+\end{enumerate}
+\end{document}

@@ -1,0 +1,34 @@
+// Minimal test program.
+
+globalpragmas <$boundscheck=false$>;
+
+package spar.testsuite;
+
+public class saxpy
+{
+    static final int ITER = 8000;
+    static final int N = 50000;
+    static final boolean NAH = false;
+    static final double a = 3.1415927;
+    static double Z[*] <$dist="[block]"$> = new double[N] <$dist="[block]"$>;
+    static double X[*] <$dist="[block]"$> = new double[N] <$dist="[block]"$>;
+    static double Y[*] <$dist="[cyclic]"$> = new double[N] <$dist="[cyclic]"$>;
+
+    public static void main()
+        {
+            __println(1, "On the air");
+            <$ independent $> foreach (i:-:N)
+                X[i] = i * 1.1d;
+            <$ independent $> foreach (i:-:N)
+                Y[i] = i * 2.3d;
+            for [loop:-:ITER] 
+            {
+//	    __print(1,"loop:");
+//	    __println(1,loop);
+                <$ independent $> foreach (i:-:N)
+                    Z[i] = X[i]*a+Y[i];
+            }
+            __println(1, "Finished");
+        }
+}
+

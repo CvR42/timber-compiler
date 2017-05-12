@@ -1,0 +1,4209 @@
+.. File: rewrite.ct
+..
+.. Tree walker for rewriting operations.
+..
+.. Return 'walk' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the datastructure we're walking on, and a type 't', of that variable,
+.. generate a return statement.
+.macro generate_walker_return indent var t
+$(indent)return $(var);
+.endmacro
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+.if ${member ${stemname $t} ${typelist}}
+$(indent)if( $(var) == $tNIL ){
+$(indent)    return $(var);
+$(indent)}
+.endif
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+static $t rewrite_$t_walker( $t $(var), rewrite_data *ctx )
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we're walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+static $t rewrite_$t_walker( $t $(var), rewrite_data *ctx );
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) rewrite_$(type)_action( $(var), ctx );
+.else
+$(indent)$(var) = ($(type)) rewrite_$(type)_action( to_$(type)( $(var) ), ctx );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)$(var) = ($(type)) rewrite_$(type)_walker( $(var), ctx );
+.else
+$(indent)$(var) = ($(type)) rewrite_$(type)_walker( to_$(type)( $(var) ), ctx );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var', and a type 'type', generate
+.. the body of an empty walker function.
+.macro generate_empty_walker_body indent var type
+$(indent)(void) $(var);
+$(indent)(void) ctx;
+.endmacro
+..
+.. For which types are there actions defines?
+.set actors
+.append actors DeclFunction
+.append actors DeclGlobalVariable
+.append actors DeclLocalVariable
+.append actors DeclProcedure
+.append actors DeclRecord
+.append actors ExprAddress
+.append actors ExprArray
+.append actors ExprBinop
+.append actors ExprCast
+.append actors ExprCheckedIndex
+.append actors ExprFunctionCall
+.append actors ExprGetSize
+.append actors ExprIf
+.append actors ExprName
+.append actors ExprNotNullAssert
+.append actors ExprRecord
+.append actors ExprReduction
+.append actors ExprSelection
+.append actors ExprShape
+.append actors ExprWhere
+.append actors ExprWrapper
+.append actors LocNotNullAssert
+.append actors LocSelection
+.append actors LocWhere
+.append actors LocWrapper
+.append actors RoutineDeclaration
+.append actors SmtAReceive
+.append actors SmtAssign
+.append actors SmtAssignOp
+.append actors SmtBlock
+.append actors SmtCatch
+.append actors SmtDoWhile
+.append actors SmtEach
+.append actors SmtFor
+.append actors SmtForall
+.append actors SmtForeach
+.append actors SmtForkall
+.append actors SmtGoto
+.append actors SmtIf
+.append actors SmtPseudoBlock
+.append actors SmtReceive
+.append actors SmtRethrow
+.append actors SmtReturn
+.append actors SmtSwitch
+.append actors SmtThrow
+.append actors SmtValueReturn
+.append actors SmtWhile
+.append actors TypeFunction
+.append actors TypeProcedure
+.append actors TypeRecord
+.append actors block
+.append actors cardinality
+.append actors declaration
+.append actors declaration_list
+.append actors secondary
+.append actors statement
+.append actors statement_list
+.append actors vnusprog
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+/* File: rewrite.c
+ *
+ * All sorts of parse tree rewrites.
+ */
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include <vnusctl.h>
+#include "rewrite.h"
+#include "analysis.h"
+#include "pragma.h"
+#include "global.h"
+#include "error.h"
+#include "collectscopes.h"
+#include "collectassigned.h"
+#include "type.h"
+#include "ispure.h"
+#include "service.h"
+#include "symbol_table.h"
+#include "symbol_support.h"
+
+typedef struct str_rewrite_data {
+    statement_list lets;
+    declaration_list defs;
+    tmsymbol scopenm;
+    tmsymbol *notnull_label_ptr;
+    tmsymbol *bounds_label_ptr;
+    expression_list bounds_checks;	// pending ExprIsBoundViolated
+    expression_list notnull_checks;	// pending expr that should be null
+    expression_list completed_bounds_checks;
+    expression_list notnull_asserted;
+    bool conditional_evaluation;
+    bool in_init_expression;
+    bool in_pure_expression;
+    ProgramState_list states;
+} rewrite_data;
+
+/* Global variables for this source file. */
+static Pragma_list global_pragmas = Pragma_listNIL;
+
+.call generate_walker_forwards "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+static statement_list rewrite_statement_list_action( statement_list sl, rewrite_data *ctx );
+static bool is_initialization_expression_list( const_expression_list l );
+static void register_throws_exception( rewrite_data *ctx );
+
+// Given an expression, return 'true' iff the expression is allowed in
+// a global initialization.
+static bool is_initialization_expression( const_expression init )
+{
+    bool res = false;
+
+    switch( init->tag ){
+	case TAGExprAddress:
+	case TAGExprBoolean:
+	case TAGExprByte:
+	case TAGExprChar:
+	case TAGExprCheckedIndex:
+	case TAGExprComplex:
+	case TAGExprDouble:
+	case TAGExprFloat:
+	case TAGExprInt:
+	case TAGExprIsBoundViolated:
+	case TAGExprIsLowerBoundViolated:
+	case TAGExprIsUpperBoundViolated:
+	case TAGExprLong:
+	case TAGExprLowerCheckedIndex:
+	case TAGExprName:
+	case TAGExprNotNullAssert:
+	case TAGExprNull:
+	case TAGExprShort:
+	case TAGExprSizeof:
+	case TAGExprString:
+	case TAGExprUpperCheckedIndex:
+	    res = true;
+	    break;
+
+	case TAGExprWrapper:
+	    res = is_initialization_expression( to_const_ExprWrapper(init)->x );
+	    break;
+
+	case TAGExprDeref:
+	case TAGExprField:
+	case TAGExprFieldNumber:
+	case TAGExprFilledNew:
+	case TAGExprNulledNew:
+	case TAGExprFlatSelection:
+	case TAGExprFunctionCall:
+	case TAGExprGetBuf:
+	case TAGExprGetLength:
+	case TAGExprGetNewMaster:
+	case TAGExprGetNewOwner:
+	case TAGExprGetSize:
+	case TAGExprIsNewMaster:
+	case TAGExprIsNewOwner:
+	case TAGExprIsRaised:
+	case TAGExprNew:
+	case TAGExprNewArray:
+	case TAGExprNewRecord:
+	case TAGExprSelection:
+	case TAGExprShape:		// TODO: look at it in detail
+	case TAGExprWhere:
+	     res = false;
+	     break;
+
+	case TAGExprIf:
+	    res = 
+		is_initialization_expression( to_const_ExprIf(init)->cond ) &&
+		is_initialization_expression( to_const_ExprIf(init)->thenval ) &&
+		is_initialization_expression( to_const_ExprIf(init)->elseval );
+	    break;
+
+	case TAGExprArray:
+	    return is_initialization_expression_list( to_const_ExprArray(init)->elms );
+
+	case TAGExprRecord:
+	    return is_initialization_expression_list( to_const_ExprRecord(init)->fields );
+
+	case TAGExprUnop:
+	    res = is_initialization_expression( to_const_ExprUnop(init)->operand );
+	    break;
+
+	case TAGExprCast:
+	    res = is_initialization_expression( to_const_ExprCast(init)->x );
+	    break;
+
+	case TAGExprReduction:
+	    res = is_initialization_expression_list( to_const_ExprReduction(init)->operands );
+	    break;
+
+	case TAGExprBinop:
+	    res =
+		is_initialization_expression( to_const_ExprBinop(init)->left ) &&
+		is_initialization_expression( to_const_ExprBinop(init)->right );
+	    break;
+
+    }
+    return res;
+}
+
+static bool is_initialization_expression_list( const_expression_list l )
+{
+    for( unsigned int ix=0; ix<l->sz; ix++ ){
+	if( !is_initialization_expression( l->arr[ix] ) ){
+	    return false;
+	}
+    }
+    return true;
+}
+
+// Given an optexpression, return 'true' if the expression is allowed in
+// a global initialization.
+static bool is_initialization_expression( const_optexpression init )
+{
+    bool res = false;
+
+    switch( init->tag ){
+	case TAGOptExprNone:
+	    res = true;
+	    break;
+
+	case TAGOptExpr:
+	    res = is_initialization_expression( to_const_OptExpr(init)->x );
+	    break;
+    }
+    return res;
+}
+
+static expression build_default_BASETYPE_expression( BASETYPE t )
+{
+    expression res = expressionNIL;
+    switch( t ){
+	case BT_INT:
+	    res = new_ExprInt( 0 );
+	    break;
+	    
+	case BT_BYTE:
+	    res = new_ExprByte( 0 );
+	    break;
+	    
+	case BT_SHORT:
+	    res = new_ExprShort( 0 );
+	    break;
+	    
+	case BT_LONG:
+	    res = new_ExprLong( 0LL );
+	    break;
+	    
+	case BT_FLOAT:
+	    res = new_ExprFloat( 0.0f );
+	    break;
+	    
+	case BT_COMPLEX:
+	    res = new_ExprComplex(
+		new_ExprDouble( 0.0 ),
+		new_ExprDouble( 0.0 )
+	    );
+	    break;
+	    
+	case BT_CHAR:
+	    res = new_ExprChar( 0 );
+	    break;
+	    
+	case BT_DOUBLE:
+	    res = new_ExprDouble( 0.0 );
+	    break;
+	    
+	case BT_BOOLEAN:
+	    res = new_ExprBoolean( false );
+	    break;
+	    
+	case BT_STRING:
+	    res = new_ExprString( new_tmstring( "" ) );
+	    break;
+	    
+    }
+    return res;
+}
+
+static expression build_default_expression( const_declaration_list defs, const_type t )
+{
+    expression res = expressionNIL;
+
+    switch( t->tag ){
+	case TAGTypeMap:
+	    res = build_default_expression( defs, to_const_TypeMap(t)->t );
+	    break;
+
+	case TAGTypeBase:
+	    res = build_default_BASETYPE_expression( to_const_TypeBase(t)->base );
+	    break;
+
+	case TAGTypeShape:
+	    // TODO: generate something correct.
+	    res = new_ExprCast( rdup_type(t), new_ExprNull() );
+	    break;
+
+	case TAGTypeUnsizedArray:
+	case TAGTypePointer:
+	case TAGTypeArray:
+	    res = new_ExprCast( rdup_type(t), new_ExprNull() );
+	    break;
+
+	case TAGTypeNeutralPointer:
+	    res = new_ExprNull();
+	    break;
+
+	case TAGTypeRecord:
+	{
+	    field_list to_fields = get_record_fields( defs, t );
+	    expression_list xl = new_expression_list();
+
+	    for( unsigned int ix=0; ix<to_fields->sz; ix++ ){
+		xl = append_expression_list(
+		    xl, 
+		    build_default_expression( defs, to_fields->arr[ix]->elmtype )
+		);
+	    }
+	    res = new_ExprRecord( xl );
+	    rfre_field_list( to_fields );
+	    break;
+	}
+
+	case TAGTypeNamedRecord:
+	{
+	    field_list to_fields = get_record_fields( defs, t );
+	    expression_list xl = new_expression_list();
+
+	    for( unsigned int ix=0; ix<to_fields->sz; ix++ ){
+		xl = append_expression_list(
+		    xl, 
+		    build_default_expression( defs, to_fields->arr[ix]->elmtype )
+		);
+	    }
+	    res = new_ExprRecord( xl );
+	    rfre_field_list( to_fields );
+	    break;
+	}
+
+	case TAGTypeProcedure:
+	case TAGTypeFunction:
+	    internal_error( "default expression for a function or procedure??" );
+	    break;
+
+	case TAGTypePragmas:
+	    res = build_default_expression( defs, to_const_TypePragmas(t)->t );
+    }
+    return res;
+}
+
+// Return an empty block.
+static block build_empty_block()
+{
+    return new_block(
+	tmsymbolNIL,
+	gen_origin(),
+	new_Pragma_list(),
+	new_OwnerExpr_list(),
+	new_statement_list()
+    );
+}
+
+static SmtGoto build_SmtGoto( tmsymbol target )
+{
+    assert( target != tmsymbolNIL );
+    return new_SmtGoto(
+	origsymbolNIL,		// label name of the goto itself.
+	gen_origin(),
+	new_Pragma_list(),
+	new_OwnerExpr_list(),
+	new_origsymbol( target, gen_origin() )
+    );
+}
+
+// Given an expression 'x', return an expression that evaluates to
+// true iff 'x' is null.
+static expression build_null_comparison(
+ const_declaration_list defs,
+ expression x
+)
+{
+    type t = derive_type_expression( defs, originNIL, x );
+    return new_ExprBinop( x, BINOP_EQUAL, new_ExprCast( t, new_ExprNull() ) );
+}
+
+// Given a condition and a label to jump to, construct an 'if' statement
+// that jumps to the given label iff the the condition evaluates to true.
+static SmtIf build_event_test( expression cond, statement action, const char *role )
+{
+    Pragma_list pragmas = new_Pragma_list();
+
+    if( role != NULL ){
+        Pragma pragma = new_ValuePragma(
+	    new_origsymbol( add_tmsymbol( "role" ), originNIL ),
+	    new_StringPragmaExpression( new_tmstring( role ) )
+	);
+	pragmas = append_Pragma_list( pragmas, pragma );
+    }
+    return new_SmtIf(
+	origsymbolNIL,		// label name
+	gen_origin(),
+	pragmas,
+	new_OwnerExpr_list(),
+	cond,
+	new_block(
+	    tmsymbolNIL,
+	    gen_origin(),
+	    new_Pragma_list(),
+	    new_OwnerExpr_list(),
+	    append_statement_list( new_statement_list(), action )
+	),
+	build_empty_block()
+    );
+}
+
+#if 0
+// Given a label name, build an empty statement with that label
+static statement build_label_target( tmsymbol skipnm )
+{
+    return new_SmtEmpty(
+	new_origsymbol( skipnm, gen_origin() ),
+	gen_origin(),
+	new_Pragma_list(),
+	new_OwnerExpr_list()
+    );
+}
+#endif
+
+static statement build_event_call( rewrite_data *ctx, tmsymbol lbl, const char *eventfn )
+{
+    // First, make sure that the event is declared as an external procedure.
+    declaration d = search_declaration( ctx->defs, add_tmsymbol( eventfn ) );
+    if( d == declarationNIL ){
+	d = new_DeclExternalProcedure(
+	    add_origsymbol( eventfn ),
+	    0,				// flags
+	    new_Pragma_list(),
+	    new_origsymbol_list()	// Parameters
+	);
+	ctx->defs = append_declaration_list( ctx->defs, d );
+    }
+    origsymbol newlbl = origsymbolNIL;
+
+    if( lbl != tmsymbolNIL ){
+	newlbl = new_origsymbol( lbl, gen_origin() );
+    }
+    return new_SmtProcedureCall(
+	newlbl,
+	gen_origin(),
+	new_Pragma_list(),
+	new_OwnerExpr_list(),
+	new_ExprName( add_origsymbol( eventfn ) ),
+	new_expression_list()
+    );
+}
+
+// If there are any spilled notnull checks that must be realized in tests,
+// generate code for it now.
+static bool flush_pending_notnull_assertions( rewrite_data *ctx )
+{
+    bool res = false;
+
+    if( ctx->notnull_checks->sz != 0 ){
+	expression_list xl = ctx->notnull_checks;
+	ctx->notnull_checks = new_expression_list();
+	statement action;
+
+	// TODO: generate an unconditional action iff one of the
+	// expressions is known to be null.
+	for( unsigned int ix=0; ix<xl->sz; ix++ ){
+	    xl->arr[ix] = build_null_comparison( ctx->defs, xl->arr[ix] );
+	}
+	expression cond = new_ExprReduction( BINOP_SHORTOR, xl );
+	cond = constant_fold_expression( cond );
+
+	if( ctx->notnull_label_ptr != NULL ){
+	    if( *ctx->notnull_label_ptr == tmsymbolNIL ){
+		*ctx->notnull_label_ptr = gen_tmsymbol( "notnull" );
+	    }
+	    action = build_SmtGoto( *ctx->notnull_label_ptr );
+	}
+	else {
+	    action = build_event_call( ctx, tmsymbolNIL, "VnusEventNullPointer" );
+	}
+	if( cond != expressionNIL && cond->tag == TAGExprBoolean ){
+	    // The condition is constant, so we can remove the if entirely.
+	    vnus_boolean val = to_ExprBoolean( cond )->b;
+
+	    rfre_expression( cond );
+	    if( val ){
+		// Event always occurs, so don't bother with the 'if'.
+		ctx->lets = append_statement_list( ctx->lets, action );
+
+		// Tell the analyzer that we will terminate abruptly.
+		// This is not strictly true if someone provided a
+		// VnusEventNullPointer that returned, but since they
+		// will then try to use a null pointer, they're in
+		// trouble anyway.
+		res = true;
+	    }
+	    else {
+		// Event never occurs, so don't bother with any code.
+		rfre_statement( action );
+	    }
+	}
+	else {
+	    SmtIf smt = build_event_test( cond, action, "null-check" );
+	    ctx->lets = append_statement_list( ctx->lets, smt );
+	}
+    }
+    return res;
+}
+
+// If there are any spilled bounds checks that must be realized in tests,
+// generate code for it now.
+static bool flush_pending_bounds_assertions( rewrite_data *ctx )
+{
+    bool res = false;
+
+    if( ctx->bounds_checks->sz != 0 ){
+	expression_list xl = ctx->bounds_checks;
+	ctx->bounds_checks = new_expression_list();
+	statement action;
+
+	expression cond = new_ExprReduction( BINOP_SHORTOR, xl );
+	cond = constant_fold_expression( cond );
+	if( ctx->bounds_label_ptr != NULL ){
+	    if( *ctx->bounds_label_ptr == tmsymbolNIL ){
+		*ctx->bounds_label_ptr = gen_tmsymbol( "bounds" );
+	    }
+	    action = build_SmtGoto( *ctx->bounds_label_ptr );
+	}
+	else {
+	    action = build_event_call( ctx, tmsymbolNIL, "VnusEventArrayBoundViolated" );
+	}
+	if( cond != expressionNIL && cond->tag == TAGExprBoolean ){
+	    // The condition is constant, so we can remove the if entirely.
+	    vnus_boolean val = to_ExprBoolean( cond )->b;
+
+	    rfre_expression( cond );
+	    if( val ){
+		// Event always occurs, so don't bother with the 'if'.
+		ctx->lets = append_statement_list( ctx->lets, action );
+		res = true;
+	    }
+	    else {
+		// Event never occurs, so don't bother with any code.
+		rfre_statement( action );
+	    }
+	}
+	else {
+	    SmtIf smt = build_event_test( cond, action, "bound-check" );
+	    ctx->lets = append_statement_list( ctx->lets, smt );
+	}
+    }
+    return res;
+}
+
+// If there are any spilled checks that must be realized in tests,
+// generate code for it now.
+static bool flush_pending_assertions( rewrite_data *ctx )
+{
+    bool res = false;
+    res |= flush_pending_notnull_assertions( ctx );
+    res |= flush_pending_bounds_assertions( ctx );
+    return res;
+}
+
+static void report_AFLAG( FILE *f, AFLAG fl )
+{
+    const char *msg = "??";
+
+    switch( fl ){
+	case AF_YES:	msg = "yes";	 break;
+	case AF_NO:	msg = "no";	 break;
+	case AF_MAYBE:	msg = "maybe";	 break;
+    }
+    fputs( msg, f );
+}
+
+static void report_AbstractValue( FILE *f, const_AbstractValue v )
+{
+    fputs( "zero=", f );
+    report_AFLAG( f, v->zero );
+    fputs( " positive=", f );
+    report_AFLAG( f, v->positive );
+}
+
+// Given a variable name and a value, register that the variable is
+// equal to the value. This may be deduced from an assignment, but
+// also from a condition expression.
+static void register_variable_equality(
+    rewrite_data *ctx,
+    tmsymbol nm,
+    const_expression x
+)
+{
+    AbstractValue av = abstract_value( x, ctx->defs, ctx->states );
+    ProgramState topst = ctx->states->arr[ctx->states->sz-1];
+    VarState_list vl = topst->varStates;
+    unsigned int pos;
+
+    if( search_var_programstate( vl, nm, &pos ) ){
+	VarState v = vl->arr[pos];
+	rfre_AbstractValue( v->value );
+	v->value = av;
+    }
+    else {
+	vl = append_VarState_list(
+	    vl,
+	    new_VarState( nm, false, false, FieldVal_listNIL, av )
+	);
+    }
+    if( trace_analysis ){
+	fprintf( stderr, "Variable '%s' has been assigned to.\n", nm->name );
+	dump_programstates( stderr, ctx->states );
+    }
+}
+
+// Given an expresion 'x', return true iff we consider it worth propagating.
+static bool is_propagatable_expression( rewrite_data *ctx, const_expression x )
+{
+    if( is_constant_expression( x ) ){
+	return true;
+    }
+    if( x->tag == TAGExprRecord ){
+	const_ExprRecord rx = to_const_ExprRecord( x );
+	const_expression_list fields = rx->fields;
+
+	for( unsigned int ix = 0; ix<fields->sz; ix++ ){
+	    if( !is_propagatable_expression( ctx, x ) ){
+		return false;
+	    }
+	}
+	return true;
+    }
+    if( x->tag == TAGExprName ){
+	tmsymbol nm = to_const_ExprName(x)->name->sym;
+
+	const_declaration e = lookup_declaration( ctx->defs, nm );
+
+	if( e == declarationNIL ){
+	    return false;
+	}
+	return has_any_flag( e->flags, MOD_FINAL );
+    }
+    return false;
+}
+
+// Given a variable name and a list of sizes, register the sizes of the
+// shape that look worth propagating.
+static void register_shape_sizes(
+    rewrite_data *ctx,
+    tmsymbol nm,
+    const_size_list sl
+)
+{
+    ProgramState topst = ctx->states->arr[ctx->states->sz-1];
+    VarState_list vl = topst->varStates;
+    unsigned int pos;
+
+    if( search_var_programstate( vl, nm, &pos ) ){
+	VarState v = vl->arr[pos];
+
+	if( v->fieldvalues == NULL ){
+	    v->fieldvalues = new_FieldVal_list();
+	}
+	for( unsigned int ix=0; ix<sl->sz; ix++ ){
+	    size s = sl->arr[ix];
+
+	    if( s->tag == TAGSizeExpression ){
+		SizeExpression sx = to_SizeExpression( s );
+
+		sx->x = constant_fold_expression( sx->x );
+		if( is_propagatable_expression( ctx, sx->x ) ){
+		    FieldVal fv = new_FieldVal(
+			append_tmsymbol_list(
+			    new_tmsymbol_list(),
+			    nm
+			),
+			new_ExprGetSize(
+			    new_ExprDeref( new_ExprName( new_origsymbol( nm, gen_origin() ) ) ),
+			    new_ExprInt( (vnus_int) ix )
+			),
+			rdup_expression( sx->x )
+		    );
+		    v->fieldvalues = append_FieldVal_list( v->fieldvalues, fv );
+		    if( trace_analysis ){
+			fprintf( stderr, "Recorded shape size '%s[%u]'\n", nm->name, ix );
+			dump_programstates( stderr, ctx->states );
+		    }
+		}
+	    }
+	}
+    }
+    else {
+	internal_error( "Cannot find program state" );
+    }
+}
+
+// Given a variable name and a value, register the
+// assignment of the value to the variable in the analysis information.
+static void register_variable_facts(
+    rewrite_data *ctx,
+    tmsymbol nm,
+    const_expression x
+)
+{
+    if( x->tag == TAGExprFilledNew ){
+	const_ExprFilledNew fn = to_const_ExprFilledNew( x );
+
+	if( fn->t->tag == TAGTypeShape ){
+	    const_TypeShape shp = to_const_TypeShape( fn->t );
+	    register_shape_sizes( ctx, nm, shp->sizes );
+	}
+    }
+    if( x->tag == TAGExprNulledNew ){
+	const_ExprNulledNew fn = to_const_ExprNulledNew( x );
+
+	if( fn->t->tag == TAGTypeShape ){
+	    const_TypeShape shp = to_const_TypeShape( fn->t );
+	    register_shape_sizes( ctx, nm, shp->sizes );
+	}
+    }
+}
+
+// Given a variable name and a value, register the
+// assignment of the value to the variable in the analysis information.
+static void register_variable_assignment(
+    rewrite_data *ctx,
+    tmsymbol nm,
+    const_expression x
+)
+{
+    register_variable_equality( ctx, nm, x );
+    register_variable_facts( ctx, nm, x );
+}
+
+// Given a variable name, register that this variable has been
+// assigned to in a receive statement.
+static void register_variable_receive( rewrite_data *ctx, origsymbol nm )
+{
+    AbstractValue av = new_AbstractValue( AF_MAYBE, AF_MAYBE, false, expressionNIL );
+    ProgramState topst = ctx->states->arr[ctx->states->sz-1];
+    VarState_list vl = topst->varStates;
+    unsigned int pos;
+
+    if( search_var_programstate( vl, nm->sym, &pos ) ){
+	VarState v = vl->arr[pos];
+	rfre_AbstractValue( v->value );
+	v->value = av;
+    }
+    else {
+	vl = append_VarState_list(
+	    vl,
+	    new_VarState( nm->sym, false, false, FieldVal_listNIL, av )
+	);
+    }
+    if( trace_analysis ){
+	fprintf( stderr, "Variable '%s' has been received into.\n", nm->sym->name );
+	dump_programstates( stderr, ctx->states );
+    }
+}
+
+static void register_aliased_variable( rewrite_data *ctx, tmsymbol nm )
+{
+    (void) ctx;
+    (void) nm;
+
+#if 0
+    ProgramState topst = ctx->states->arr[ctx->states->sz-1];
+    VarState_list vl = topst->varStates;
+    unsigned int pos;
+
+    if( search_var_programstate( vl, nm, &pos ) ){
+	VarState v = vl->arr[pos];
+	v->aliased = true;
+    }
+    else {
+	vl = append_VarState_list(
+	    vl,
+	    new_VarState( nm, false, true, FieldVal_listNIL, new_AbstractValue( AF_MAYBE, AF_MAYBE, false, expressionNIL ) )
+	);
+    }
+    if( trace_analysis ){
+	fprintf( stderr, "Variable '%s' is aliased.\n", nm->name );
+	dump_programstates( stderr, ctx->states );
+    }
+#endif
+}
+
+// Given a variable name, register that the variable is changed later
+// in the loop. This is treated as an assignment of a vague value to the
+// variable at this point, the beginning of the loop.
+static void register_variable_loopchanged(
+    rewrite_data *ctx,
+    tmsymbol nm
+)
+{
+    AbstractValue av = new_AbstractValue( AF_MAYBE, AF_MAYBE, false, expressionNIL );
+    ProgramState topst = ctx->states->arr[ctx->states->sz-1];
+    VarState_list vl = topst->varStates;
+    unsigned int pos;
+
+    if( search_var_programstate( vl, nm, &pos ) ){
+	VarState v = vl->arr[pos];
+	rfre_AbstractValue( v->value );
+	v->value = av;
+    }
+    else {
+	vl = append_VarState_list(
+	    vl,
+	    new_VarState( nm, false, false, FieldVal_listNIL, av )
+	);
+    }
+    if( trace_analysis ){
+	fprintf( stderr, "Variable '%s' is changed later in the loop.\n", nm->name );
+	dump_programstates( stderr, ctx->states );
+    }
+}
+
+static void register_variables_loopchanged(
+ rewrite_data *ctx,
+ tmsymbol_list vars
+)
+{
+    for( unsigned int ix=0; ix<vars->sz; ix++ ){
+	register_variable_loopchanged( ctx, vars->arr[ix] );
+    }
+}
+
+// Given a variable name and a value, register the
+// assignment of the value to the variable in the analysis information.
+static void register_variable_assignment(
+    rewrite_data *ctx,
+    const_origsymbol nm,
+    const_expression x
+)
+{
+    register_variable_assignment( ctx, nm->sym, x );
+}
+
+// Given a cardinality, register it.
+static void register_cardinality( rewrite_data *ctx, const_cardinality card )
+{
+    AbstractValue av = abstract_value( card->lowerbound, ctx->defs, ctx->states );
+    if( av->positive != AF_YES ){
+	av->zero = AF_MAYBE;
+    }
+    av->constant = false;
+    if( av->value != expressionNIL ){
+	rfre_expression( av->value );
+	av->value = expressionNIL;
+    }
+    ProgramState topst = ctx->states->arr[ctx->states->sz-1];
+    VarState_list vl = topst->varStates;
+    unsigned int pos;
+
+    if( search_var_programstate( vl, card->name->sym, &pos ) ){
+	VarState v = vl->arr[pos];
+	rfre_AbstractValue( v->value );
+	v->value = av;
+	v->final = true;
+    }
+    else {
+	vl = append_VarState_list(
+	    vl,
+	    new_VarState( card->name->sym, true, false, FieldVal_listNIL, av )
+	);
+    }
+    if( trace_analysis ){
+	fprintf( stderr, "Cardinality '%s' has been declared. Value: ", card->name->sym->name );
+	report_AbstractValue( stderr, av );
+	fputs( "\n", stderr );
+    }
+}
+
+// Given a secondary, register it.
+static void register_secondary( rewrite_data *ctx, const_secondary card )
+{
+    AbstractValue av = new_AbstractValue( AF_MAYBE, AF_MAYBE, false, expressionNIL );
+    ProgramState topst = ctx->states->arr[ctx->states->sz-1];
+    VarState_list vl = topst->varStates;
+    unsigned int pos;
+
+    if( search_var_programstate( vl, card->name->sym, &pos ) ){
+	VarState v = vl->arr[pos];
+	rfre_AbstractValue( v->value );
+	v->value = av;
+	v->final = true;
+    }
+    else {
+	vl = append_VarState_list(
+	    vl,
+	    new_VarState( card->name->sym, true, false, FieldVal_listNIL, av )
+	);
+    }
+    if( trace_analysis ){
+	fprintf( stderr, "Secondary '%s' has been declared. Value: ", card->name->sym->name );
+	report_AbstractValue( stderr, av );
+	fputs( "\n", stderr );
+    }
+}
+
+// Given a variable name, register the declaration of that variable.
+static void register_variable_declaration(
+    rewrite_data *ctx,
+    origsymbol nm,
+    bool final,
+    optexpression init
+)
+{
+    AbstractValue av = new_AbstractValue( AF_MAYBE, AF_MAYBE, false, expressionNIL );
+    ProgramState topst = ctx->states->arr[ctx->states->sz-1];
+    VarState_list vl = topst->varStates;
+    unsigned int pos;
+
+    if( search_var_programstate( vl, nm->sym, &pos ) ){
+	VarState v = vl->arr[pos];
+	v->final = final;
+	rfre_AbstractValue( v->value );
+	v->value = av;
+    }
+    else {
+	vl = append_VarState_list(
+	    vl,
+	    new_VarState( nm->sym, final, false, FieldVal_listNIL, av )
+	);
+    }
+    if( trace_analysis ){
+	fprintf( stderr, "Variable '%s' has been declared. Value: ", nm->sym->name );
+	report_AbstractValue( stderr, av );
+	fputs( "\n", stderr );
+    }
+    if( init->tag == TAGOptExpr ){
+	register_variable_assignment( ctx, nm, to_OptExpr(init)->x );
+    }
+}
+
+// Given the stack of program states, the index of what we think of
+// as the outer scope, and the name of a variable, return true
+// iff the variable is mentioned in one of the scopes.
+// If found, also make sure that there is an entry for the variable
+// in the outer scope, and assign the index in the variable states
+// to '*pos'.
+static bool dredge_var_programstate(
+ ProgramState_list state,
+ unsigned int outerix,
+ tmsymbol var,
+ unsigned int *pos
+)
+{
+    unsigned int lvl;
+
+    assert( outerix<state->sz );
+    VarState_list vl = state->arr[outerix]->varStates;
+    if( !search_var_programstates( state, outerix, var, &lvl, pos ) ){
+	// Unknown variable, assume that it is a global one. Say something
+	// vague about its state.
+	//
+	// TODO: have a look at the symbol table entry to give more precise
+	// information. But note that we then have to take the iterated
+	// flags into account as shown below.
+	AbstractValue av = new_AbstractValue( AF_MAYBE, AF_MAYBE, false, expressionNIL );
+	VarState st = new_VarState( var, false, false, FieldVal_listNIL, av );
+	unsigned int newpos = vl->sz;
+
+	state->arr[outerix]->varStates = append_VarState_list(
+	    state->arr[outerix]->varStates,
+	    st
+	);
+	*pos = newpos;
+	return true;
+    }
+    if( lvl != outerix ){
+	unsigned int newpos = vl->sz;
+	VarState st = rdup_VarState( state->arr[lvl]->varStates->arr[*pos] );
+
+	if( !st->final ){
+	    bool iterated = false;
+
+	    for( unsigned int ix=lvl+1; ix<=outerix; ix++ ){
+		iterated |= state->arr[ix]->iterated;
+	    }
+	    if( iterated ){
+		// We must be careful in drawing conclusions from the
+		// information we have until now, since the statements
+		// are iterated, and statements later in the iteration
+		// may spoil the state whe have now.
+		AbstractValue v = st->value;
+		v->zero = AF_MAYBE;
+		v->positive = AF_MAYBE;
+		v->constant = false;
+		if( v->value != expressionNIL ){
+		    rfre_expression( v->value );
+		    v->value = expressionNIL;
+		}
+		if( !st->final && st->fieldvalues != FieldVal_listNIL ){
+		    rfre_FieldVal_list( st->fieldvalues );
+		    st->fieldvalues = FieldVal_listNIL;
+		}
+		if( trace_analysis ){
+		    fprintf( stderr, "Variable '%s' may be overwritten later in an iteration.\n", var->name );
+		}
+	    }
+	}
+	// The variable is not represented at this level. Copy the
+	// state from one of the level it does live on to the outer state.
+	state->arr[outerix]->varStates = append_VarState_list(
+	    state->arr[outerix]->varStates,
+	    st
+	);
+	*pos = newpos;
+    }
+    return true;
+}
+
+// Given a list of facts 'vl' and an expression 'x', return true iff
+// 'x' there is a FieldVal in 'vl' that has a bigval expression that
+// is equivalent to 'x'. If found, assign the index of that FieldVal
+// in the list to '*pos'.
+static bool search_FieldVal_list(
+ const_FieldVal_list vl,
+ const_expression x,
+ unsigned int *pos
+)
+{
+    if( vl == FieldVal_listNIL ){
+	return false;
+    }
+    for( unsigned int ix=0; ix<vl->sz; ix++ ){
+	FieldVal fv = vl->arr[ix];
+
+	if( is_equivalent_expression( fv->bigval, x ) ){
+	    *pos = ix;
+	    return true;
+	}
+    }
+    return false;
+}
+
+// Given an inner fact and an outer list of facts, do a possible-trip
+// merge of the fact into the inner scope.
+static void merge_possibletrip_FieldVal(
+ FieldVal_list outer,
+ FieldVal inner
+)
+{
+    unsigned int ix;
+
+    if( search_FieldVal_list( outer, inner->bigval, &ix ) ){
+	FieldVal outerval = outer->arr[ix];
+
+	if( !is_equivalent_expression( inner->bigval, outerval->bigval ) ){
+	    outer = delete_FieldVal_list( outer, ix );
+	}
+    }
+}
+
+// Given an inner list of facts and an outer list of facts, do a possible-trip
+// merge of the facts in the outer scope into the inner scope.
+static void merge_possibletrip_FieldVal_list(
+ FieldVal_list outer,
+ FieldVal_list inner
+)
+{
+    if( inner == FieldVal_listNIL ){
+	return;
+    }
+    for( unsigned int ix=0; ix<inner->sz; ix++ ){
+	merge_possibletrip_FieldVal( outer, inner->arr[ix] );
+    }
+}
+
+// Given an outer scope variable state 'oldtop' and a variable entry from
+// the inner variable state, merge the two, assuming that the
+// state changes in the inner scope one *may* have occurred.
+static void merge_possibletrip_varstate(
+ rewrite_data *ctx,
+ unsigned int outerix,
+ const_VarState inner
+)
+{
+    unsigned int pos;
+
+    assert( outerix<ctx->states->sz );
+    if(
+	dredge_var_programstate(
+	    ctx->states,
+	    outerix,
+	    inner->name,
+	    &pos
+	)
+    ){
+	VarState_list vl = ctx->states->arr[outerix]->varStates;
+	assert( pos<vl->sz );
+	VarState outer_var = vl->arr[pos];
+
+	outer_var->aliased |= inner->aliased;
+	abstract_either( outer_var->value, inner->value );
+	merge_possibletrip_FieldVal_list( outer_var->fieldvalues, inner->fieldvalues );
+    }
+}
+
+// Given two variable states, merge the two, assuming that the
+// state changes in the 'oldtop' one *may* have occurred.
+static void merge_possibletrip_varstates(
+ rewrite_data *ctx,
+ unsigned int outerix,
+ VarState_list oldtop
+)
+{
+    for( unsigned int ix=0; ix<oldtop->sz; ix++ ){
+	merge_possibletrip_varstate( ctx, outerix, oldtop->arr[ix] );
+    }
+}
+
+static void merge_onetrip_AbstractValue(
+ AbstractValue outer,
+ const_AbstractValue inner
+)
+{
+    outer->zero = inner->zero;
+    outer->positive = inner->positive;
+    outer->constant = inner->constant;
+    if( outer->value != NULL ){
+	rfre_expression( outer->value );
+    }
+    outer->value = rdup_expression( inner->value );
+}
+
+// Return the maximum of two aflags.
+static AFLAG aflag_max( const AFLAG a, const AFLAG b )
+{
+    if( a == AF_YES || b == AF_YES ) return AF_YES;
+    if( a == AF_MAYBE || b == AF_MAYBE ) return AF_MAYBE;
+    return AF_NO;
+}
+
+// Return the minimum of two aflags.
+static AFLAG aflag_min( const AFLAG a, const AFLAG b )
+{
+    if( a == AF_NO || b == AF_NO ) return AF_NO;
+    if( a == AF_MAYBE || b == AF_MAYBE ) return AF_MAYBE;
+    return AF_YES;
+}
+
+// Given an inner fact and an outer list of facts, do a one-trip
+// merge of the fact into the inner scope.
+static void merge_onetrip_FieldVal(
+ FieldVal_list outer,
+ FieldVal inner
+)
+{
+    unsigned int ix;
+
+    if( search_FieldVal_list( outer, inner->bigval, &ix ) ){
+	FieldVal outerval = outer->arr[ix];
+
+	if( is_equivalent_expression( inner->bigval, outerval->bigval ) ){
+	    outer = delete_FieldVal_list( outer, ix );
+	}
+	outer = append_FieldVal_list( outer, rdup_FieldVal( inner ) );
+    }
+}
+
+// Given an inner list of facts and an outer list of facts, do a one-trip
+// merge of the facts in the outer scope into the inner scope.
+static void merge_onetrip_FieldVal_list(
+ FieldVal_list outer,
+ FieldVal_list inner
+)
+{
+    if( inner == FieldVal_listNIL ){
+	return;
+    }
+    for( unsigned int ix=0; ix<inner->sz; ix++ ){
+	merge_onetrip_FieldVal( outer, inner->arr[ix] );
+    }
+}
+
+// Given an outer scope variable state 'oldtop' and a variable entry from
+// the inner variable state, merge the two, assuming that the
+// state changes in the inner scope definitely occurred.
+static void merge_onetrip_varstate(
+ rewrite_data *ctx,
+ unsigned int outerix,
+ const_VarState inner
+)
+{
+    unsigned int pos;
+
+    assert( outerix<ctx->states->sz );
+    if( dredge_var_programstate( ctx->states, outerix, inner->name, &pos ) ){
+	VarState_list vl = ctx->states->arr[outerix]->varStates;
+	assert( pos<vl->sz );
+	VarState outer_var = vl->arr[pos];
+	outer_var->aliased |= inner->aliased;
+
+	merge_onetrip_FieldVal_list( outer_var->fieldvalues, inner->fieldvalues );
+	merge_onetrip_AbstractValue( outer_var->value, inner->value );
+    }
+}
+
+// Given two variable states, merge the two, assuming that the
+// state changes in the 'oldtop' have certainly occurred.
+static void merge_onetrip_varstates(
+ rewrite_data *ctx,
+ unsigned int outerix,
+ const_VarState_list oldtop
+)
+{
+    for( unsigned int ix=0; ix<oldtop->sz; ix++ ){
+	merge_onetrip_varstate( ctx, outerix, oldtop->arr[ix] );
+    }
+}
+
+static void merge_multitrip_AbstractValue(
+ AbstractValue outer,
+ const_AbstractValue inner,
+ bool unchanged
+)
+{
+    if( unchanged || inner->constant ){
+	outer->zero = inner->zero;
+	outer->positive = inner->positive;
+	if( outer->value != expressionNIL ){
+	    rfre_expression( outer->value );
+	}
+	if( inner->value != expressionNIL ){
+	    outer->value = rdup_expression( inner->value );
+	}
+	else {
+	    outer->value = expressionNIL;
+	}
+    }
+    else {
+	outer->zero = AF_MAYBE;
+	outer->positive = AF_MAYBE;
+	if( outer->value != expressionNIL ){
+	    rfre_expression( outer->value );
+	    outer->value = expressionNIL;
+	}
+    }
+    outer->constant = inner->constant;
+}
+
+// Given an inner fact and an outer list of facts, do a multi-trip
+// merge of the fact into the inner scope.
+static void merge_multitrip_FieldVal(
+ FieldVal_list outer,
+ FieldVal inner
+)
+{
+    unsigned int ix;
+
+    if( search_FieldVal_list( outer, inner->bigval, &ix ) ){
+	FieldVal outerval = outer->arr[ix];
+
+	if( !is_equivalent_expression( inner->bigval, outerval->bigval ) ){
+	    outer = delete_FieldVal_list( outer, ix );
+	}
+    }
+}
+
+// Given an inner list of facts and an outer list of facts, do a multi-trip
+// merge of the facts in the outer scope into the inner scope.
+static void merge_multitrip_FieldVal_list(
+ FieldVal_list outer,
+ FieldVal_list inner
+)
+{
+    if( inner == FieldVal_listNIL ){
+	return;
+    }
+    for( unsigned int ix=0; ix<inner->sz; ix++ ){
+	merge_multitrip_FieldVal( outer, inner->arr[ix] );
+    }
+}
+
+// Given an outer scope variable state 'oldtop' and a variable entry from
+// the inner variable state, merge the two, assuming that the
+// state changes in the inner scope definitely occurred.
+static void merge_multitrip_varstate(
+ rewrite_data *ctx,
+ unsigned int outerix,
+ const_VarState inner,
+ tmsymbol_list changed
+)
+{
+    unsigned int pos;
+
+    assert( outerix<ctx->states->sz );
+    if( dredge_var_programstate( ctx->states, outerix, inner->name, &pos ) ){
+	VarState_list vl = ctx->states->arr[outerix]->varStates;
+	bool unchanged = (changed != tmsymbol_listNIL) && !member_tmsymbol_list( changed, inner->name );
+
+	assert( pos<vl->sz );
+	VarState outer_var = vl->arr[pos];
+	outer_var->aliased |= inner->aliased;
+
+	merge_multitrip_FieldVal_list( outer_var->fieldvalues, inner->fieldvalues );
+	merge_multitrip_AbstractValue( outer_var->value, inner->value, unchanged );
+    }
+}
+
+// Given two variable states, merge the two, assuming that the
+// state changes in the 'oldtop' have certainly occurred, possibly
+// several times.
+static void merge_multitrip_varstates(
+ rewrite_data *ctx,
+ unsigned int outerix,
+ VarState_list oldtop,
+ tmsymbol_list changed
+)
+{
+    for( unsigned int ix=0; ix<oldtop->sz; ix++ ){
+	merge_multitrip_varstate( ctx, outerix, oldtop->arr[ix], changed );
+    }
+}
+
+// Given an outer scope variable state 'oldtop' and a variable entry from
+// the inner variable state, merge the two, assuming that the
+// state changes in the inner scope one *may* have occurred.
+static void merge_thenelse_varstate(
+ rewrite_data *ctx,
+ unsigned int outerix,
+ const_VarState thenstate,
+ const_VarState elsestate
+)
+{
+    unsigned int pos;
+
+    if( dredge_var_programstate( ctx->states, outerix, thenstate->name, &pos ) ){
+	assert( outerix<ctx->states->sz );
+	VarState_list vl = ctx->states->arr[outerix]->varStates;
+	assert( pos<vl->sz );
+	VarState outer_var = vl->arr[pos];
+	outer_var->aliased |= thenstate->aliased;
+	outer_var->aliased |= elsestate->aliased;
+
+	abstract_thenelse( outer_var->value, thenstate->value, elsestate->value );
+    }
+}
+
+// Given a 'then' and an 'else' varstate list, merge them with the
+// new top state.
+static void merge_thenelse_varstates(
+ rewrite_data *ctx,
+ unsigned int outerix,
+ const_VarState_list thentop,
+ const_VarState_list p_elsetop
+)
+{
+    unsigned int ix;
+
+    VarState_list elsetop = rdup_VarState_list( p_elsetop );
+    for( ix=0; ix<thentop->sz; ix++ ){
+	VarState v = thentop->arr[ix];
+	unsigned int pos;
+
+	if( search_var_programstate( elsetop, v->name, &pos ) ){
+	    merge_thenelse_varstate( ctx, outerix, v, elsetop->arr[pos] );
+	    // Zap this entry from the 'else', since we already have done a
+	    // merger for it.
+	    elsetop = delete_VarState_list( elsetop, pos );
+	}
+	else {
+	    merge_possibletrip_varstate( ctx, outerix, v );
+	}
+    }
+    for( ix=0; ix<elsetop->sz; ix++ ){
+	merge_possibletrip_varstate( ctx, outerix, elsetop->arr[ix] );
+    }
+    rfre_VarState_list( elsetop );
+}
+
+// Return a new, initial program state
+static ProgramState build_initial_ProgramState( bool iterated )
+{
+    return new_ProgramState(
+	new_VarState_list(),
+	new_expression_list(),
+	new_expression_list(),
+	iterated,
+	AF_NO,
+	AF_NO,
+	AF_NO
+    );
+}
+
+// Given a context, create a new element in the program state chain.
+static void push_programstate( rewrite_data *ctx, bool iterated )
+{
+    ctx->states = append_ProgramState_list(
+	ctx->states,
+	build_initial_ProgramState( iterated )
+    );
+    if( trace_analysis ){
+	fprintf(
+	    stderr,
+	    "Created new %sprogram state (now %u active)\n",
+	    iterated?"iterated ":"",
+	    ctx->states->sz
+	);
+    }
+}
+
+// Extract and return the top context.
+static ProgramState extract_programstate( rewrite_data *ctx )
+{
+    ProgramState res;
+    int valid;
+
+    ctx->states = extract_ProgramState_list(
+	ctx->states,
+	ctx->states->sz-1,
+	&res,
+	&valid
+    );
+    if( trace_analysis ){
+	fprintf(
+	    stderr,
+	    "Extracted program state (now %u active)\n",
+	    ctx->states->sz
+	);
+    }
+    assert( valid );
+    return res;
+}
+
+// Remove the top context.
+static void pop_programstate( rewrite_data *ctx )
+{
+    assert( ctx->states->sz>0 );
+    ctx->states = delete_ProgramState_list(
+	ctx->states,
+	ctx->states->sz-1
+    );
+}
+
+// Merge the given context. It is *perhaps* effective.
+static void merge_possibletrip_programstate(
+ rewrite_data *ctx,
+ const_ProgramState oldtopstate
+)
+{
+    // Since we don't know if anything has happened, it may be
+    // necessary to label some things as 'perhaps'.
+    unsigned int sz = ctx->states->sz;
+    assert( sz>0 );
+    merge_possibletrip_varstates(
+	ctx,
+	sz-1,
+	oldtopstate->varStates
+    );
+    // Don't use the boundChecked and nullChecked items, since
+    // we don't know they have actually been checked.
+    ProgramState newtopstate = ctx->states->arr[sz-1];
+    newtopstate->throws = aflag_max( aflag_min( AF_MAYBE, oldtopstate->throws), newtopstate->throws );
+    newtopstate->jumps = aflag_max( aflag_min( AF_MAYBE, oldtopstate->jumps), newtopstate->jumps );
+    newtopstate->returns = aflag_max( aflag_min( AF_MAYBE, oldtopstate->returns), newtopstate->returns );
+    if( trace_analysis ){
+	fprintf(
+	    stderr,
+	    "Possibletrip merging of program state (now %u active)\n",
+	    ctx->states->sz
+	);
+	dump_programstates( stderr, ctx->states );
+    }
+}
+
+// Remove the top context. It is *perhaps* effective.
+static void pop_possibletrip_programstate( rewrite_data *ctx )
+{
+    ProgramState topstate = extract_programstate( ctx );
+    merge_possibletrip_programstate( ctx, topstate );
+    rfre_ProgramState( topstate );
+}
+
+// We have encountered a jump. Erase everything we've learned in the
+// top state. The easiest way to do this is to pop the program state
+// and push a new one.
+static void clear_top_programstate( rewrite_data *ctx )
+{
+    ProgramState topstate = extract_programstate( ctx );
+    push_programstate( ctx, topstate->iterated );
+    merge_possibletrip_programstate( ctx, topstate );
+    rfre_ProgramState( topstate );
+}
+
+static const_ProgramState get_ProgramState_top( const rewrite_data *ctx )
+{
+    unsigned int sz = ctx->states->sz;
+    assert( sz>0 );
+    return ctx->states->arr[sz-1];
+}
+
+// Given a program state, return true iff the state indicates that
+// execution will terminate abruptly.
+static bool terminates_abruptly( const_ProgramState st )
+{
+    return st->throws == AF_YES || st->returns == AF_YES || st->jumps == AF_YES;
+}
+
+// Given a context, return true iff the top state indicates that
+// execution will terminate abruptly.
+static bool terminates_abruptly( const rewrite_data *ctx )
+{
+    const_ProgramState topstate = get_ProgramState_top( ctx );
+    return terminates_abruptly( topstate );
+}
+
+// Given a program state, return true iff the state indicates that
+// execution will terminate abruptly.
+static bool perhaps_jumps( const_ProgramState st )
+{
+    return st->jumps != AF_NO;
+}
+
+// Given a context, return true iff the top state indicates that
+// execution will terminate abruptly.
+static bool perhaps_jumps( const rewrite_data *ctx )
+{
+    const_ProgramState topstate = get_ProgramState_top( ctx );
+    return perhaps_jumps( topstate );
+}
+
+// Merge the given context. It is certain to be effective.
+static void merge_onetrip_programstate( rewrite_data *ctx, const_ProgramState oldtopstate )
+{
+    unsigned int sz = ctx->states->sz;
+    assert( sz>0 );
+    // Merge the information from the top program state into
+    // the program state below it.
+    ProgramState newtopstate = ctx->states->arr[sz-1];
+    merge_onetrip_varstates( ctx, sz-1, oldtopstate->varStates );
+    newtopstate->throws = aflag_max( newtopstate->throws, oldtopstate->throws );
+    newtopstate->jumps = aflag_max( newtopstate->jumps, oldtopstate->jumps );
+    newtopstate->returns = aflag_max( newtopstate->returns, oldtopstate->returns );
+    newtopstate->boundChecked = concat_expression_list(
+	newtopstate->boundChecked,
+	rdup_expression_list( oldtopstate->boundChecked )
+    );
+    newtopstate->nullChecked = concat_expression_list(
+	newtopstate->nullChecked,
+	rdup_expression_list( oldtopstate->nullChecked )
+    );
+    if( trace_analysis ){
+	fprintf( stderr, "Onetrip merger of program state (now %u active)\n", ctx->states->sz );
+	dump_programstates( stderr, ctx->states );
+    }
+}
+
+// Remove the top context. It is certain to be effective.
+static void pop_onetrip_programstate( rewrite_data *ctx )
+{
+    ProgramState topstate = extract_programstate( ctx );
+    merge_onetrip_programstate( ctx, topstate );
+    rfre_ProgramState( topstate );
+}
+
+// Remove the top context. Either this context, or the one in 'thenstate'
+// was effective, so see if they have something in common.
+// Delete the 'thenstate' when you're done.
+static AFLAG pop_thenelse_programstate( rewrite_data *ctx, ProgramState thenstate )
+{
+    unsigned int sz = ctx->states->sz;
+    assert( sz>1 );
+    // Merge the information from the top program state into
+    // the program state below it.
+    ProgramState newtopstate = ctx->states->arr[sz-2];
+    ProgramState elsestate = ctx->states->arr[sz-1];
+    if( terminates_abruptly( thenstate ) ){
+	// Since the then branch terminates abruptly, its end state is
+	// irrelevant at this point. Throw it away.
+	rfre_ProgramState( thenstate );
+	if( trace_analysis ){
+	    fprintf( stderr, "Then branch terminates abruptly.\n" );
+	}
+	pop_onetrip_programstate( ctx );
+	return AF_NO;
+    }
+    if( terminates_abruptly( elsestate ) ){
+	// Since the else branch terminates abruptly, its end state is
+	// irrelevant at this point. Throw it away, and pretend that
+	// the then state was at the top of the program state stack.
+	rfre_ProgramState( elsestate );
+	ctx->states->arr[sz-1] = thenstate;
+	if( trace_analysis ){
+	    fprintf( stderr, "Else branch terminates abruptly.\n" );
+	}
+	pop_onetrip_programstate( ctx );
+	return AF_YES;
+    }
+
+    if( thenstate->returns == elsestate->returns ){
+	newtopstate->throws = aflag_max( newtopstate->throws, thenstate->throws );
+	newtopstate->jumps = aflag_max( newtopstate->jumps, thenstate->jumps );
+	newtopstate->returns = aflag_max( newtopstate->returns, elsestate->returns );
+    }
+    else {
+	newtopstate->throws = aflag_max( AF_MAYBE, thenstate->throws );
+	newtopstate->jumps = aflag_max( AF_MAYBE, thenstate->jumps );
+	newtopstate->returns = aflag_max( AF_MAYBE, elsestate->returns );
+    }
+    merge_thenelse_varstates(
+	ctx,
+	sz-2,
+	thenstate->varStates,
+	elsestate->varStates
+    );
+    rfre_ProgramState( thenstate );
+    pop_programstate( ctx );
+    if( trace_analysis ){
+	fprintf( stderr, "Thenelse merging of program state (now %u active)\n", ctx->states->sz );
+	dump_programstates( stderr, ctx->states );
+    }
+    return AF_MAYBE;
+}
+
+// Remove the top context. It is certain to be effective.
+static void pop_multitrip_programstate( rewrite_data *ctx, tmsymbol_list changed )
+{
+    unsigned int sz = ctx->states->sz;
+    assert( sz>1 );
+    // Merge the information from the top program state into
+    // the program state below it.
+    ProgramState newtopstate = ctx->states->arr[sz-2];
+    ProgramState oldtopstate = ctx->states->arr[sz-1];
+    merge_multitrip_varstates( ctx, sz-2, oldtopstate->varStates, changed );
+    newtopstate->throws = aflag_max( newtopstate->throws, oldtopstate->throws );
+    newtopstate->jumps = aflag_max( newtopstate->jumps, oldtopstate->jumps );
+    newtopstate->returns = aflag_max( newtopstate->returns, oldtopstate->returns );
+    newtopstate->boundChecked = concat_expression_list(
+	newtopstate->boundChecked,
+	oldtopstate->boundChecked
+    );
+    newtopstate->nullChecked = concat_expression_list(
+	newtopstate->nullChecked,
+	oldtopstate->nullChecked
+    );
+    oldtopstate->boundChecked = expression_listNIL;
+    oldtopstate->nullChecked = expression_listNIL;
+    pop_programstate( ctx );
+    if( trace_analysis ){
+	fprintf(
+	    stderr,
+	    "Multitrip merging of program state (now %u active)\n",
+	    ctx->states->sz
+	);
+	dump_programstates( stderr, ctx->states );
+    }
+}
+
+// Register the presence of the catch variable 'nm'
+static void register_catch_variable( rewrite_data *ctx, const_origsymbol nm )
+{
+    AbstractValue av = new_AbstractValue( AF_NO, AF_YES, true, expressionNIL );
+    ProgramState topst = ctx->states->arr[ctx->states->sz-1];
+    VarState_list vl = topst->varStates;
+    unsigned int pos;
+
+    if( search_var_programstate( vl, nm->sym, &pos ) ){
+	VarState v = vl->arr[pos];
+	rfre_AbstractValue( v->value );
+	v->value = av;
+    }
+    else {
+	vl = append_VarState_list(
+	    vl,
+	    new_VarState( nm->sym, false, false, FieldVal_listNIL, av )
+	);
+    }
+    if( trace_analysis ){
+	fprintf( stderr, "Catch variable '%s' has been registered. Value: ", nm->sym->name );
+	report_AbstractValue( stderr, av );
+	fputs( "\n", stderr );
+    }
+}
+
+static void register_FormalParameter( rewrite_data *ctx, origsymbol parm )
+{
+    AbstractValue av = new_AbstractValue( AF_MAYBE, AF_MAYBE, false, expressionNIL );
+
+    ProgramState topst = ctx->states->arr[ctx->states->sz-1];
+    VarState_list vl = topst->varStates;
+    const_declaration e = lookup_declaration( ctx->defs, parm );
+    unsigned int pos;
+
+    if( e == declarationNIL ){
+	return;
+    }
+    assert( e->tag == TAGDeclFormalVariable );
+
+    if( search_var_programstate( vl, parm->sym, &pos ) ){
+	VarState v = vl->arr[pos];
+	rfre_AbstractValue( v->value );
+	v->value = av;
+	v->final = has_any_flag( e->flags, MOD_FINAL );
+    }
+    else {
+	vl = append_VarState_list(
+	    vl,
+	    new_VarState(
+		parm->sym,
+		has_any_flag( e->flags, MOD_FINAL ),
+		false,			// Aliased
+		FieldVal_listNIL,
+		av
+	    )
+	);
+    }
+    if( trace_analysis ){
+	fprintf( stderr, "Formal parameter '%s' has been registered. Value: ", parm->sym->name );
+	report_AbstractValue( stderr, av );
+	fputs( "\n", stderr );
+    }
+}
+
+static void register_FormalParameter_list(
+ rewrite_data *ctx,
+ origsymbol_list parms
+)
+{
+    for( unsigned int ix=0; ix<parms->sz; ix++ ){
+	register_FormalParameter( ctx, parms->arr[ix] );
+    }
+}
+
+// Given a variable name, register the fact that the variable is known 
+// to be positive (>=0).
+static void register_positive( rewrite_data *ctx, tmsymbol nm )
+{
+    ProgramState topst = ctx->states->arr[ctx->states->sz-1];
+    VarState_list vl = topst->varStates;
+    unsigned int pos;
+
+    if(
+	dredge_var_programstate(
+	    ctx->states,
+	    ctx->states->sz-1,
+	    nm,
+	    &pos
+	)
+    ){
+	assert( pos<vl->sz );
+	VarState v = vl->arr[pos];
+	v->value->positive = AF_YES;
+    }
+    else {
+	AbstractValue av = new_AbstractValue( AF_MAYBE, AF_YES, false, expressionNIL );
+	vl = append_VarState_list(
+	    vl,
+	    new_VarState( nm, false, false, FieldVal_listNIL, av )
+	);
+    }
+    if( trace_analysis ){
+	fprintf( stderr, "Deduction: variable '%s' is positive.\n", nm->name );
+	dump_programstates( stderr, ctx->states );
+    }
+}
+
+// Given a variable name, register the fact that the variable is known 
+// to be negative (<0).
+static void register_negative( rewrite_data *ctx, tmsymbol nm )
+{
+    ProgramState topst = ctx->states->arr[ctx->states->sz-1];
+    VarState_list vl = topst->varStates;
+    unsigned int pos;
+
+    if(
+	dredge_var_programstate(
+	    ctx->states,
+	    ctx->states->sz-1,
+	    nm,
+	    &pos
+	)
+    ){
+	assert( pos<vl->sz );
+	VarState v = vl->arr[pos];
+	v->value->zero = AF_NO;
+	v->value->positive = AF_NO;
+    }
+    else {
+	AbstractValue av = new_AbstractValue( AF_NO, AF_NO, false, expressionNIL );
+	vl = append_VarState_list(
+	    vl,
+	    new_VarState( nm, false, false, FieldVal_listNIL, av )
+	);
+    }
+    if( trace_analysis ){
+	fprintf( stderr, "Deduction: variable '%s' negative.\n", nm->name );
+	dump_programstates( stderr, ctx->states );
+    }
+}
+
+// Given a variable name, register the fact that the variable is known not
+// to be null.
+static void register_not_null( rewrite_data *ctx, tmsymbol nm )
+{
+    ProgramState topst = ctx->states->arr[ctx->states->sz-1];
+    VarState_list vl = topst->varStates;
+    unsigned int pos;
+
+    if(
+	dredge_var_programstate(
+	    ctx->states,
+	    ctx->states->sz-1,
+	    nm,
+	    &pos
+	)
+    ){
+	assert( pos<vl->sz );
+	VarState v = vl->arr[pos];
+	v->value->zero = AF_NO;
+	v->value->positive = AF_YES;
+    }
+    else {
+	AbstractValue av = new_AbstractValue( AF_NO, AF_YES, false, expressionNIL );
+	vl = append_VarState_list(
+	    vl,
+	    new_VarState( nm, false, false, FieldVal_listNIL, av )
+	);
+    }
+    if( trace_analysis ){
+	fprintf( stderr, "Deduction: variable '%s' is not null/0/false.\n", nm->name );
+	dump_programstates( stderr, ctx->states );
+    }
+}
+
+// Register that we know that we will throw an exception.
+static void register_throws_exception( rewrite_data *ctx )
+{
+    ProgramState topst = ctx->states->arr[ctx->states->sz-1];
+    topst->throws = AF_YES;
+}
+
+// Register that we know that the statement/block does a return.
+static void register_returns( rewrite_data *ctx )
+{
+    ProgramState topst = ctx->states->arr[ctx->states->sz-1];
+    topst->returns = AF_YES;
+}
+
+// Register that we know that the statement/block does a break or continue.
+static void register_jumps( rewrite_data *ctx )
+{
+    ProgramState topst = ctx->states->arr[ctx->states->sz-1];
+    topst->jumps = AF_YES;
+}
+
+// Given an operator, if it is a comparision operator, return its inverse.
+// That is, return the operator that would be used if the then and else branch
+// of an if would be exchanged.
+static BINOP inverse_operator( BINOP op )
+{
+    switch( op ){
+	case BINOP_EQUAL:		return BINOP_NOTEQUAL;
+	case BINOP_NOTEQUAL:		return BINOP_EQUAL;
+	case BINOP_LESS:		return BINOP_GREATEREQUAL;
+	case BINOP_LESSEQUAL:		return BINOP_GREATER;
+	case BINOP_GREATER:		return BINOP_LESSEQUAL;
+	case BINOP_GREATEREQUAL:	return BINOP_LESS;
+	default:			break;
+    }
+    return op;
+}
+
+// Given a condition expression and a 'then branch' flag, try to register the
+// fact tested by the condition, or its opposite, as a fact.
+static void register_condition( rewrite_data *ctx, const_expression cond, bool then_branch )
+{
+    if( cond->tag == TAGExprName ){
+	ExprBoolean val = new_ExprBoolean( then_branch );
+
+	register_variable_equality(
+	    ctx,
+	    to_const_ExprName(cond)->name->sym,
+	    val
+	);
+	rfre_expression( val );
+	return;
+    }
+    if( cond->tag == TAGExprBinop ){
+	const_ExprBinop cmp = to_const_ExprBinop( cond );
+	BINOP op = cmp->optor;
+	if( op == BINOP_SHORTAND && then_branch ){
+	    register_condition( ctx, cmp->left, then_branch );
+	    register_condition( ctx, cmp->right, then_branch );
+	    return;
+	}
+	if( op == BINOP_SHORTOR && !then_branch ){
+	    register_condition( ctx, cmp->left, then_branch );
+	    register_condition( ctx, cmp->right, then_branch );
+	    return;
+	}
+	if( !then_branch ){
+	    op = inverse_operator( op );
+	}
+	if( cmp->left->tag == TAGExprName ){
+	    // We have <name> <op> <expr>
+	    // See if we can deduce something
+	    tmsymbol nm = to_ExprName(cmp->left)->name->sym;
+	    if( op == BINOP_EQUAL ){
+		register_variable_equality( ctx, nm, cmp->right );
+	    }
+	    AFLAG z = is_zero( cmp->right, ctx->defs, ctx->states );
+	    if( z == AF_YES ){
+		// We have <name> <op> 0/null
+		switch( op ){
+		    case BINOP_NOTEQUAL:
+			register_not_null( ctx, nm );
+			break;
+
+		    case BINOP_EQUAL:
+			// Already handled elsewhere
+			break;
+
+		    case BINOP_LESSEQUAL:
+			// There nothing useful to register.
+			break;
+
+		    case BINOP_GREATER:
+			register_not_null( ctx, nm );
+			register_positive( ctx, nm );
+			break;
+
+		    case BINOP_GREATEREQUAL:
+			register_positive( ctx, nm );
+			break;
+
+		    case BINOP_LESS:
+			register_negative( ctx, nm );
+			break;
+
+		    default:
+			break;
+
+		}
+	    }
+	    // TODO: do something clever with known constants.
+	}
+	if( cmp->right->tag == TAGExprName ){
+	    // We have <expr> <op> <name>
+	    // See if we can deduce something
+	    tmsymbol nm = to_ExprName(cmp->right)->name->sym;
+	    if( op == BINOP_EQUAL ){
+		register_variable_equality( ctx, nm, cmp->left );
+	    }
+	    AFLAG z = is_zero( cmp->left, ctx->defs, ctx->states );
+	    if( z == AF_YES ){
+		// We have <null> <op> <name>
+		switch( op ){
+		    case BINOP_NOTEQUAL:
+			register_not_null( ctx, nm );
+			break;
+
+		    case BINOP_EQUAL:
+			// Already handled elsewhere
+			break;
+
+		    case BINOP_GREATEREQUAL:	// 0 >= <nm>
+			break;
+
+		    case BINOP_LESSEQUAL:	// 0 <= <nm>
+			register_positive( ctx, nm );
+			break;
+
+		    case BINOP_GREATER:		// 0 > <nm>
+			register_negative( ctx, nm );
+			break;
+
+		    case BINOP_LESS:		// 0 < <nm>
+			register_not_null( ctx, nm );
+			register_positive( ctx, nm );
+			break;
+
+		    default:
+			break;
+		}
+	    }
+	    // TODO: do something clever with known constants.
+	}
+	return;
+    }
+    if( cond->tag == TAGExprReduction ){
+	const_ExprReduction red = to_const_ExprReduction( cond );
+
+	if( red->optor == BINOP_SHORTAND && then_branch ){
+	    expression_list operands = red->operands;
+
+	    for( unsigned int ix=0; ix<operands->sz; ix++ ){
+		register_condition( ctx, operands->arr[ix], then_branch );
+	    }
+	    return;
+	}
+	if( red->optor == BINOP_SHORTOR && !then_branch ){
+	    expression_list operands = red->operands;
+
+	    for( unsigned int ix=0; ix<operands->sz; ix++ ){
+		register_condition( ctx, operands->arr[ix], then_branch );
+	    }
+	    return;
+	}
+	return;
+    }
+    // TODO: do something with ExprIsBoundViolated
+    return;
+}
+
+// Given a scope name, register all variables in that scope
+// to the analysis administration.
+static void register_scope_variables( rewrite_data *ctx, tmsymbol scope )
+{
+    declaration_list decls = ctx->defs;
+
+    for( unsigned int ix=0; ix<decls->sz; ix++ ){
+	declaration d = decls->arr[ix];
+
+	if( d->tag == TAGDeclLocalVariable && scope == to_DeclLocalVariable(d)->scope ){
+	    optexpression init = to_DeclLocalVariable(d)->init;
+
+	    register_variable_declaration(
+		ctx,
+		d->name,
+		has_any_flag( d->flags, MOD_FINAL ),
+		init
+	    );
+	}
+    }
+}
+
+// Register all global variables to the analysis administration.
+static void register_global_variables( rewrite_data *ctx )
+{
+    declaration_list decls = ctx->defs;
+
+    for( unsigned int ix=0; ix<decls->sz; ix++ ){
+	declaration d = decls->arr[ix];
+
+	if(
+	    d->tag == TAGDeclGlobalVariable &&
+	    has_any_flag( d->flags, MOD_FINAL )
+	){
+	    register_variable_declaration(
+		ctx,
+		d->name,
+		true,
+		to_DeclGlobalVariable(d)->init
+	    );
+	}
+    }
+}
+
+// Given a list of scope names, mark all symbols in that block as
+// eliminated.
+static void mark_eliminated( declaration_list decls, const_tmsymbol_list scopes )
+{
+    for( unsigned int ix=0; ix<decls->sz; ix++ ){
+	declaration d = decls->arr[ix];
+	tmsymbol scopenm = tmsymbolNIL;
+
+	switch( d->tag ){
+	    case TAGDeclFunction:
+	    case TAGDeclProcedure:
+	    case TAGDeclExternalFunction:
+	    case TAGDeclExternalProcedure:
+	    case TAGDeclGlobalVariable:
+	    case TAGDeclCardinalityVariable:
+	    case TAGDeclExternalVariable:
+	    case TAGDeclRecord:
+		break;
+
+	    case TAGDeclLocalVariable:
+		scopenm = to_DeclLocalVariable(d)->scope;
+		break;
+
+	    case TAGDeclFormalVariable:
+		scopenm = to_DeclFormalVariable(d)->scope;
+		break;
+
+	}
+	if( scopenm != tmsymbolNIL && member_tmsymbol_list( scopes, scopenm ) ){
+	    d->flags |= MOD_ELIMINATED;
+	}
+    }
+}
+
+// Given a block, remove it from the administration. That is, delete
+// it, and mark all variables in the block as eliminated.
+static void eliminate_block( rewrite_data *ctx, block blk )
+{
+    tmsymbol_list subscopes = collectscopes_block( blk );
+
+    mark_eliminated( ctx->defs, subscopes );
+    rfre_tmsymbol_list( subscopes );
+    rfre_block( blk );
+}
+
+// Given the shape of an array, and a list of indices in that array,
+// return an access expression in the buffer of that array.
+//
+// Building the subscript expressions is somewhat tricky, since we
+// want the last index to have the least weight. The index is therefore:
+// dim	expr
+//  1	i0
+//  2   i0*dim1+i1
+//  3   i0*dim1*dim2+i1*dim2+i2
+//  4   i0*dim1*dim2*dim3+i1*dim2*dim3+i2*dim3+i3
+static expression build_array_index(
+ const_expression shpnm,
+ const_TypeShape shp,
+ const_expression_list indices
+)
+{
+    assert( indices->sz == shp->sizes->sz );
+
+    bool checked;
+
+    // TODO: also look at local pragmas.
+    if( !get_boolean_pragma( global_pragmas, Pragma_listNIL, "boundscheck", &checked ) ){
+	checked = true;
+    }
+    unsigned int rank = indices->sz;
+    if( rank == 0 ){
+	return new_ExprInt( 0 );
+    }
+    expression_list weightprod = new_expression_list();
+
+    // First build the list of all weights.
+    for( unsigned int i=0; i<rank; i++ ){
+	weightprod = append_expression_list(
+	    weightprod, 
+	    new_ExprGetSize( rdup_expression( shpnm ), new_ExprInt( (int) i ) )
+	);
+    }
+    expression_list sum = new_expression_list();
+    for( unsigned int ix=0; ix<rank; ix++ ){
+	assert( weightprod->sz != 0 );
+	weightprod = delete_expression_list( weightprod, 0 );
+	expression index = rdup_expression( indices->arr[ix] );
+
+	if( checked ){
+	    expression dim = new_ExprGetSize( rdup_expression( shpnm ), new_ExprInt( (vnus_int) ix ) );
+	    index = new_ExprCheckedIndex( index, dim );
+	}
+
+	if( weightprod->sz != 0 ){
+	    index = new_ExprReduction(
+		BINOP_TIMES,
+		append_expression_list(
+		    rdup_expression_list( weightprod ),
+		    index
+		)
+	    );
+	}
+	sum = append_expression_list( sum, index );
+    }
+    rfre_expression_list( weightprod );
+    if( sum->sz == 1 ){
+	expression res = sum->arr[0];
+
+	sum->arr[0] = expressionNIL;
+	rfre_expression_list( sum );
+	return res;
+    }
+    return new_ExprReduction( BINOP_PLUS, sum );
+}
+
+// Given an expression 'x' and the key symbol 'nm' of that expression,
+// see if there is a faster expression listed for it. If so, return it.
+static expression lookup_fast_expression( rewrite_data *ctx, tmsymbol nm, expression x )
+{
+    unsigned int lvl;
+    unsigned int pos;
+
+    if( search_var_programstates( ctx->states, ctx->states->sz, nm, &lvl, &pos ) ){
+	const_VarState v = ctx->states->arr[lvl]->varStates->arr[pos];
+	bool iterated = false;
+
+	if( !v->final ){
+	    for( unsigned int ix=lvl; ix<ctx->states->sz; ix++ ){
+		if( ctx->states->arr[ix]->iterated ){
+		    iterated = true;
+		    break;
+		}
+	    }
+	}
+	if( !iterated && !v->aliased ){
+	    unsigned int ix;
+
+	    if( search_FieldVal_list( v->fieldvalues, x, &ix ) ){
+		FieldVal fv = v->fieldvalues->arr[ix];
+		return rdup_expression( fv->fastval );
+	    }
+	}
+    }
+    return expressionNIL;
+}
+
+// Given a statement, return true iff this statement always terminates
+// execution abruptly.
+static bool is_terminating_statement( const_statement smt )
+{
+    return
+	smt->tag == TAGSmtReturn ||
+	smt->tag == TAGSmtValueReturn ||
+	smt->tag == TAGSmtThrow ||
+	smt->tag == TAGSmtRethrow ||
+	smt->tag == TAGSmtGoto;
+}
+
+/* ----------- Actors ----------- */
+
+/* Rewrite action for 'vnusprog'. */
+static vnusprog rewrite_vnusprog_action( vnusprog elm, rewrite_data *ctx )
+{
+    statement_list old_lets = ctx->lets;
+    declaration_list old_defs = ctx->defs;
+    ctx->lets = new_statement_list();
+    ctx->defs = elm->declarations;
+
+    register_global_variables( ctx );
+    global_pragmas = elm->pragmas;
+.call generate_walker_call "    " elm vnusprog vnusprog
+    elm->declarations = ctx->defs;
+    elm->statements->statements = concat_statement_list(
+	ctx->lets,
+	elm->statements->statements
+    );
+    declaration_list decls = ctx->defs;
+
+    unsigned int ix = 0;
+
+    while( ix<decls->sz ){
+	declaration d = decls->arr[ix];
+
+	if( has_any_flag( d->flags, MOD_ELIMINATED ) ){
+	    decls = delete_declaration_list( decls, ix );
+	}
+	else {
+	    ix++;
+	}
+    }
+    elm->declarations = decls;
+    ctx->lets = old_lets;
+    ctx->defs = old_defs;
+    return elm;
+}
+
+/* Rewrite action for 'TypeRecord'. */
+static TypeRecord rewrite_TypeRecord_action( TypeRecord elm, rewrite_data *ctx )
+{
+.call generate_walker_call "    " elm TypeRecord TypeRecord
+    register_record( ctx->defs, elm->fields );
+    return elm;
+}
+
+// Rewrite action for 'ExprSelection'
+//
+// For the moment, rewrite only one-dimensional array accesses to
+// a flat selection expression with an explicit bound check expression.
+static expression rewrite_ExprSelection_action( ExprSelection elm, rewrite_data *ctx )
+{
+.call generate_walker_call "    " elm ExprSelection ExprSelection
+    const type t = derive_type_expression( ctx->defs, originNIL, elm->shape );
+    switch( t->tag ){
+	case TAGTypeUnsizedArray:
+	case TAGTypeArray:
+	{
+	    assert( elm->indices->sz == 1 );
+
+	    ExprFlatSelection res = new_ExprFlatSelection(
+		elm->shape,
+		elm->indices->arr[0]
+	    );
+	    elm->indices->arr[0] = expressionNIL;
+	    elm->shape = expressionNIL;
+	    rfre_expression( elm );
+	    rfre_type( t );
+	    return res;
+	}
+	    
+	case TAGTypeShape:
+	{
+	    if( !dontflattenselection ){
+		// Rewrite a shape selection expression.
+
+		// TODO: break out the shape expression if it may have
+		// side effects.
+		TypeShape shp = to_TypeShape(t);
+		elm->indices = constant_fold_expression_list( elm->indices );
+
+		expression array_index = build_array_index( elm->shape, shp, elm->indices );
+		ExprFlatSelection res = new_ExprFlatSelection(
+		    elm->shape,
+		    array_index
+		);
+.call generate_descent_call "		" res ExprFlatSelection ExprFlatSelection
+		elm->shape = expressionNIL;
+		rfre_expression( elm );
+		rfre_type( t );
+		return res;
+	    }
+	    break;
+	}
+
+	case TAGTypeMap:
+	case TAGTypeBase:
+	case TAGTypePointer:
+	case TAGTypeNeutralPointer:
+	case TAGTypeRecord:
+	case TAGTypeNamedRecord:
+	case TAGTypeProcedure:
+	case TAGTypeFunction:
+	case TAGTypePragmas:
+	    internal_error( "Cannot get selection of this type" );
+	    break;
+    }
+    rfre_type( t );
+    return elm;
+}
+
+// Rewrite action for 'LocSelection'
+//
+// For the moment, rewrite only one-dimensional array accesses to a
+// flat selection expression with an explicit bound check expression.
+static location rewrite_LocSelection_action( LocSelection elm, rewrite_data *ctx )
+{
+.call generate_walker_call "    " elm LocSelection LocSelection
+    const type t = derive_type_expression( ctx->defs, originNIL, elm->shape );
+    switch( t->tag ){
+	case TAGTypeUnsizedArray:
+	case TAGTypeArray:
+	{
+	    assert( elm->indices->sz == 1 );
+
+	    LocFlatSelection res = new_LocFlatSelection(
+		elm->shape,
+		elm->indices->arr[0]
+	    );
+	    elm->indices->arr[0] = expressionNIL;
+	    elm->shape = expressionNIL;
+	    rfre_location( elm );
+	    rfre_type( t );
+	    return res;
+	}
+	    
+	case TAGTypeShape:
+	{
+	    if( !dontflattenselection ){
+		// Rewrite a shape selection expression.
+
+		// TODO: break out the shape expression if it may have
+		// side effects.
+
+		TypeShape shp = to_TypeShape(t);
+		elm->indices = constant_fold_expression_list( elm->indices );
+
+		expression array_index = build_array_index( elm->shape, shp, elm->indices );
+		LocFlatSelection res = new_LocFlatSelection(
+		    elm->shape,
+		    array_index
+		);
+.call generate_descent_call "		" res LocFlatSelection LocFlatSelection
+		elm->shape = expressionNIL;
+		rfre_location( elm );
+		rfre_type( t );
+		return res;
+	    }
+	    break;
+	}
+
+	case TAGTypeMap:
+	case TAGTypeBase:
+	case TAGTypePointer:
+	case TAGTypeNeutralPointer:
+	case TAGTypeRecord:
+	case TAGTypeNamedRecord:
+	case TAGTypeProcedure:
+	case TAGTypeFunction:
+	case TAGTypePragmas:
+	    internal_error( "Cannot get selection of this type" );
+	    break;
+    }
+    rfre_type( t );
+    return elm;
+}
+
+/* Rewrite action for 'block'. */
+static block rewrite_block_action(
+ block elm,
+ rewrite_data *ctx
+)
+{
+    if( elm->scope != NULL ){
+	// Register all local variables in this scope.
+	register_scope_variables( ctx, elm->scope );
+    }
+.call generate_walker_call "    " elm block block
+    if( elm->scope != NULL ){
+	if( count_scope_locals( elm->scope ) == 0 ){
+	    unregister_scope( elm->scope );
+	    elm->scope = NULL;
+	}
+    }
+    return elm;
+}
+
+/* Rewrite action for 'SmtBlock'. */
+static SmtBlock rewrite_SmtBlock_action(
+ SmtBlock elm,
+ rewrite_data *ctx
+)
+{
+    push_programstate( ctx, false );
+.call generate_walker_call "    " elm SmtBlock SmtBlock
+    pop_onetrip_programstate( ctx );
+    return elm;
+}
+
+/* Rewrite action for 'SmtPseudoBlock'. */
+static SmtPseudoBlock rewrite_SmtPseudoBlock_action(
+ SmtPseudoBlock elm,
+ rewrite_data *ctx
+)
+{
+    push_programstate( ctx, false );
+.call generate_walker_call "    " elm SmtPseudoBlock SmtPseudoBlock
+    pop_onetrip_programstate( ctx );
+    return elm;
+}
+
+/* Rewrite action for 'SmtIf'. */
+static statement rewrite_SmtIf_action( SmtIf smt, rewrite_data *ctx )
+{
+    // We have to do our own walking, since we want to manipulate
+    // the analysis state between the then and the else block.
+    (void) rewrite_SmtIf_walker;
+.call generate_descent_call "    " smt->on OwnerExpr_list OwnerExpr_list
+.call generate_descent_call "    " smt->cond expression expression
+    smt->cond = constant_fold_expression( smt->cond );
+    (void) flush_pending_assertions( ctx );
+    if( smt->cond != expressionNIL && smt->cond->tag == TAGExprBoolean ){
+	// The condition is constant, so we can remove the if entirely.
+	vnus_boolean val = to_ExprBoolean( smt->cond )->b;
+	SmtBlock res;
+
+	if( val ){
+	    res = new_SmtBlock(
+	       smt->label,
+	       smt->orig,
+	       smt->pragmas,
+	       smt->on,
+	       smt->thenbody
+	    );
+	    eliminate_block( ctx, smt->elsebody );
+	}
+	else {
+	    res = new_SmtBlock(
+	       smt->label,
+	       smt->orig,
+	       smt->pragmas,
+	       smt->on,
+	       smt->elsebody
+	    );
+	    eliminate_block( ctx, smt->thenbody );
+	}
+	rfre_expression( smt->cond );
+	fre_statement( smt );
+.call generate_descent_call "	" res SmtBlock SmtBlock
+	return res;
+    }
+    push_programstate( ctx, false );
+    register_condition( ctx, smt->cond, true );
+.call generate_descent_call "    " smt->thenbody block block
+    ProgramState thenst = extract_programstate( ctx );
+    push_programstate( ctx, false );
+    register_condition( ctx, smt->cond, false );
+.call generate_descent_call "    " smt->elsebody block block
+    AFLAG then_taken = pop_thenelse_programstate( ctx, thenst );
+    if( then_taken == AF_YES ){
+	register_condition( ctx, smt->cond, true );
+    }
+    else if( then_taken == AF_NO ){
+	register_condition( ctx, smt->cond, false );
+    }
+    return smt;
+}
+
+/* Rewrite action for 'RoutineDeclaration'. */
+static RoutineDeclaration rewrite_RoutineDeclaration_action(
+ RoutineDeclaration elm,
+ rewrite_data *ctx
+)
+{
+    bool old_in_init_expression = ctx->in_init_expression;
+    ctx->in_init_expression = false;
+.call generate_walker_call "    " elm RoutineDeclaration RoutineDeclaration
+    ctx->in_init_expression = old_in_init_expression;
+    return elm;
+}
+
+/* Rewrite action for 'ExprAddress'. */
+static ExprAddress rewrite_ExprAddress_action(
+ ExprAddress elm,
+ rewrite_data *ctx
+)
+{
+.call generate_walker_call "    " elm ExprAddress ExprAddress
+    if( elm->adr->tag == TAGLocName ){
+	register_aliased_variable( ctx, to_LocName(elm->adr)->name->sym );
+    }
+    return elm;
+}
+
+/* Rewrite action for 'SmtFor'. */
+static SmtFor rewrite_SmtFor_action(
+ SmtFor elm,
+ rewrite_data *ctx
+)
+{
+    // We must do the tree walk ourselves since we must register that
+    // the cardinalities are always evaluated exactly once.
+    (void) rewrite_SmtFor_walker;
+.call generate_descent_call "    " elm->on OwnerExpr_list OwnerExpr_list
+.call generate_descent_call "    " elm->cards cardinality_list cardinality_list
+    (void) flush_pending_assertions( ctx );
+    tmsymbol_list changed = new_tmsymbol_list();
+    bool invocations = false;
+    collectassigned_block( elm->body, &changed, &invocations );
+    push_programstate( ctx, invocations );
+    register_variables_loopchanged( ctx, changed );
+.call generate_descent_call "    " elm->body block block
+    AFLAG zt = is_zerotrip_cardinality_list( elm->cards );
+    if( zt == AF_YES ){
+	pop_programstate( ctx );
+    }
+    else if( zt == AF_NO ){
+	pop_multitrip_programstate( ctx, changed );
+    }
+    else {
+	pop_possibletrip_programstate( ctx );
+    }
+    rfre_tmsymbol_list( changed );
+    return elm;
+}
+
+/* Rewrite action for 'SmtForall'. */
+static SmtForall rewrite_SmtForall_action(
+ SmtForall elm,
+ rewrite_data *ctx
+)
+{
+    push_programstate( ctx, true );
+.call generate_walker_call "    " elm SmtForall SmtForall
+    AFLAG zt = is_zerotrip_cardinality_list( elm->cards );
+    if( zt == AF_YES ){
+	pop_programstate( ctx );
+    }
+    else if( zt == AF_NO ){
+	pop_multitrip_programstate( ctx, tmsymbol_listNIL );
+    }
+    else {
+	pop_possibletrip_programstate( ctx );
+    }
+    return elm;
+}
+
+/* Rewrite action for 'SmtForeach'. */
+static SmtForeach rewrite_SmtForeach_action( SmtForeach elm, rewrite_data *ctx )
+{
+    // We must do the tree walk ourselves since we must register that
+    // the cardinalities are always evaluated exactly once.
+    (void) rewrite_SmtForeach_walker;
+.call generate_descent_call "    " elm->on OwnerExpr_list OwnerExpr_list
+.call generate_descent_call "    " elm->map OwnerExpr_list OwnerExpr_list
+.call generate_descent_call "    " elm->cards cardinality_list cardinality_list
+    (void) flush_pending_assertions( ctx );
+    tmsymbol_list changed = new_tmsymbol_list();
+    bool invocations = false;
+    collectassigned_block( elm->body, &changed, &invocations );
+    push_programstate( ctx, invocations );
+    register_variables_loopchanged( ctx, changed );
+.call generate_descent_call "    " elm->body block block
+    AFLAG zt = is_zerotrip_cardinality_list( elm->cards );
+    if( zt == AF_YES ){
+	pop_programstate( ctx );
+    }
+    else if( zt == AF_NO ){
+	pop_multitrip_programstate( ctx, changed );
+    }
+    else {
+	pop_possibletrip_programstate( ctx );
+    }
+    rfre_tmsymbol_list( changed );
+    return elm;
+}
+
+/* Rewrite action for 'SmtDoWhile'. */
+static SmtDoWhile rewrite_SmtDoWhile_action(
+ SmtDoWhile elm,
+ rewrite_data *ctx
+)
+{
+    // We must do the tree walker for the do {} while() statement
+    // ourselves, since we must register that the body has executed once
+    // or more before evaluating the condition expression.
+    // Even this is not entirely correct, since we now pretend that
+    // first the block is executed multiple times, and then the stop
+    // condition is evaluated multiple times. Let's just hope that
+    // doesn't make a difference somewhere.
+    (void) rewrite_SmtDoWhile_walker;
+.call generate_descent_call "    " elm->on OwnerExpr_list OwnerExpr_list
+    tmsymbol_list changed = new_tmsymbol_list();
+    bool invocations = false;
+    // TODO: see if the condition does a call.
+    collectassigned_block( elm->body, &changed, &invocations );
+    push_programstate( ctx, invocations );
+    register_variables_loopchanged( ctx, changed );
+.call generate_walker_call "    " elm->body block block
+    // TODO: see if we can construct a 'changed' list.
+    pop_multitrip_programstate( ctx, tmsymbol_listNIL );
+    push_programstate( ctx, true );
+    register_variables_loopchanged( ctx, changed );
+    rfre_tmsymbol_list( changed );
+    bool old_in_init_expression = ctx->in_init_expression;
+    ctx->in_init_expression = true;
+.call generate_walker_call "    " elm->cond expression expression
+    ctx->in_init_expression = old_in_init_expression;
+    pop_multitrip_programstate( ctx, tmsymbol_listNIL );
+    elm->cond = constant_fold_expression( elm->cond );
+
+    // After the while body has completed, the condition must be false.
+    // This is useful information for the analyzer.
+    register_condition( ctx, elm->cond, false );
+    return elm;
+}
+
+/* Rewrite action for 'SmtWhile'. */
+static SmtWhile rewrite_SmtWhile_action(
+ SmtWhile elm,
+ rewrite_data *ctx
+)
+{
+    // We must do our own tree walking since we want to place that
+    // flush after the condition treewalk.
+    (void) rewrite_SmtWhile_walker;
+
+.call generate_descent_call "    " elm->on OwnerExpr_list OwnerExpr_list
+    tmsymbol_list changed = new_tmsymbol_list();
+    bool invocations = false;
+    // TODO: see if the condition does a call.
+    collectassigned_block( elm->body, &changed, &invocations );
+    push_programstate( ctx, invocations );
+    register_variables_loopchanged( ctx, changed );
+    bool old_in_init_expression = ctx->in_init_expression;
+    ctx->in_init_expression = true;
+.call generate_descent_call "    " elm->cond expression expression
+    ctx->in_init_expression = old_in_init_expression;
+    (void) flush_pending_assertions( ctx );
+    // We know that the conditions is evaluated at least once
+    pop_multitrip_programstate( ctx, tmsymbol_listNIL );
+    elm->cond = constant_fold_expression( elm->cond );
+
+    push_programstate( ctx, invocations );
+    register_variables_loopchanged( ctx, changed );
+    // Within the while body, the condition must be true, we can use
+    // that to register some facts.
+    register_condition( ctx, elm->cond, true );
+.call generate_descent_call "    " elm->body block block
+    rfre_tmsymbol_list( changed );
+    pop_possibletrip_programstate( ctx );
+
+    // After the while body has completed, the condition must be false,
+    // we can use that to register some facts.
+    register_condition( ctx, elm->cond, false );
+    return elm;
+}
+
+/* Rewrite action for 'SmtEach'. */
+static statement rewrite_SmtEach_action(
+ SmtEach elm,
+ rewrite_data *ctx
+)
+{
+    // Since nobody has done something interesting with this each,
+    // we may as well rewrite it to a normal block, so that we
+    // give a more precise analysis.
+    (void) rewrite_SmtEach_walker;
+    SmtBlock res = new_SmtBlock(
+	elm->label,
+	elm->orig,
+	elm->pragmas,
+	elm->on,
+	new_block(
+	    tmsymbolNIL,
+	    gen_origin(),
+	    new_Pragma_list(),
+	    new_OwnerExpr_list(),
+	    elm->statements
+	)
+    );
+    fre_statement( elm );
+.call generate_descent_call "    " res SmtBlock SmtBlock
+    return res;
+}
+
+/* Rewrite action for 'SmtSwitch'. */
+// For now we pretend that a switch statement is nothing else than a series of
+// if( x == <case-value> ){
+// }
+// statements
+static SmtSwitch rewrite_SmtSwitch_action(
+ SmtSwitch elm,
+ rewrite_data *ctx
+)
+{
+    switchCase_list e = elm->cases;
+
+    // For the sake of correct analysis, we must do our own walking of the
+    // switch statement.
+    (void) rewrite_SmtSwitch_walker;
+.call generate_descent_call "    " elm->on OwnerExpr_list OwnerExpr_list
+.call generate_descent_call "    " elm->cond expression expression
+    (void) flush_pending_assertions( ctx );
+    for( unsigned int ix=0; ix<e->sz; ix++ ){
+	switchCase sc = e->arr[ix];
+
+	push_programstate( ctx, false );
+.call generate_descent_call "	" sc switchCase switchCase
+	if( terminates_abruptly( ctx ) ){
+	    pop_programstate( ctx );
+	}
+	else {
+	    pop_possibletrip_programstate( ctx );
+	}
+    }
+    return elm;
+}
+
+/* Rewrite action for 'SmtForkall'. */
+static SmtForkall rewrite_SmtForkall_action(
+ SmtForkall elm,
+ rewrite_data *ctx
+)
+{
+.call generate_walker_call "    " elm SmtForkall SmtForkall
+    return elm;
+}
+
+/* Rewrite action for 'SmtGoto'. */
+static SmtGoto rewrite_SmtGoto_action(
+ SmtGoto elm,
+ rewrite_data *ctx
+)
+{
+.call generate_walker_call "    " elm SmtGoto SmtGoto
+    register_jumps( ctx );
+    return elm;
+}
+
+/* Rewrite action for 'SmtAssign'. */
+static SmtAssign rewrite_SmtAssign_action(
+ SmtAssign elm,
+ rewrite_data *ctx
+)
+{
+    bool old_in_pure_expression = ctx->in_pure_expression;
+    ctx->in_pure_expression = is_pure_location( elm->lhs ) && is_pure_expression( elm->rhs );
+.call generate_walker_call "    " elm SmtAssign SmtAssign
+    elm->rhs = constant_fold_expression( elm->rhs );
+    if( elm->lhs->tag == TAGLocName ){
+	register_variable_assignment( ctx, to_LocName(elm->lhs)->name, elm->rhs );
+    }
+    if( ctx->in_pure_expression ){
+	rfre_expression_list( ctx->notnull_asserted );
+        ctx->notnull_asserted = new_expression_list();
+    }
+    ctx->in_pure_expression = old_in_pure_expression;
+    return elm;
+}
+
+/* Rewrite action for 'SmtAssignOp'. */
+static SmtAssignOp rewrite_SmtAssignOp_action(
+ SmtAssignOp elm,
+ rewrite_data *ctx
+)
+{
+    bool old_in_pure_expression = ctx->in_pure_expression;
+    ctx->in_pure_expression = is_pure_location( elm->lhs ) && is_pure_expression( elm->rhs );
+.call generate_walker_call "    " elm SmtAssignOp SmtAssignOp
+    elm->rhs = constant_fold_expression( elm->rhs );
+    if( elm->lhs->tag == TAGLocName ){
+	ExprBinop x = new_ExprBinop(
+	    location_to_expression( elm->lhs ),
+	    elm->op,
+	    elm->rhs
+	);
+	register_variable_assignment( ctx, to_LocName(elm->lhs)->name, x );
+	x->right = expressionNIL;
+	rfre_expression( x );
+    }
+    if( ctx->in_pure_expression ){
+	rfre_expression_list( ctx->notnull_asserted );
+        ctx->notnull_asserted = new_expression_list();
+    }
+    ctx->in_pure_expression = old_in_pure_expression;
+    return elm;
+}
+
+/* Rewrite action for 'SmtReceive'. */
+static SmtReceive rewrite_SmtReceive_action(
+ SmtReceive elm,
+ rewrite_data *ctx
+)
+{
+.call generate_walker_call "    " elm SmtReceive SmtReceive
+    if( elm->elm->tag == TAGLocName ){
+	register_variable_receive( ctx, to_LocName(elm->elm)->name );
+    }
+    return elm;
+}
+
+/* Rewrite action for 'SmtAReceive'. */
+static SmtAReceive rewrite_SmtAReceive_action(
+ SmtAReceive elm,
+ rewrite_data *ctx
+)
+{
+.call generate_walker_call "    " elm SmtAReceive SmtAReceive
+    if( elm->elm->tag == TAGLocName ){
+	register_variable_receive( ctx, to_LocName(elm->elm)->name );
+    }
+    return elm;
+}
+
+/* Rewrite action for 'declaration'. */
+static declaration rewrite_declaration_action(
+ declaration elm,
+ rewrite_data *ctx
+)
+{
+    bool old_in_init_expression = ctx->in_init_expression;
+    ctx->in_init_expression = true;
+.call generate_walker_call "    " elm declaration declaration
+    ctx->in_init_expression = old_in_init_expression;
+    return elm;
+}
+
+/* Rewrite action for 'cardinality'. */
+static cardinality rewrite_cardinality_action(
+ cardinality elm,
+ rewrite_data *ctx
+)
+{
+    // TODO: we could be smarter for the first element of a cardinality
+    // list, but for now let's be conservative.
+    bool old_in_init_expression = ctx->in_init_expression;
+    ctx->in_init_expression = true;
+.call generate_walker_call "    " elm cardinality cardinality
+    ctx->in_init_expression = old_in_init_expression;
+    elm->lowerbound = constant_fold_expression( elm->lowerbound );
+    elm->upperbound = constant_fold_expression( elm->upperbound );
+    elm->stride = constant_fold_expression( elm->stride );
+    (void) flush_pending_assertions( ctx );
+    register_cardinality( ctx, elm );
+    return elm;
+}
+
+/* Rewrite action for 'secondary'. */
+static secondary rewrite_secondary_action( secondary elm, rewrite_data *ctx )
+{
+.call generate_walker_call "    " elm secondary secondary
+    elm->lowerbound = constant_fold_expression( elm->lowerbound );
+    elm->stride = constant_fold_expression( elm->stride );
+    (void) flush_pending_assertions( ctx );
+    register_secondary( ctx, elm );
+    return elm;
+}
+
+/* Rewrite action for 'SmtThrow'. */
+static SmtThrow rewrite_SmtThrow_action(
+ SmtThrow elm,
+ rewrite_data *ctx
+)
+{
+.call generate_walker_call "    " elm SmtThrow SmtThrow
+    register_throws_exception( ctx );
+    return elm;
+}
+
+/* Rewrite action for 'SmtRethrow'. */
+static SmtRethrow rewrite_SmtRethrow_action(
+ SmtRethrow elm,
+ rewrite_data *ctx
+)
+{
+.call generate_walker_call "    " elm SmtRethrow SmtRethrow
+    register_throws_exception( ctx );
+    return elm;
+}
+
+/* Rewrite action for 'SmtReturn'. */
+static SmtReturn rewrite_SmtReturn_action(
+ SmtReturn elm,
+ rewrite_data *ctx
+)
+{
+.call generate_walker_call "    " elm SmtReturn SmtReturn
+    register_returns( ctx );
+    return elm;
+}
+
+/* Rewrite action for 'SmtValueReturn'. */
+static SmtValueReturn rewrite_SmtValueReturn_action(
+ SmtValueReturn elm,
+ rewrite_data *ctx
+)
+{
+.call generate_walker_call "    " elm SmtValueReturn SmtValueReturn
+    register_returns( ctx );
+    return elm;
+}
+
+/* Rewrite action for 'declaration_list'.
+ * Put all declarations that have spun off from the declarations
+ * in the list before the declarations they come from.
+ */
+static declaration_list rewrite_declaration_list_action(
+ declaration_list dl,
+ rewrite_data *ctx
+)
+{
+    (void) rewrite_declaration_list_walker;
+    unsigned int ix = 0;
+    while( ix<dl->sz ){
+	unsigned int endmark = dl->sz;
+.call generate_descent_call "	" dl->arr[ix] declaration declaration
+	if( endmark<dl->sz ){
+	    declaration_list the_defs;
+	    // Move all the defn's we have appended in front,
+	    // so that the declaration order is not violated.
+	    dl = extractlist_declaration_list( dl, endmark, dl->sz, &the_defs );
+	    unsigned int new_ix = ix+the_defs->sz+1;
+	    dl = insertlist_declaration_list( dl, ix, the_defs );
+	    ix = new_ix;
+	}
+	else {
+	    ix++;
+	}
+    }
+    return dl;
+}
+
+/* Rewrite action for 'LocWrapper'. */
+static location rewrite_LocWrapper_action(
+ LocWrapper elm,
+ rewrite_data *ctx
+)
+{
+    if( elm->pragmas == Pragma_listNIL ){
+	elm->pragmas = new_Pragma_list();
+    }
+    if( elm->on == OwnerExpr_listNIL ){
+	elm->on = new_OwnerExpr_list();
+    }
+    location l = elm->l;
+
+    /* Fold all nested wrapper locations into one long list. */
+    while( l->tag == TAGLocWrapper ){
+	location newl;
+
+	if( to_LocWrapper(l)->pragmas != Pragma_listNIL ){
+	    elm->pragmas = concat_Pragma_list(
+		elm->pragmas,
+		to_LocWrapper(l)->pragmas
+	    );
+	}
+	if( to_LocWrapper(l)->on ){
+	    elm->on = concat_OwnerExpr_list( elm->on, to_LocWrapper(l)->on );
+	}
+	elm->l = to_LocWrapper(l)->l;
+	newl = elm->l;
+	fre_location( l );
+	l = newl;
+    }
+.call generate_walker_call "    " elm LocWrapper LocWrapper
+    return elm;
+}
+
+static expression rewrite_ExprName_action( ExprName elm, rewrite_data *ctx )
+{
+.call generate_walker_call "    " elm ExprName ExprName
+    AbstractValue v = abstract_value( elm, ctx->defs, ctx->states );
+    expression res;
+
+    if(
+	v->constant &&
+	v->value != expressionNIL &&
+	v->value->tag != TAGExprNull
+    ){
+	res = v->value;
+	v->value = elm;	// This will free it down below.
+    }
+    else {
+	res = elm;
+    }
+    rfre_AbstractValue( v );
+    return res;
+}
+
+static expression rewrite_ExprIf_action( ExprIf elm, rewrite_data *ctx )
+{
+    bool old_cond_eval = ctx->conditional_evaluation;
+    ctx->conditional_evaluation = true;
+.call generate_walker_call "    " elm ExprIf ExprIf
+    ctx->conditional_evaluation = old_cond_eval;
+    expression res = constant_fold_expression( elm );
+    if( res->tag != TAGExprIf && !ctx->conditional_evaluation ){
+	// Constant folding has eliminated the ExprIf. We can now record
+	// the analysis facts without conditional_evaluation set to true.
+.call generate_descent_call "	" res expression expression
+    }
+    return res;
+}
+
+static expression rewrite_ExprBinop_action( ExprBinop elm, rewrite_data *ctx )
+{
+    bool old_cond_eval = ctx->conditional_evaluation;
+    if( elm->optor == BINOP_SHORTAND || elm->optor == BINOP_SHORTOR ){
+	ctx->conditional_evaluation = true;
+    }
+.call generate_walker_call "    " elm ExprBinop ExprBinop
+    ctx->conditional_evaluation = old_cond_eval;
+    return elm;
+}
+
+static expression rewrite_ExprReduction_action( ExprReduction elm, rewrite_data *ctx )
+{
+    bool old_cond_eval = ctx->conditional_evaluation;
+
+    if( elm->optor == BINOP_SHORTAND || elm->optor == BINOP_SHORTOR ){
+	// Only be troublesome if this is a shortcircuit operator.
+	ctx->conditional_evaluation = true;
+    }
+.call generate_walker_call "    " elm ExprReduction ExprReduction
+    ctx->conditional_evaluation = old_cond_eval;
+    return elm;
+}
+
+/* Given a expression, rewrite it to the final size for output. */
+static expression rewrite_ExprWrapper_action(
+ ExprWrapper elm,
+ rewrite_data *ctx
+)
+{
+    if( elm->pragmas == Pragma_listNIL ){
+	elm->pragmas = new_Pragma_list();
+    }
+    if( elm->on == OwnerExpr_listNIL ){
+	elm->on = new_OwnerExpr_list();
+    }
+    expression x = elm->x;
+
+    /* Fold all nested wrapper expressions into one long list. */
+    while( x->tag == TAGExprWrapper ){
+	expression newx;
+
+	if( to_ExprWrapper(x)->pragmas != Pragma_listNIL ){
+	    elm->pragmas = concat_Pragma_list(
+		elm->pragmas,
+		to_ExprWrapper(x)->pragmas
+	    );
+	}
+	if( to_ExprWrapper(x)->on ){
+	    elm->on = concat_OwnerExpr_list( elm->on, to_ExprWrapper(x)->on );
+	}
+	elm->x = to_ExprWrapper(x)->x;
+	newx = elm->x;
+	fre_expression( x );
+	x = newx;
+    }
+.call generate_walker_call "    " elm ExprWrapper ExprWrapper
+    return elm;
+}
+
+/* Rewrite action for 'ExprShape'. */
+static ExprShape rewrite_ExprShape_action( ExprShape elm, rewrite_data *ctx )
+{
+.call generate_walker_call "    " elm ExprShape ExprShape
+    if( ctx->in_init_expression ){
+	// These will not be rewritten by the rule for ExprArray,
+	// so we have to do something ourselves.
+	origsymbol array_name = gen_origsymbol( "array" );
+	const type t = derive_type_expression( ctx->defs, originNIL, elm->arr );
+
+	if( ctx->scopenm == tmsymbolNIL ){
+	    ctx->defs = append_declaration_list(
+		ctx->defs,
+		new_DeclGlobalVariable(
+		    rdup_origsymbol( array_name ),
+		    MOD_FINAL,
+		    new_Pragma_list(),
+		    t,
+		    new_OptExpr( elm->arr )
+		)
+	    );
+	}
+	else {
+	    if( ctx->scopenm == tmsymbolNIL ){
+		ctx->scopenm = gen_tmsymbol( "scope" );
+	    }
+	    ctx->defs = append_declaration_list(
+		ctx->defs,
+		new_DeclLocalVariable(
+		    rdup_origsymbol( array_name ),
+		    MOD_FINAL,
+		    new_Pragma_list(),
+		    rdup_tmsymbol( ctx->scopenm ),
+		    t,
+		    new_OptExpr( elm->arr )
+		)
+	    );
+	}
+	elm->arr = new_ExprName( array_name );
+
+    }
+    return elm;
+}
+
+/* Rewrite action for 'ExprArray'. */
+static expression rewrite_ExprArray_action( ExprArray elm, rewrite_data *ctx )
+{
+    expression res;
+
+.call generate_walker_call "    " elm ExprArray ExprArray
+    // Do not rewrite array expressions in initializations, since they
+    // map naturally to C initialized arrays.
+    if( !ctx->in_init_expression ){
+	const type t = derive_type_expression( ctx->defs, originNIL, elm );
+	origsymbol array_name;
+
+	if( ctx->scopenm == tmsymbolNIL ){
+	    ctx->scopenm = gen_tmsymbol( "scope" );
+	}
+	array_name = gen_origsymbol( "array" );
+	ctx->defs = append_declaration_list(
+	    ctx->defs,
+	    new_DeclLocalVariable(
+		rdup_origsymbol( array_name ),
+		MOD_FINAL,
+		new_Pragma_list(),
+		rdup_tmsymbol( ctx->scopenm ),
+		t,
+		new_OptExpr( elm )
+	    )
+	);
+	res = new_ExprName( array_name );
+    }
+    else {
+	res = elm;
+    }
+    return res;
+}
+
+/* Rewrite action for 'ExprRecord'. */
+static ExprRecord rewrite_ExprRecord_action( ExprRecord elm, rewrite_data *ctx )
+{
+.call generate_walker_call "    " elm ExprRecord ExprRecord
+    type t = derive_type_expression( ctx->defs, originNIL, elm );
+    assert( t->tag == TAGTypeRecord );
+    register_record( ctx->defs, to_TypeRecord(t)->fields );
+    rfre_type( t );
+    return elm;
+}
+
+/* Rewrite action for 'ExprWhere': break it out into a separate block,
+ * and return the new variable that represents the value of the where.
+ */
+static expression rewrite_ExprWhere_action( ExprWhere elm, rewrite_data *ctx )
+{
+    if( ctx->in_init_expression ){
+	sprintf( errarg, "scope name is `%s'", elm->scope->name );
+        error( "where expression in initialization not allowed" );
+	return elm;
+    }
+.call generate_walker_call "    " elm ExprWhere ExprWhere
+    // Translate the where expression as follows:
+    // - Construct a new statement block that will receive the
+    // local declarations of the where.
+    // - Put in this block an assignment of the where expression to
+    // a tempo variable.
+    // return a reference to the tempo as the new expression.
+    type xt = derive_type_expression( ctx->defs, originNIL, elm->x );
+    if( ctx->scopenm == tmsymbolNIL ){
+	ctx->scopenm = gen_tmsymbol( "scope" );
+    }
+    origsymbol where_name = gen_origsymbol( "where" );
+    declaration d = new_DeclLocalVariable(
+	rdup_origsymbol( where_name ),
+	0,
+	new_Pragma_list(),
+	rdup_tmsymbol( ctx->scopenm ),
+	xt,
+	new_OptExprNone()
+    );
+    ctx->defs = append_declaration_list( ctx->defs, d );
+    block body = new_block(
+	elm->scope,
+	gen_origin(),
+	new_Pragma_list(),
+	new_OwnerExpr_list(),
+	append_statement_list(
+	    new_statement_list(),
+	    new_SmtAssign(
+		origsymbolNIL,
+		gen_origin(),
+		new_Pragma_list(),
+		new_OwnerExpr_list(),
+		new_LocName( rdup_origsymbol( where_name ) ),
+		elm->x
+	    )
+	)
+    );
+    (void) flush_pending_assertions( ctx );
+    ctx->lets = append_statement_list(
+	ctx->lets,
+	new_SmtBlock(
+	    origsymbolNIL,
+	    gen_origin(),
+	    new_Pragma_list(),
+	    new_OwnerExpr_list(),
+	    body
+	)
+    );
+    fre_expression( elm );
+    return new_ExprName( where_name );
+}
+
+/* Rewrite action for 'LocWhere': break it out into a separate block,
+ * and return the new variable that represents the value of the where.
+ */
+static location rewrite_LocWhere_action( LocWhere elm, rewrite_data *ctx )
+{
+.call generate_walker_call "    " elm LocWhere LocWhere
+    // Translate the where location as follows:
+    // - Construct a new statement block that will receive the
+    // local declarations of the where.
+    // - Put in this block an assignment of the where expression to
+    // a tempo variable.
+    // return a reference to the tempo as the new expression.
+    type xt = derive_type_location( ctx->defs, originNIL, elm->l );
+    if( ctx->scopenm == tmsymbolNIL ){
+	ctx->scopenm = gen_tmsymbol( "scope" );
+    }
+    origsymbol where_name = gen_origsymbol( "where" );
+    declaration d = new_DeclLocalVariable(
+	rdup_origsymbol( where_name ),
+	0,
+	new_Pragma_list(),
+	rdup_tmsymbol( ctx->scopenm ),
+	xt,
+	new_OptExprNone()
+    );
+    ctx->defs = append_declaration_list( ctx->defs, d );
+    block body = new_block(
+	rdup_tmsymbol( elm->scope ),
+	gen_origin(),
+	new_Pragma_list(),
+	new_OwnerExpr_list(),
+	append_statement_list(
+	    new_statement_list(),
+	    new_SmtAssign(
+		origsymbolNIL,
+		gen_origin(),
+		new_Pragma_list(),
+		new_OwnerExpr_list(),
+		new_LocName( rdup_origsymbol( where_name ) ),
+		location_to_expression( elm->l )
+	    )
+	)
+    );
+    (void) flush_pending_assertions( ctx );
+    ctx->lets = append_statement_list(
+	ctx->lets,
+	new_SmtBlock(
+	    origsymbolNIL,
+	    gen_origin(),
+	    new_Pragma_list(),
+	    new_OwnerExpr_list(),
+	    body
+	)
+    );
+    rfre_location( elm );
+    return new_LocName( where_name );
+}
+
+/* Rewrite action for 'statement'. */
+static statement rewrite_statement_action( statement elm, rewrite_data *ctx )
+{
+    statement_list old_lets = ctx->lets;
+    tmsymbol old_scopenm = ctx->scopenm;
+
+    ctx->lets = new_statement_list();
+    ctx->scopenm = tmsymbolNIL;
+    if( elm->label != origsymbolNIL ){
+	// Somebody may jump to our label. Forget everyhting we have
+	// registered at the top level.
+	// TODO: be somewhat more subtle than this.
+	clear_top_programstate( ctx );
+    }
+.call generate_walker_call "    " elm statement statement
+    bool terminates = flush_pending_assertions( ctx );
+    if( terminates ){
+        // One of the assertions always triggers. Don't bother with
+	// the original statement, but replace it with an empty statement.
+	statement res = new_SmtEmpty(
+	    elm->label,
+	    elm->orig,
+	    elm->pragmas,
+	    elm->on
+	);
+	elm->label = origsymbolNIL;
+	elm->orig = originNIL;
+	elm->pragmas = Pragma_listNIL;
+	elm->on = OwnerExpr_listNIL;
+	rfre_statement( elm );
+	elm = res;
+    }
+    if( ctx->lets->sz != 0 || ctx->scopenm != tmsymbolNIL ){
+.call generate_descent_call "	" ctx->lets statement_list statement_list
+	origsymbol lbl = elm->label;
+	elm->label = origsymbolNIL;
+	ctx->lets = append_statement_list( ctx->lets, elm );
+	elm = new_SmtPseudoBlock(
+	    lbl,
+	    gen_origin(),
+	    new_Pragma_list(),
+	    new_OwnerExpr_list(),
+	    new_block(
+		ctx->scopenm,
+		gen_origin(),
+		new_Pragma_list(),
+		new_OwnerExpr_list(),
+		ctx->lets
+	    )
+	);
+    }
+    else {
+	rfre_statement_list( ctx->lets );
+    }
+    ctx->lets = old_lets;
+    ctx->scopenm = old_scopenm;
+    return elm;
+}
+
+static statement_list rewrite_statement_list_action( statement_list sl, rewrite_data *ctx )
+{
+    unsigned int ix = 0;
+
+    // We want to do our own walking, since it will allow us to do some
+    // smarter optimizations.
+    (void) rewrite_statement_list_walker;
+
+    while( ix<sl->sz ){
+.call generate_descent_call "	" sl->arr[ix] statement statement
+	statement smt = sl->arr[ix];
+
+	if( smt->tag == TAGSmtEmpty && smt->label == origsymbolNIL ){
+	    // We may as well weed out an empty statement.
+	    sl = delete_statement_list( sl, ix );
+	    continue;
+	}
+	if(
+	    smt->label == origsymbolNIL &&
+	    smt->tag == TAGSmtExpression &&
+	    !maybe_has_sideeffect( to_SmtExpression(smt)->x, 0 )
+	){
+	    // We may as well weed out an expression statement without
+	    // side-effects.
+	    sl = delete_statement_list( sl, ix );
+	    continue;
+	}
+	if( smt->tag == TAGSmtBlock ){
+	    block body = to_SmtBlock(smt)->body;
+
+	    if( body->scope == tmsymbolNIL && body->statements->sz == 0 ){
+		// This block is utterly useless, we may as well delete it.
+		sl = delete_statement_list( sl, ix );
+		continue;
+	    }
+	    if( body->scope == tmsymbolNIL && !perhaps_jumps( ctx ) ){
+		// Since body->scope is NIL we can in some circumstances
+		// inline this block. However, some blocks are merely
+		// there to let a 'goto' jump out of it, and loose the
+		// local declarations, but since nobody wants to jump, that's
+		// not possible here
+		statement_list bsl = body->statements;
+		body->statements = statement_listNIL;
+		sl = delete_statement_list( sl, ix );
+		unsigned int step = bsl->sz;
+		sl = insertlist_statement_list( sl, ix, bsl );
+		ix += step;
+		continue;
+	    }
+	}
+	if( terminates_abruptly( ctx ) ){
+	    // Execution of the following statements can not be caused
+	    // by the completion of execution of the current statement,
+	    // so the only way that they could ever be used is if someone
+	    // jumps to it. Therefore,
+	    // zap all subsequent statements up to the first one with a label.
+	    ix++;
+	    while( ix<sl->sz && sl->arr[ix]->label == origsymbolNIL ){
+		tmsymbol_list scopes = collectscopes_statement( sl->arr[ix] );
+
+		mark_eliminated( ctx->defs, scopes );
+		rfre_tmsymbol_list( scopes );
+		sl = delete_statement_list( sl, ix );
+	    }
+	    continue;
+	}
+	ix++;
+    }
+    return sl;
+}
+
+// Rewrite action for 'ExprFunctionCall'.
+// Force a cast on all calls to external functions.
+static expression rewrite_ExprFunctionCall_action(
+ ExprFunctionCall elm,
+ rewrite_data *ctx
+)
+{
+.call generate_walker_call "    " elm ExprFunctionCall ExprFunctionCall
+    expression res = elm;
+    if( elm->function->tag == TAGExprName ){
+	origsymbol fnname = to_ExprName( elm->function )->name;
+	const declaration decl = lookup_declaration( ctx->defs, fnname );
+	if( decl->tag == TAGDeclExternalFunction ){
+	    res = new_ExprCast(
+		rdup_type( to_DeclExternalFunction(decl)->rettype ),
+		res
+	    );
+	}
+    }
+    return res;
+}
+
+/* Rewrite action for 'TypeFunction'. */
+static TypeFunction rewrite_TypeFunction_action(
+ TypeFunction elm,
+ rewrite_data *ctx
+)
+{
+.call generate_walker_call "    " elm TypeFunction TypeFunction
+    register_TypeFunction( ctx->defs, elm->formals, elm->rettype );
+    return elm;
+}
+
+/* Rewrite action for 'TypeProcedure'. */
+static TypeProcedure rewrite_TypeProcedure_action(
+ TypeProcedure elm,
+ rewrite_data *ctx
+)
+{
+.call generate_walker_call "    " elm TypeProcedure TypeProcedure
+    register_TypeProcedure( ctx->defs, elm->formals );
+    return elm;
+}
+
+/* Rewrite action for 'DeclRecord'. */
+static DeclRecord rewrite_DeclRecord_action(
+ DeclRecord elm,
+ rewrite_data *ctx
+)
+{
+.call generate_walker_call "    " elm DeclRecord DeclRecord
+    register_record( ctx->defs, elm->fields );
+    return elm;
+}
+
+/* Rewrite action for 'DeclGlobalVariable'. */
+static DeclGlobalVariable rewrite_DeclGlobalVariable_action(
+ DeclGlobalVariable elm,
+ rewrite_data *ctx
+)
+{
+.call generate_walker_call "    " elm DeclGlobalVariable DeclGlobalVariable
+    if( elm->init->tag == TAGOptExpr ){
+	if( !is_initialization_expression( elm->init ) ){
+	    statement smt = new_SmtAssign(
+		origsymbolNIL,
+		rdup_origin( elm->name->orig ),
+		new_Pragma_list(),
+		new_OwnerExpr_list(),
+		new_LocName( rdup_origsymbol( elm->name ) ),
+		to_OptExpr(elm->init)->x
+	    );
+	    fre_optexpression( elm->init );
+	    elm->init = new_OptExprNone();
+	    elm->flags &= ~MOD_FINAL;
+	    (void) flush_pending_assertions( ctx );
+	    ctx->lets = append_statement_list( ctx->lets, smt );
+	}
+    }
+    return elm;
+}
+
+/* Rewrite action for 'DeclLocalVariable'. */
+static DeclLocalVariable rewrite_DeclLocalVariable_action(
+ DeclLocalVariable elm,
+ rewrite_data *ctx
+)
+{
+    tmsymbol old_scopenm = ctx->scopenm;
+    ctx->scopenm = elm->scope;
+.call generate_walker_call "    " elm DeclLocalVariable DeclLocalVariable
+    ctx->scopenm = old_scopenm;
+    return elm;
+}
+
+/* Rewrite action for 'DeclFunction'. */
+static DeclFunction rewrite_DeclFunction_action(
+ DeclFunction elm,
+ rewrite_data *ctx
+)
+{
+    tmsymbol *old_notnull_label_ptr = ctx->notnull_label_ptr;
+    tmsymbol *old_bounds_label_ptr = ctx->bounds_label_ptr;
+    tmsymbol notnulllbl = tmsymbolNIL;
+    tmsymbol boundslbl = tmsymbolNIL;
+    ctx->notnull_label_ptr = &notnulllbl;
+    ctx->bounds_label_ptr = &boundslbl;
+
+    push_programstate( ctx, false );
+    register_FormalParameter_list( ctx, elm->parms );
+.call generate_walker_call "    " elm DeclFunction DeclFunction
+    if( notnulllbl != tmsymbolNIL || boundslbl != tmsymbolNIL ){
+	// Somebody tries to jump to a notnull or bounds label, so provide a
+	// target for that jump.
+
+	statement_list body = elm->body->statements;
+
+	if( body->sz != 0 && !is_terminating_statement( body->arr[body->sz-1] ) ){
+	    // For a function this is suspicious, since execution
+	    // cannot simply fall off the end of the function body.
+	    // We cannot be bothered to sort that out here, so we just
+	    // put in a return of our own, and put our stuff after it.
+	    body = append_statement_list(
+		body,
+		new_SmtValueReturn(
+		    origsymbolNIL,
+		    gen_origin(),
+		    new_Pragma_list(),
+		    new_OwnerExpr_list(),
+		    build_default_expression( ctx->defs, elm->rettype )
+		)
+	    );
+	}
+	statement_list newbody = new_statement_list();
+	newbody = append_statement_list(
+	    newbody,
+	    new_SmtBlock(
+		origsymbolNIL,
+		gen_origin(),
+		new_Pragma_list(),
+		new_OwnerExpr_list(),
+		elm->body
+	    )
+	);
+
+	if( notnulllbl != tmsymbolNIL ){
+	    statement call = build_event_call( ctx, notnulllbl, "VnusEventNullPointer" );
+	    newbody = append_statement_list( newbody, call );
+
+	    // Now provide a value return statement to terminate the function,
+	    // or some C compilers will sulk.
+	    newbody = append_statement_list(
+		newbody,
+		new_SmtValueReturn(
+		    origsymbolNIL,
+		    gen_origin(),
+		    new_Pragma_list(),
+		    new_OwnerExpr_list(),
+		    build_default_expression( ctx->defs, elm->rettype )
+		)
+	    );
+	}
+	if( boundslbl != tmsymbolNIL ){
+	    statement call = build_event_call( ctx, boundslbl, "VnusEventArrayBoundViolated" );
+	    newbody = append_statement_list( newbody, call );
+
+	    // Now provide a value return statement to terminate the function,
+	    // or some C compilers will sulk.
+	    newbody = append_statement_list(
+		newbody,
+		new_SmtValueReturn(
+		    origsymbolNIL,
+		    gen_origin(),
+		    new_Pragma_list(),
+		    new_OwnerExpr_list(),
+		    build_default_expression( ctx->defs, elm->rettype )
+		)
+	    );
+	}
+
+	// What we have brewed is the new body of the function...
+	elm->body = new_block(
+	    tmsymbolNIL,
+	    gen_origin(),
+	    new_Pragma_list(),
+	    new_OwnerExpr_list(),
+	    newbody
+	);
+    }
+    ctx->notnull_label_ptr = old_notnull_label_ptr;
+    ctx->bounds_label_ptr = old_bounds_label_ptr;
+    // TODO: see if we can do something useful with the
+    // program state we've accumulated.
+    pop_programstate( ctx );
+    return elm;
+}
+
+/* Rewrite action for 'DeclProcedure'. */
+static DeclProcedure rewrite_DeclProcedure_action(
+ DeclProcedure elm,
+ rewrite_data *ctx
+)
+{
+    tmsymbol *old_notnull_label_ptr = ctx->notnull_label_ptr;
+    tmsymbol *old_bounds_label_ptr = ctx->bounds_label_ptr;
+    tmsymbol notnulllbl = tmsymbolNIL;
+    tmsymbol boundslbl = tmsymbolNIL;
+
+    ctx->notnull_label_ptr = &notnulllbl;
+    ctx->bounds_label_ptr = &boundslbl;
+    push_programstate( ctx, false );
+    register_FormalParameter_list( ctx, elm->parms );
+.call generate_walker_call "    " elm DeclProcedure DeclProcedure
+    if( notnulllbl != tmsymbolNIL || boundslbl != tmsymbolNIL ){
+	// Somebody tries to jump to a notnull label, so provide a
+	// target for that jump.
+
+	statement_list body = elm->body->statements;
+
+	if( body->sz != 0 && !is_terminating_statement( body->arr[body->sz-1] ) ){
+	    // There is no 'return' as last statement, so provide
+	    // one.
+	    body = append_statement_list(
+		body,
+		new_SmtReturn(
+		    origsymbolNIL,
+		    gen_origin(),
+		    new_Pragma_list(),
+		    new_OwnerExpr_list()
+		)
+	    );
+	}
+	statement_list newbody = new_statement_list();
+	newbody = append_statement_list(
+	    newbody,
+	    new_SmtBlock(
+		origsymbolNIL,
+		gen_origin(),
+		new_Pragma_list(),
+		new_OwnerExpr_list(),
+		elm->body
+	    )
+	);
+
+	if( notnulllbl != tmsymbolNIL ){
+	    statement call = build_event_call( ctx, notnulllbl, "VnusEventNullPointer" );
+	    newbody = append_statement_list( newbody, call );
+
+	    if( boundslbl != tmsymbolNIL ){
+		newbody = append_statement_list(
+		    newbody,
+		    new_SmtReturn(
+			origsymbolNIL,
+			gen_origin(),
+			new_Pragma_list(),
+			new_OwnerExpr_list()
+		    )
+		);
+	    }
+	}
+	if( boundslbl != tmsymbolNIL ){
+	    statement call = build_event_call( ctx, boundslbl, "VnusEventArrayBoundViolated" );
+	    newbody = append_statement_list( newbody, call );
+	}
+
+	elm->body = new_block(
+	    tmsymbolNIL,
+	    gen_origin(),
+	    new_Pragma_list(),
+	    new_OwnerExpr_list(),
+	    newbody
+	);
+    }
+    ctx->notnull_label_ptr = old_notnull_label_ptr;
+    ctx->bounds_label_ptr = old_bounds_label_ptr;
+    // TODO: see if we can do something useful with the
+    // program state we've accumulated.
+    pop_programstate( ctx );
+    return elm;
+}
+
+/* Rewrite action for 'SmtCatch'. */
+static SmtCatch rewrite_SmtCatch_action(
+ SmtCatch elm,
+ rewrite_data *ctx
+)
+{
+    if( elm == SmtCatchNIL ){
+        return elm;
+    }
+    tmsymbol *old_notnull_label_ptr = ctx->notnull_label_ptr;
+    tmsymbol *old_bounds_label_ptr = ctx->bounds_label_ptr;
+
+    ctx->notnull_label_ptr = (tmsymbol *) NULL;	// We're not able to optimize here.
+    ctx->bounds_label_ptr = (tmsymbol *) NULL;	// We're not able to optimize here.
+
+    register_FormalParameter( ctx, elm->elm );
+    register_catch_variable( ctx, elm->elm );
+    // We do the walker function by hand, since we want to handle our
+    // analysis stack halfway through.
+    (void) rewrite_SmtCatch_walker;
+.call generate_descent_call "    " elm->on OwnerExpr_list OwnerExpr_list
+    push_programstate( ctx, false );
+.call generate_descent_call "    " elm->body block block
+    ProgramState bodystate = extract_programstate( ctx );
+    merge_possibletrip_programstate( ctx, bodystate );
+    // TODO: see if the block in fact may throw an exception. If not
+    // we may as well rip out the entire Catch statement.
+
+    push_programstate( ctx, false );
+.call generate_descent_call "    " elm->handler block block
+    if( terminates_abruptly( ctx ) ){
+	// Since the exception handlers terminate abruptly, we know
+	// that once we are past this try block no exception was caught
+	// by a handler (or we wouldn't be here).
+	// It is therefore safe to assume that all of the try body
+	// was executed.
+	merge_onetrip_programstate( ctx, bodystate );
+
+	// Throw away analysis info of the catch block.
+	pop_programstate( ctx );
+    }
+    else {
+	// The exception handlers may, or may not, have been executed...
+	pop_possibletrip_programstate( ctx );
+    }
+    rfre_ProgramState( bodystate );
+#if 0
+    // For the moment don't do anything smart, since we trigger an internal
+    // compiler error of the gcc 2.95.2 compiler.
+    tmsymbol notnulllbl = tmsymbolNIL;
+
+    ctx->notnull_label_ptr = &notnulllbl;
+.call generate_descent_call "    " elm->body block block
+    if( notnulllbl != tmsymbolNIL ){
+	// Somebody tries to jump to a notnull label, so provide a
+	// target for that jump.
+
+	// Normal execution of the block must not execute the exception
+	// invocation, so we'll have to skip over this statement.
+	// Not elegant, but effective.
+	tmsymbol skipnm = gen_tmsymbol( "skip" );
+	SmtGoto skipjump = build_SmtGoto( skipnm );
+	elm->body->statements = append_statement_list( elm->body->statements, skipjump );
+
+	statement_list newbody = new_statement_list();
+	newbody = append_statement_list(
+	    newbody,
+	    new_SmtBlock(
+		origsymbolNIL,
+		gen_origin(),
+		new_Pragma_list(),
+		new_OwnerExpr_list(),
+		elm->body
+	    )
+	);
+
+	// We now know for sure that normal execution cannot reach the
+	// statements we will append here.
+	statement call = build_event_call( ctx, notnulllbl, "VnusEventNullPointer" );
+	newbody = append_statement_list( newbody, call );
+
+	// This is where normal execution jumps to...
+	statement skiptarget = build_label_target( skipnm );
+	newbody = append_statement_list( newbody, skiptarget );
+
+	elm->body = new_block(
+	    tmsymbolNIL,
+	    gen_origin(),
+	    new_Pragma_list(),
+	    new_OwnerExpr_list(),
+	    newbody
+	);
+    }
+#endif
+    ctx->notnull_label_ptr = old_notnull_label_ptr;
+    ctx->bounds_label_ptr = old_bounds_label_ptr;
+    return elm;
+}
+
+/* Given a cast expression 'elm', return
+ * a version where trivial casts have been removed, and record casts
+ * have been expanded.
+ */
+static expression rewrite_ExprCast_action( ExprCast elm, rewrite_data *ctx )
+{
+    expression res = elm;
+.call generate_walker_call "    " elm ExprCast ExprCast
+    if( elm->x->tag == TAGExprCast ){
+        // Nested cast, see if we can do something clever.
+	ExprCast ne = to_ExprCast( elm->x );
+	if(
+	    ne->x->tag == TAGExprNull ||
+	    is_equivalent_type( ctx->defs, elm->t, ne->t )
+	){
+	    // We have (t) (t1) null or (t) (t) x
+	    // Rewrite to (t) null or (t) x respectively.
+	    elm->x = ne->x;
+	    ne->x = expressionNIL;
+	    rfre_expression( ne );
+	}
+
+    }
+    if( is_record_type( elm->t ) ){
+	// Try to remove redundant record casts, since they are expensive.
+	// But only for record casts, since others may be dangerous.
+	type xt = derive_type_expression( ctx->defs, originNIL, elm->x );
+	if( is_equivalent_type( ctx->defs, elm->t, xt ) ){
+	    expression nw = elm->x;
+
+	    // Cast is redundant. Zap.
+	    rfre_type( elm->t );
+	    fre_expression( elm );
+	    rfre_type( xt );
+	    return nw;
+	}
+	origsymbol val = gen_origsymbol( "rectmp" );
+	field_list to_fields = get_record_fields( ctx->defs, elm->t );
+	field_list from_fields = get_record_fields( ctx->defs, xt );
+
+	if( ctx->scopenm == tmsymbolNIL ){
+	    ctx->scopenm = gen_tmsymbol( "scope" );
+	}
+	ctx->defs = append_declaration_list(
+	    ctx->defs,
+	    new_DeclLocalVariable(
+		val,
+		0,
+		new_Pragma_list(),
+		rdup_tmsymbol( ctx->scopenm ),
+		rdup_type( xt ),
+		new_OptExpr( rdup_expression( elm->x ) )
+	    )
+	);
+
+	expression_list xl = setroom_expression_list(
+	    new_expression_list(),
+	    to_fields->sz
+	);
+	for( unsigned int ix=0; ix<to_fields->sz; ix++ ){
+	    type t_new = to_fields->arr[ix]->elmtype;
+	    type t_old = from_fields->arr[ix]->elmtype;
+
+	    expression x = new_ExprField(
+		new_ExprName( rdup_origsymbol( val ) ),
+		rdup_origsymbol( from_fields->arr[ix]->name )
+	    );
+	    if( !is_equivalent_type( ctx->defs, t_old, t_new ) ){
+		x = new_ExprCast( rdup_type( t_new ), x );
+.call generate_descent_call "		" x ExprCast expression
+	    }
+	    xl = append_expression_list( xl, x );
+	}
+	rfre_field_list( to_fields );
+	rfre_field_list( from_fields );
+	rfre_expression( elm );
+	res = new_ExprRecord( xl );
+	rfre_type( xt );
+    }
+    else {
+    }
+    return res;
+}
+
+/* Given a GetSize expression, rewrite it.
+ * Replace all GetSize expressions that can be rewritten.
+ */
+static expression rewrite_ExprGetSize_action( ExprGetSize elm, rewrite_data *ctx )
+{
+.call generate_walker_call "    " elm ExprGetSize ExprGetSize
+    if( elm->shape->tag == TAGExprDeref ){
+	const_ExprDeref dx = to_const_ExprDeref( elm->shape );
+	if( dx->ref->tag == TAGExprName ){
+	    tmsymbol nm = to_ExprName(dx->ref)->name->sym;
+
+	    expression fastexpr = lookup_fast_expression( ctx, nm, elm );
+	    if( fastexpr != expressionNIL ){
+		rfre_expression( elm );
+		return fastexpr;
+	    }
+	}
+    }
+    return elm;
+}
+
+/* Given a not null assert expression 'elm', try to eliminate it or rewrite
+ * it into an explicit null test and a goto to the right target.
+ */
+static expression rewrite_ExprNotNullAssert_action( ExprNotNullAssert elm, rewrite_data *ctx )
+{
+    expression res;
+
+.call generate_walker_call "    " elm ExprNotNullAssert ExprNotNullAssert
+    AFLAG z = is_zero( elm->x, ctx->defs, ctx->states );
+    if( z == AF_NO ){
+	// Eliminate the null check, since it is useless.
+	res = elm->x;
+	elm->x = expressionNIL;
+	rfre_expression( elm );
+	return res;
+    }
+    if( ctx->in_pure_expression ){
+        // We can afford to take a look at the completed notnull assertions
+	if( occurs_expression_list( ctx->notnull_asserted, elm->x ) ){
+	    // We don't have to do this check.
+	    res = elm->x;
+	    elm->x = expressionNIL;
+	    rfre_expression( elm );
+	    return res;
+	}
+	if( !ctx->conditional_evaluation ){
+	    // No joy, but we can now update the list with a new one.
+	    if( trace_analysis ){
+	        dump_expression( stderr, elm->x, "registered new nullasserted expression" );
+	    }
+	    ctx->notnull_asserted = append_expression_list(
+		ctx->notnull_asserted,
+		rdup_expression( elm->x )
+	    );
+	}
+    }
+    if( ctx->conditional_evaluation || ctx->in_init_expression ){
+	// We're in a context where we cannot generate a faster null assert.
+	return elm;
+    }
+    if( maybe_has_sideeffect( elm->x, NO_SE_EXCEPTION ) ){
+	// We could only do something smart if we'd break out a temporary.
+	// Unfortunately, that causes complications with jumps over
+	// these temporaries.
+	return elm;
+    }
+    res = elm->x;
+    if( res->tag != TAGExprName ){
+	// The null check may contain an array access, and hence flushing
+	// is needed.
+	flush_pending_bounds_assertions( ctx );
+    }
+    ctx->notnull_checks = append_expression_list(
+	ctx->notnull_checks,
+	rdup_expression( res )
+    );
+    if( !ctx->conditional_evaluation && res->tag == TAGExprName ){
+	register_not_null( ctx, to_ExprName(res)->name->sym );
+    }
+    elm->x = expressionNIL;
+    rfre_expression( elm );
+    return res;
+}
+
+/* Given a not null assert location 'elm', try to rewrite it into an
+ * explicit null test and a goto to the right target.
+ */
+static location rewrite_LocNotNullAssert_action( LocNotNullAssert elm, rewrite_data *ctx )
+{
+    location res;
+
+.call generate_walker_call "    " elm LocNotNullAssert LocNotNullAssert
+    AFLAG z = is_zero( elm->l, ctx->states );
+    if( z == AF_NO ){
+	// Eliminate null check, since it is useless.
+	res = elm->l;
+	elm->l = locationNIL;
+	rfre_location( elm );
+	return res;
+    }
+    if( ctx->in_pure_expression ){
+	if( !ctx->conditional_evaluation ){
+	    expression x = location_to_expression( elm->l );
+	    if( trace_analysis ){
+	        dump_expression( stderr, x, "registered new nullasserted location" );
+	    }
+	    ctx->notnull_asserted = append_expression_list(
+		ctx->notnull_asserted,
+		x
+	    );
+	}
+    }
+    if( ctx->conditional_evaluation || ctx->in_init_expression ){
+	// We're in a context where we cannot generate a faster null assert.
+	return elm;
+    }
+    if( maybe_has_sideeffect( elm->l, NO_SE_EXCEPTION ) ){
+	return elm;
+    }
+    expression v = location_to_expression( elm->l );
+    if( v->tag != TAGExprName ){
+	flush_pending_bounds_assertions( ctx );
+    }
+    ctx->notnull_checks = append_expression_list( ctx->notnull_checks, v );
+    res = elm->l;
+    elm->l = locationNIL;
+    rfre_location( elm );
+    return res;
+}
+
+/* Given a not null assert expression 'elm', try to rewrite it into an
+ * explicit null test and a goto to the right target.
+ */
+static expression rewrite_ExprCheckedIndex_action( ExprCheckedIndex elm, rewrite_data *ctx )
+{
+.call generate_walker_call "    " elm ExprCheckedIndex ExprCheckedIndex
+    elm->val = constant_fold_expression( elm->val );
+    elm->upperbound = constant_fold_expression( elm->upperbound );
+    AbstractValue av = abstract_value( elm->val, ctx->defs, ctx->states );
+    // TODO: look in administration for bounds facts on this expression.
+    if(
+	ctx->conditional_evaluation ||
+	ctx->in_init_expression ||
+	maybe_has_sideeffect( elm->val, NO_SE_EXCEPTION )
+    ){
+	// We're in a context where we cannot generate a faster bounds check.
+	if( av->positive == AF_YES ){
+	    // We don't have to check the lower bound.
+	    expression res = new_ExprUpperCheckedIndex( elm->val, elm->upperbound );
+	    elm->val = expressionNIL;
+	    elm->upperbound = expressionNIL;
+	    rfre_AbstractValue( av );
+	    rfre_expression( elm );
+	    return res;
+	}
+	rfre_AbstractValue( av );
+	return elm;
+    }
+    expression val = rdup_expression( elm->val );
+    expression cond;
+    if( av->positive == AF_YES ){
+	cond = new_ExprIsUpperBoundViolated( val, elm->upperbound );
+    }
+    else {
+	cond = new_ExprIsBoundViolated( val, elm->upperbound );
+    }
+    (void) flush_pending_notnull_assertions( ctx );
+    ctx->bounds_checks = append_expression_list( ctx->bounds_checks, cond );
+    expression resval = elm->val;
+    elm->upperbound = expressionNIL;
+    elm->val = expressionNIL;
+    rfre_expression( elm );
+    rfre_AbstractValue( av );
+    return resval;
+}
+
+/* ----------- End of actors ----------- */
+
+.call generate_walker "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog rewrite_vnusprog( vnusprog elm )
+{
+    rewrite_data the_ctx;
+    the_ctx.in_init_expression = false;
+    the_ctx.in_pure_expression = false;
+    the_ctx.lets = statement_listNIL;
+    the_ctx.defs = declaration_listNIL;
+    the_ctx.scopenm = tmsymbolNIL;
+    the_ctx.notnull_label_ptr = (tmsymbol *) NULL;
+    the_ctx.bounds_label_ptr = (tmsymbol *) NULL;
+    the_ctx.bounds_checks = new_expression_list();
+    the_ctx.notnull_checks = new_expression_list();
+    the_ctx.completed_bounds_checks = new_expression_list();
+    the_ctx.notnull_asserted = new_expression_list();
+    the_ctx.conditional_evaluation = false;
+    the_ctx.states = new_ProgramState_list();
+    rewrite_data *ctx = &the_ctx;
+
+    push_programstate( ctx, false );
+.call generate_descent_call "    " elm vnusprog vnusprog
+    // We're not interested at all in the resulting program state.
+    pop_programstate( ctx );
+    if( the_ctx.notnull_label_ptr != NULL ){
+	// Somebody should have provided a target for this jump to a notnull
+	// label.
+	internal_error( "Dangling notnull label pointer" );
+    }
+    assert( the_ctx.states->sz == 0 );
+    assert( the_ctx.bounds_checks->sz == 0 );
+    assert( the_ctx.notnull_checks->sz == 0 );
+    assert( the_ctx.completed_bounds_checks->sz == 0 );
+    assert( the_ctx.notnull_asserted->sz == 0 );
+    rfre_ProgramState_list( the_ctx.states );
+    rfre_expression_list( the_ctx.bounds_checks );
+    rfre_expression_list( the_ctx.notnull_checks );
+    rfre_expression_list( the_ctx.completed_bounds_checks );
+    rfre_expression_list( the_ctx.notnull_asserted );
+    return elm;
+}
+

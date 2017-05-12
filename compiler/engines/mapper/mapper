@@ -1,0 +1,26 @@
+#!/bin/sh
+KEEPFILES=0
+ALVL=2
+TMPFILE_I=tmp$$.i.tm
+TMPFILE_A=tmp$$.a.tm
+
+$COMPILERSRCROOT/engines/mapper/initial $* > $TMPFILE_I
+if [ $? != 0 ]; then
+    exit 1
+fi
+
+$COMPILERSRCROOT/engines/align/align -l$ALVL < $TMPFILE_I > $TMPFILE_A
+if [ $? != 0 ]; then
+    exit 1
+fi
+
+$COMPILERSRCROOT/engines/mapper/spmd $* < $TMPFILE_A
+if [ $? != 0 ]; then
+    exit 1
+fi
+
+if [ $KEEPFILES = 0 ]; then
+rm $TMPFILE_C
+rm $TMPFILE_I
+rm $TMPFILE_A
+fi

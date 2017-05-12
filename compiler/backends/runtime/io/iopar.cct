@@ -1,0 +1,7 @@
+.insert ../lib.t
+/* iopar.cc
+ */
+
+#include "iopar.h"
+
+.call gen_stubs v__ vp__

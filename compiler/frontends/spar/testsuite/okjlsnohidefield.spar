@@ -1,0 +1,16 @@
+// After JLS2 8.3.3.1    Example: Hiding of Class Variables
+
+
+class Point {
+    static int x = 2;
+}
+
+
+public class okjlsnohidefield extends Point {
+    public static void main(String[] args) {
+        new okjlsnohidefield().printX();
+    }
+    void printX() {
+        __println(1,x , " " , super.x);
+    }
+}

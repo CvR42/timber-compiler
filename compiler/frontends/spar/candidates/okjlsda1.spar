@@ -1,0 +1,12 @@
+// After JLS2 16 Definite assignment
+
+public final class okjlsda1 {
+    public static void main(){
+	int v = 2;
+	{
+	    int k;
+	    if( v>0 && (k = 42) >= 0 )
+		System.out.println(k);
+	}
+    }
+}

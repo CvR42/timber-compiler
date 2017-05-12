@@ -1,0 +1,23 @@
+// File: oksuperinit.spar
+//
+// The static initialization example of JLS2 12.4.1
+
+class Super {
+    static { __print( 1, "Super " ); }
+}
+
+class One {
+    static { __print( 1, "One " ); }
+}
+
+class Two extends Super {
+    static { __print( 1, "Two " ); }
+}
+
+public class oksuperinit {
+    public static void main(){
+	One o = null;
+	Two t = new Two();
+	__println( 1, (Object) o == (Object) t );
+    }
+}

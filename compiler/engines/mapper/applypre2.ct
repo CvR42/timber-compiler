@@ -1,0 +1,84 @@
+/* Applypre2 engine
+
+   Move initialisers for global variables to correctly scoped block.
+   */
+
+.. File: applypre2.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors vnusprog
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "applypre2.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+/* Rewrite action for 'vnusprog':
+   Move initialisers for global variables to correctly scoped block.
+   */
+static vnusprog rewrite_vnusprog_action(
+    vnusprog elm, global_context gc )
+{
+    statement_list nsl = new_statement_list();
+    for (unsigned i=0; i<gc->prog->declarations->sz; i++)
+    {
+        if (gc->prog->declarations->arr[i]->tag == TAGDeclGlobalVariable)
+        {
+            DeclGlobalVariable d = to_DeclGlobalVariable(
+                gc->prog->declarations->arr[i]);
+            if (d->init->tag == TAGOptExpr &&
+		d->t->tag != TAGTypeArray)
+            {
+                SmtAssign ns = new_SmtAssign(
+                    0,
+                    gen_origin(),
+                    new_Pragma_list(),
+                    new_OwnerExpr_list(),
+                    new_LocName(rdup_origsymbol(d->name)),
+                    to_OptExpr(d->init)->x);
+                fre_optexpression(d->init);
+                d->init = new_OptExprNone();
+		d->flags &= ~MOD_FINAL;
+                nsl = append_statement_list(nsl, ns);
+            }
+        }
+    }
+    elm->statements->statements = concat_statement_list(
+        nsl,
+        elm->statements->statements);
+    return elm;
+}
+
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_pre2(
+    vnusprog elm, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+    (void) rewrite_vnusprog_walker;
+    
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}
+

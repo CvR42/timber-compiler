@@ -1,0 +1,10 @@
+//package spar.testsuite;
+
+public class okgetsize {
+    public static void main(){
+	int a[*] = new int[34];
+
+	__println( 1, "getsize: ", a.getSize( 0 ) );
+	__println( 1, "length: ", a.length );
+    }
+}

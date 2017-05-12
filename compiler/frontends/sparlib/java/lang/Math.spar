@@ -1,0 +1,113 @@
+package java.lang;
+
+import java.util.Random;
+
+/*
+ * Java core library component.
+ *
+ * Copyright (c) 1997, 1998
+ *      Transvirtual Technologies, Inc.  All rights reserved.
+ *
+ * See the file "license.terms" for information on usage and redistribution
+ * of this file.
+ */
+final public class Math
+{
+	final public static double E = 2.7182818284590452354;
+	final public static double PI = 3.14159265358979323846;
+	// CvR: This drags in a lot of stuff.
+	// So we only instantiate a random number generator on demand.
+	// Pitty if you use this often, but then you should probably
+	// use java.util.Random anyway.
+	//
+	//private static Random randomGenerator = new Random();
+	private static Random randomGenerator = null;
+
+private Math() { /* this class is not instantiable by the general public */ }
+
+<$ noGC $> native public static double IEEEremainder(double f1, double f2);
+
+<$ noGC $> native public static double abs(final double a);
+
+<$ noGC $> public inline static float abs(final float a) { return (a < 0.0f) ? (-a) : (a); }
+
+<$ noGC $> public inline static int abs(final int a) { return (a < 0) ? (-a) : (a); }
+
+<$ noGC $> public inline static long abs(final long a) { return (a < 0L) ? (-a) : (a); }
+
+<$ noGC $> native public static double acos(double a);
+
+<$ noGC $> native public static double asin(double a);
+
+<$ noGC $> native public static double atan(double a);
+
+<$ noGC $> native public static double atan2(double a, double b);
+
+<$ noGC $> native public static double ceil(double a);
+
+<$ noGC $> native public static double cos(double a);
+
+<$ noGC $> native public static double exp(double a);
+
+<$ noGC $> native public static double floor(double a);
+
+<$ noGC $> native public static double log(double a);
+
+<$ noGC $> public inline static double max(final double a, final double b) { return (b > a) ? (b) : (a); }
+
+<$ noGC $> public inline static float max(final float a, final float b) { return (b > a) ? (b) : (a); }
+
+<$ noGC $> public inline static int max(final int a, final int b) { return (b > a) ? (b) : (a); }
+
+<$ noGC $> public inline static long max(final long a, final long b) { return (b > a) ? (b) : (a); }
+
+<$ noGC $> public inline static double min(final double a, final double b) { return (a < b) ? (a) : (b); }
+
+<$ noGC $> public inline static float min(final float a, final float b) { return (a < b) ? (a) : (b); }
+
+<$ noGC $> public inline static int min(final int a, final int b) { return (a < b) ? (a) : (b); }
+
+<$ noGC $> public inline static long min(final long a, final long b) { return (a < b) ? (a) : (b); }
+
+<$ noGC $> native public static double pow(double a, double b);
+
+public static synchronized double random() {
+	if( randomGenerator == null ){
+	    randomGenerator = new Random();
+	}
+	return randomGenerator.nextDouble();
+}
+
+<$ noGC $> native public static double rint(double a);
+
+<$ noGC $> public static long round(double a) {
+	if ((a<(double )Long.MIN_VALUE) || (a==Double.NEGATIVE_INFINITY)) {
+		return Long.MIN_VALUE;
+	}
+	else if ((a>(double )Long.MAX_VALUE) || (a==Double.POSITIVE_INFINITY)) {
+		return Long.MAX_VALUE;
+	}
+	else {
+		return (long )rint(a);
+	}
+}
+
+<$ noGC $> public static int round(float a) {
+	if ((a<(float )Integer.MIN_VALUE) || (a==Float.NEGATIVE_INFINITY)) {
+		return Integer.MIN_VALUE;
+	}
+	else if ((a>(float )Integer.MAX_VALUE) || (a==Float.POSITIVE_INFINITY)) {
+		return Integer.MAX_VALUE;
+	}
+	else {
+		return (int )rint((double )a);
+	}
+}
+
+<$ noGC $> native public static double sin(double a);
+
+<$ noGC $> native public static double sqrt(double a);
+
+<$ noGC $> native public static double tan(double a);
+
+}

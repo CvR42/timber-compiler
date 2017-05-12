@@ -1,0 +1,11 @@
+// Spar language extensions to Java. These should be flagged by the
+// compiler if the --noprint flag is given.
+
+package spar.testsuite;
+
+public class errnoprint {
+    public static void main()
+    {
+	__println( 1, "hello world" );
+    }
+}

@@ -1,0 +1,21 @@
+// After JLS2 15.12.2.4    Example: Return Type Not Considered
+
+class Point { int x, y; }
+
+class ColoredPoint extends Point { int color; }
+
+public class errjlsnoret {
+
+    static int test(ColoredPoint p) {
+        return p.color;
+    }
+
+    static String test(Point p) {
+        return "Point";
+    }
+
+    public static void main(String[] args) {
+        ColoredPoint cp = new ColoredPoint();
+        String s = test(cp);                   // compile-time error
+    }
+}

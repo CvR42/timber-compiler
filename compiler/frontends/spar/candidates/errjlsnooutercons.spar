@@ -1,0 +1,19 @@
+// After JLS2 8.8.5.1    Explicit Constructor Invocations
+
+
+class errjlsnooutercons {
+    int x;
+    class Dummy {
+        Dummy(Object o) {}
+    }
+    class Inside extends Dummy {
+        Inside() {
+            super(new Object() { int r = x; }); // error
+        }
+        Inside(final int y) {
+            super(new Object() { int r = y; }); // correct
+        }
+    }
+    public static void main( String args[] ){
+    }
+}

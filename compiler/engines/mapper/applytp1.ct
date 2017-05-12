@@ -1,0 +1,818 @@
+/* Applytp1 test engine
+
+   Do Andrei's stuff.
+   First of all, for each task generate a parameter record.
+   
+   */
+
+.. File: applytp1.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtProcedureCall
+.append actors SmtFor SmtForeach
+.append actors vnusprog
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "parsepragmas.h"
+#include "applytp1.h"
+#include "symtable.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Support ----------- */
+    /*
+      All parameters of the procedures that will be called via stubs
+      will have to be put into records. The following type defines a basetype
+      for these records with only the first field, which is the
+      size of the record.
+      */
+static DeclRecord find_parameterRecordBaseType(
+    global_context gc){
+    DeclRecord tprb = to_DeclRecord(declaration_list_find_pragma(
+	gc->prog->declarations,
+	add_tmsymbol("parameterRecordBaseType")));
+    if (tprb == NULL)
+    {
+	tprb = new_DeclRecord(
+	    gen_origsymbol("parameterRecordBaseType"),
+	    0,
+	    new_Pragma_list(),
+	    new_field_list());
+	{
+	    field f = new_field(
+		add_origsymbol("size"),
+		new_TypeBase(BT_INT));
+	    tprb->fields = append_field_list(
+		tprb->fields,f);
+	}
+	tprb->pragmas = append_Pragma_list(
+	    tprb->pragmas,
+	    new_FlagPragma(add_origsymbol("parameterRecordBaseType")));
+	gc->prog->declarations = append_declaration_list(
+	    gc->prog->declarations, tprb);
+    }
+    assert(tprb->tag == TAGDeclRecord);
+    return tprb;
+}
+
+    /*
+      We also need a record that contains all the indices
+      of the surrounding loops.
+      First a base type that only contains the size of this record.
+      */
+static DeclRecord find_indexRecordBaseType(
+    global_context gc){
+    DeclRecord tirb = to_DeclRecord(declaration_list_find_pragma(
+	gc->prog->declarations,
+	add_tmsymbol("indexRecordBaseType")));
+    if (tirb == NULL)
+    {
+	tirb = new_DeclRecord(
+	    gen_origsymbol("indexRecordBaseType"),
+	    0,
+	    new_Pragma_list(),
+	    new_field_list());
+	{
+	    field f = new_field(
+		add_origsymbol("size"),
+		new_TypeBase(BT_INT));
+	    tirb->fields = append_field_list(
+		tirb->fields,f);
+	}
+	{
+	    field f = new_field(
+		add_origsymbol("task_id"),
+		new_TypeBase(BT_INT));
+	    tirb->fields = append_field_list(
+		tirb->fields,f);
+	}
+	tirb->pragmas = append_Pragma_list(
+	    tirb->pragmas,
+	    new_FlagPragma(add_origsymbol("indexRecordBaseType")));
+	gc->prog->declarations = append_declaration_list(
+	    gc->prog->declarations, tirb);
+    }
+    assert(tirb->tag == TAGDeclRecord);
+    return tirb;
+}
+
+static bool isGlobalVariable(origsymbol name, global_context gc)
+{
+    int pos = declaration_list_find_pos(gc->prog->declarations, name);
+    return (pos != -1 && gc->prog->declarations->arr[pos]->tag == TAGDeclGlobalVariable);
+}
+
+static int whichCardinalityVariable(origsymbol name, global_context gc)
+{
+    if (gc->current_indices == origsymbol_listNIL)
+	return -1;
+    for (unsigned i=0; i<gc->current_indices->sz; i++)
+	if (gc->current_indices->arr[i]->sym == name->sym)
+	    return i;
+    return -1;
+}
+
+static expression MPexpr2expr(MPexpression e, global_context gc);
+
+static expression_list MPexprlist2exprlist(MPexpression_list l, global_context gc)
+{
+    if (l == MPexpression_listNIL)
+	return expression_listNIL;
+    expression_list res = new_expression_list();
+    for (unsigned i=0; i<l->sz; i++)
+	res = append_expression_list(
+	    res,
+	    MPexpr2expr(l->arr[i], gc));
+    return res;
+}
+
+static expression MPexpr2expr(MPexpression e, global_context gc)
+{
+    switch (e->tag)
+    {
+	case TAGMPExprInt:
+	    return new_ExprInt(
+		to_MPExprInt(e)->v);
+	    break;
+	case TAGMPExprDouble:
+	    return new_ExprDouble(to_MPExprDouble(e)->v);
+	    break;
+	case TAGMPExprBoolean:
+	    return new_ExprBoolean(
+		rdup_vnus_boolean(to_MPExprBoolean(e)->b));
+	    break;
+	case TAGMPExprName:
+	{
+	    origsymbol name = symtable_find_translation(to_MPExprName(e)->name->sym);
+	    assert (name != origsymbolNIL);
+	    return new_ExprName(rdup_origsymbol(name));
+	    break;
+	}
+	case TAGMPExprExternalName:
+	{
+	    origsymbol name = to_MPExprExternalName(e)->name;
+	    int cardIndex = -1;
+	    if (isGlobalVariable(name, gc))
+	    {
+		return new_ExprName(
+		    rdup_origsymbol(name));
+	    }
+	    else if ((cardIndex = whichCardinalityVariable(name, gc)) != -1)
+	    {
+		assert (gc->current_cs_f_ir != DeclLocalVariableNIL);
+		assert (gc->current_tir != DeclRecordNIL);
+		assert (gc->current_tir->fields != field_listNIL);
+		assert (gc->current_tir->fields->sz > (unsigned)cardIndex);
+		return new_ExprField(
+		    new_ExprDeref(
+			new_ExprName(rdup_origsymbol(gc->current_cs_f_ir->name))),
+		    rdup_origsymbol(gc->current_tir->fields->arr[cardIndex]->name));
+	    }
+	    else
+	    {
+		internal_error("TP1: illegal var ref");
+	    }
+	    break;
+	}
+	case TAGMPExprSelection:
+	    return new_ExprSelection(
+		new_ExprDeref(
+		    MPexpr2expr(to_MPExprSelection(e)->shape, gc)),
+		MPexprlist2exprlist(to_MPExprSelection(e)->indices, gc));
+	    break;
+	case TAGMPExprBinop:
+	    return new_ExprBinop(
+		MPexpr2expr(to_MPExprBinop(e)->left, gc),
+		to_MPExprBinop(e)->optor,
+		MPexpr2expr(to_MPExprBinop(e)->right, gc));
+	    break;
+    }
+    internal_error("TP1: MPexpr2expr: reached unreachable code");
+    return expressionNIL;
+}
+
+static location MPexpr2loc(MPexpression e, global_context gc)
+{
+    switch (e->tag)
+    {
+	case TAGMPExprName:
+	    internal_error("TP1: can't convert MPExprName");
+	    break;
+	case TAGMPExprExternalName:
+	{
+	    origsymbol name = to_MPExprExternalName(e)->name;
+	    int cardIndex = -1;
+	    if (isGlobalVariable(name, gc))
+	    {
+		return new_LocName(
+		    rdup_origsymbol(name));
+	    }
+	    else if ((cardIndex = whichCardinalityVariable(name, gc)) != -1)
+	    {
+		assert (gc->current_cs_f_ir != DeclLocalVariableNIL);
+		assert (gc->current_tir != DeclRecordNIL);
+		assert (gc->current_tir->fields != field_listNIL);
+		assert (gc->current_tir->fields->sz > (unsigned)cardIndex);
+		return new_LocField(
+		    new_ExprDeref(
+			new_ExprName(rdup_origsymbol(gc->current_cs_f_ir->name))),
+		    rdup_origsymbol(gc->current_tir->fields->arr[cardIndex]->name));
+	    }
+	    else
+	    {
+		internal_error("TP1: illegal var ref");
+	    }
+	    break;
+	}
+	case TAGMPExprSelection:
+	    return new_LocSelection(
+		new_ExprDeref(
+		    MPexpr2expr(to_MPExprSelection(e)->shape, gc)),
+		MPexprlist2exprlist(to_MPExprSelection(e)->indices, gc));
+	    break;
+	case TAGMPExprInt:
+	case TAGMPExprDouble:
+	case TAGMPExprBoolean:
+	case TAGMPExprBinop:
+	    internal_error("TP1: unsupported MPexpression->location");
+	    break;
+    }
+    internal_error("TP1: MPexpr2loc: reached unreachable code");
+    return locationNIL;
+}
+
+static statement generate_Arc(
+    Arc a, tags_statement tag, global_context gc);
+
+static statement generate_BasicArc(
+    BasicArc a, tags_statement tag, global_context gc)
+{
+    if (a->data == MPoptexpressionNIL)
+	internal_error("TP1: data field is NIL");
+    MPexpression data = MPexpressionNIL;
+    switch (a->data->tag)
+    {
+	case TAGMPOptExprNone:
+	{
+	    fprintf(stderr, "TP1: generate_arc: no data, creating dummy\n");
+	    DeclGlobalVariable dummy = new_DeclGlobalVariable(
+		gen_origsymbol("__tp1_dummy_"),
+		0,
+		Pragma_listNIL,
+		new_TypeBase(BT_INT),
+		new_OptExprNone());
+	    gc->prog->declarations = append_declaration_list(
+		gc->prog->declarations, dummy);
+	    data = new_MPExprExternalName(
+		rdup_origsymbol(dummy->name));
+	    break;
+	}
+	case TAGMPOptExpr:
+	    data = to_MPOptExpr(a->data)->x;
+	    break;
+    }
+    
+    SmtBlock arcBody = snew_SmtBlock(
+	snew_block());
+    arcBody->body->scope = gen_tmsymbol("arcScope");
+    
+    DeclRecord tirb = find_indexRecordBaseType(gc);
+    DeclRecord arc_ir_t = new_DeclRecord(
+	gen_origsymbol("arcIndexRecordType"),
+	0,
+	Pragma_listNIL,
+	rdup_field_list(tirb->fields));
+    if (a->indices != MPexpression_listNIL) for (unsigned j=0; j<a->indices->sz; j++)
+    {
+	field f = new_field(
+	    gen_origsymbol("arcField"),
+	    new_TypeBase(BT_INT));
+	arc_ir_t->fields = append_field_list(
+	    arc_ir_t->fields, f);
+    }
+    gc->prog->declarations = append_declaration_list(
+	gc->prog->declarations, arc_ir_t);
+    
+    DeclLocalVariable arc_ir = new_DeclLocalVariable(
+	gen_origsymbol("arcIndexRec"),
+	0,
+	Pragma_listNIL,
+	rdup_tmsymbol(arcBody->body->scope),
+	new_TypePointer(
+	    new_TypeNamedRecord(
+		rdup_origsymbol(arc_ir_t->name))),
+	0);
+    expression_list il = new_expression_list();
+	// Set size field to sizeof(record)
+    il = append_expression_list(
+	il,
+	new_ExprSizeof(
+	    new_TypeNamedRecord(
+		rdup_origsymbol(arc_ir_t->name))));
+    int id = tasktable_find_translation(a->task->sym);
+    assert (id != -1);
+    il = append_expression_list(
+	il,
+	new_ExprInt(id));
+    if (a->indices != MPexpression_listNIL) for (unsigned j=0; j<a->indices->sz; j++)
+    {
+	il = append_expression_list(
+	    il,
+	    MPexpr2expr(a->indices->arr[j], gc));
+    }
+    arc_ir->init = new_OptExpr(
+	new_ExprNewRecord(
+	    new_TypeNamedRecord(
+		rdup_origsymbol(arc_ir_t->name)),
+	    il));
+    gc->prog->declarations = append_declaration_list(
+	gc->prog->declarations, arc_ir);
+    
+	// At this point generate code for the arc
+    statement comm = statementNIL;
+    switch (tag)
+    {
+	case TAGSmtTSend:
+	    comm = snew_SmtTSend(
+		new_ExprName(rdup_origsymbol(arc_ir->name)),
+		MPexpr2expr(data, gc));
+	    break;
+	case TAGSmtTReceive:
+	    comm = snew_SmtTReceive(
+		new_ExprName(rdup_origsymbol(arc_ir->name)),
+		MPexpr2loc(data, gc));
+	    break;
+	default:
+	    internal_error("TP1: generate_arc: illegal tag used");
+	    break;
+    }
+    assert (comm != statementNIL);
+    arcBody->body->statements = append_statement_list(
+	arcBody->body->statements,
+	comm);
+    
+    arcBody->body->statements = append_statement_list(
+	arcBody->body->statements,
+	snew_SmtDelete(
+	    new_ExprName(rdup_origsymbol(arc_ir->name))));
+    
+    switch (a->data->tag)
+    {
+	case TAGMPOptExprNone:
+	    rfre_MPexpression(data);
+	    break;
+	case TAGMPOptExpr:
+	    break;
+    }
+
+    return arcBody;
+}
+
+static statement generate_ConditionalArc(
+    ConditionalArc a, tags_statement tag, global_context gc)
+{
+    SmtIf res = snew_SmtIf(
+	MPexpr2expr(a->cond, gc),
+	snew_block(),
+	snew_block());
+    res->thenbody->statements = append_statement_list(
+	res->thenbody->statements,
+	generate_Arc(a->thenarc, tag, gc));
+    res->elsebody->statements = append_statement_list(
+	res->elsebody->statements,
+	generate_Arc(a->elsearc, tag, gc));
+    return res;
+}
+
+static statement generate_IterationArc(
+    IterationArc a, tags_statement tag, global_context gc)
+{
+    DeclCardinalityVariable cv = new_DeclCardinalityVariable(
+	gen_origsymbol(a->name->sym->name),
+	0,
+	Pragma_listNIL);
+    gc->prog->declarations = append_declaration_list(
+	gc->prog->declarations,
+	cv);
+    SmtFor res = snew_SmtFor(
+	new_cardinality_list(),
+	snew_block());
+    res->cards = append_cardinality_list(
+	res->cards,
+	new_cardinality(
+	    rdup_origsymbol(cv->name),
+	    new_ExprInt(0),
+	    MPexpr2expr(a->upperbound,gc),
+	    new_ExprInt(1),
+	    new_secondary_list()));
+    symtable_add_translation(a->name->sym,cv->name);
+    res->body->statements = append_statement_list(
+	res->body->statements,
+	generate_Arc(a->arc, tag, gc));	
+    symtable_remove_translation(a->name->sym);
+    return res;
+}
+
+static statement generate_Arc(
+    Arc a, tags_statement tag, global_context gc)
+{
+    statement res = statementNIL;
+    switch (a->tag)
+    {
+	case TAGBasicArc:
+	    res = generate_BasicArc(to_BasicArc(a), tag, gc);
+	    break;
+	case TAGConditionalArc:
+	    res = generate_ConditionalArc(to_ConditionalArc(a), tag, gc);
+	    break;
+	case TAGIterationArc:
+	    res = generate_IterationArc(to_IterationArc(a), tag, gc);
+	    break;
+    }
+    return res;
+}
+
+
+/* ----------- Actors ----------- */
+
+static vnusprog rewrite_vnusprog_action(
+    vnusprog e, global_context gc)
+{
+.call generate_walker_call "    " e vnusprog vnusprog
+    e->statements->statements = append_statement_list(
+	e->statements->statements,
+	snew_SmtExecuteTasks());
+    return e;
+}
+
+
+static statement rewrite_SmtProcedureCall_action(
+    SmtProcedureCall e, global_context gc )
+{
+    int pos = pragma_list_find_index_tmsymbol(e->pragmas, add_tmsymbol("task"));
+    if (pos == -1)
+	return e;
+    TaskId task = parse_task_pragma(e->pragmas->arr[pos]);
+    Arc_list sends = parse_arc_pragmas(e->pragmas, add_tmsymbol("send"));
+    Arc_list recvs = parse_arc_pragmas(e->pragmas, add_tmsymbol("receive"));
+    
+    fprintf(stderr,"TP1: surrounding indices are :");
+    for (unsigned i=0; i<gc->current_indices->sz; i++)
+    {
+	fprintf(stderr, "%s, ", gc->current_indices->arr[i]->sym->name);
+    }
+    fprintf(stderr, "\n");
+    
+    type tp_g = derive_type_expression(gc->prog->declarations,0,e->proc);
+    assert (tp_g->tag == TAGTypeProcedure);
+    TypeProcedure tp = to_TypeProcedure(tp_g);
+
+	// We have got to get the procedure name to be able to call it.
+    assert(e->proc->tag == TAGExprName);
+    ExprName procName = to_ExprName(e->proc);
+
+	/*
+	  Find base type for parameter records.
+	  */
+    DeclRecord tprb = find_parameterRecordBaseType(gc);
+
+	/*
+	  The actual parameter record type that corresponds to the currently
+	  processed procedure. In includes the fields of the base type above
+	  and all the formal parameters of the procedure.
+	  */
+    DeclRecord tpr = new_DeclRecord(
+	gen_origsymbol("parameterRecordType"),
+	0,
+	Pragma_listNIL,
+	rdup_field_list(tprb->fields));
+    for (unsigned i=0; i<tp->formals->sz; i++)
+    {
+	field f = new_field(
+	    gen_origsymbol("par"),
+	    rdup_type(tp->formals->arr[i]));
+	tpr->fields = append_field_list(
+	    tpr->fields, f);
+    }
+    gc->prog->declarations = append_declaration_list(
+	gc->prog->declarations, tpr);
+
+	/*
+	  Find base type for index records.
+	  */
+    DeclRecord tirb = find_indexRecordBaseType(gc);
+
+	/*
+	  And here the actual index record.
+	  We still have to add the indices though...
+	  */
+    DeclRecord tir = new_DeclRecord(
+	gen_origsymbol("indexRecordType"),
+	0,
+	Pragma_listNIL,
+	rdup_field_list(tirb->fields));
+    for (unsigned i=0; i<gc->current_indices->sz; i++)
+    {
+	field f = new_field(
+	    rdup_origsymbol(gc->current_indices->arr[i]),
+	    new_TypeBase(BT_INT));
+	tir->fields = append_field_list(
+	    tir->fields, f);
+    }
+    gc->prog->declarations = append_declaration_list(
+	gc->prog->declarations, tir);
+
+	/*
+	  This stub retrieves the original parameters from the
+	  parameter record and passes them to the original function.
+	  */
+    DeclProcedure callstub = new_DeclProcedure(
+	gen_origsymbol("callStub"),
+	0,
+	Pragma_listNIL,
+	new_origsymbol_list(),
+	snew_block());
+    callstub->body->scope = gen_tmsymbol("callStubScope");
+    gc->prog->declarations = append_declaration_list(
+	gc->prog->declarations, callstub);
+	// Opaque pointer to index record
+    DeclFormalVariable cs_f_irb = new_DeclFormalVariable(
+	gen_origsymbol("indexRecBase"),
+	0,
+	Pragma_listNIL,
+	rdup_tmsymbol(callstub->body->scope),
+	new_TypePointer(
+	    new_TypeNamedRecord(
+		rdup_origsymbol(tirb->name))));
+    gc->prog->declarations = append_declaration_list(
+	gc->prog->declarations, cs_f_irb);
+    callstub->parms = append_origsymbol_list(
+	callstub->parms,
+	rdup_origsymbol(cs_f_irb->name));
+	// Opaque pointer to parameter record
+    DeclFormalVariable cs_f_prb = new_DeclFormalVariable(
+	gen_origsymbol("parRecBase"),
+	0,
+	Pragma_listNIL,
+	rdup_tmsymbol(callstub->body->scope),
+	new_TypePointer(
+	    new_TypeNamedRecord(
+		rdup_origsymbol(tprb->name))));
+    gc->prog->declarations = append_declaration_list(
+	gc->prog->declarations, cs_f_prb);
+    callstub->parms = append_origsymbol_list(
+	callstub->parms,
+	rdup_origsymbol(cs_f_prb->name));
+	// Typecast pointer to actual index record
+    DeclLocalVariable cs_f_ir = new_DeclLocalVariable(
+	gen_origsymbol("indexRec"),
+	0,
+	Pragma_listNIL,
+	rdup_tmsymbol(callstub->body->scope),
+	new_TypePointer(
+	    new_TypeNamedRecord(
+		rdup_origsymbol(tir->name))),
+	0);
+    cs_f_ir->init = new_OptExpr(
+	new_ExprCast(
+	    rdup_type(cs_f_ir->t),
+	    new_ExprName(rdup_origsymbol(cs_f_irb->name))));
+    gc->prog->declarations = append_declaration_list(
+	gc->prog->declarations, cs_f_ir);
+    gc->current_cs_f_ir = cs_f_ir;
+    gc->current_tir = tir;
+	// Typecast pointer to actual parameter record
+    DeclLocalVariable cs_f_pr = new_DeclLocalVariable(
+	gen_origsymbol("parRec"),
+	0,
+	Pragma_listNIL,
+	rdup_tmsymbol(callstub->body->scope),
+	new_TypePointer(
+	    new_TypeNamedRecord(
+		rdup_origsymbol(tpr->name))),
+	0);
+    cs_f_pr->init = new_OptExpr(
+	new_ExprCast(
+	    rdup_type(cs_f_pr->t),
+	    new_ExprName(rdup_origsymbol(cs_f_prb->name))));
+    gc->prog->declarations = append_declaration_list(
+	gc->prog->declarations, cs_f_pr);
+
+	// Here we need to insert code for incoming arcs
+	// Somehow we have to check number of indices against src task
+    if (recvs != Arc_listNIL) for (unsigned i=0; i<recvs->sz; i++)
+    {
+	callstub->body->statements = append_statement_list(
+	    callstub->body->statements,
+	    generate_Arc(recvs->arr[i], TAGSmtTReceive, gc));
+    }
+    
+	// Do the call to the original function.
+    SmtProcedureCall call_orig = snew_SmtProcedureCall(
+	new_ExprName(rdup_origsymbol(procName->name)),
+	new_expression_list());
+	// Size field is enabled, start with field 1!!!
+    for (unsigned i=1; i<tpr->fields->sz; i++)
+    {
+	call_orig->parameters = append_expression_list(
+	    call_orig->parameters,
+	    new_ExprField(
+		new_ExprDeref(
+		    new_ExprName(rdup_origsymbol(cs_f_pr->name))),
+		rdup_origsymbol(tpr->fields->arr[i]->name)));
+    }
+    callstub->body->statements = append_statement_list(
+	callstub->body->statements,
+	call_orig);
+
+	// Here we need to insert code for outgoing arcs
+	// Somehow we have to check number of indices against dest task
+    if (sends != Arc_listNIL) for (unsigned i=0; i<sends->sz; i++)
+    {
+	callstub->body->statements = append_statement_list(
+	    callstub->body->statements,
+	    generate_Arc(sends->arr[i], TAGSmtTSend, gc));
+    }
+    
+	// Don't forget to delete the records...
+    callstub->body->statements = append_statement_list(
+	callstub->body->statements,
+	snew_SmtDelete(
+	    new_ExprName(rdup_origsymbol(cs_f_ir->name))));
+
+    callstub->body->statements = append_statement_list(
+	callstub->body->statements,
+	snew_SmtDelete(
+	    new_ExprName(rdup_origsymbol(cs_f_pr->name))));
+
+	// This is the part where a task is added to the queue
+    SmtBlock submitblock = snew_SmtBlock(
+	snew_block());
+    submitblock->body->scope = gen_tmsymbol("submitscope");
+
+	// Put the task id and the actual indices in a record
+    DeclLocalVariable cs_a_ir = new_DeclLocalVariable(
+	gen_origsymbol("indexRec"),
+	0,
+	Pragma_listNIL,
+	rdup_tmsymbol(submitblock->body->scope),
+	new_TypePointer(
+	    new_TypeNamedRecord(
+		rdup_origsymbol(tir->name))),
+	0);
+    expression_list il = new_expression_list();
+	// Set size field to sizeof(record)
+    int task_id = tasktable_find_translation(task->name->sym);
+    assert (task_id != -1);
+    il = append_expression_list(
+	il,
+	new_ExprSizeof(
+	    new_TypeNamedRecord(
+		rdup_origsymbol(tir->name))));
+    il = append_expression_list(
+	il,
+	new_ExprInt(task_id));
+    for (unsigned i=0; i<gc->current_indices->sz; i++)
+    {
+	il = append_expression_list(
+	    il,
+	    new_ExprName(rdup_origsymbol(gc->current_indices->arr[i])));
+    }
+    cs_a_ir->init = new_OptExpr(
+	new_ExprNewRecord(
+	    new_TypeNamedRecord(
+		rdup_origsymbol(tir->name)),
+	    il));
+    gc->prog->declarations = append_declaration_list(
+	gc->prog->declarations, cs_a_ir);
+
+	// Put the actual parameters in a record
+    DeclLocalVariable cs_a_pr = new_DeclLocalVariable(
+	gen_origsymbol("parRec"),
+	0,
+	Pragma_listNIL,
+	rdup_tmsymbol(submitblock->body->scope),
+	new_TypePointer(
+	    new_TypeNamedRecord(
+	    rdup_origsymbol(tpr->name))),
+	0);
+    expression_list pl = new_expression_list();
+	// Set size field to sizeof(record)
+    pl = append_expression_list(
+	pl,
+	new_ExprSizeof(
+	    new_TypeNamedRecord(
+		rdup_origsymbol(tpr->name))));
+    for (unsigned i=0; i<e->parameters->sz; i++)
+    {
+	pl = append_expression_list(
+	    pl,
+	    rdup_expression(e->parameters->arr[i]));
+    }
+    cs_a_pr->init = new_OptExpr(
+	new_ExprNewRecord(
+	    new_TypeNamedRecord(
+		rdup_origsymbol(tpr->name)),
+	    pl));
+    gc->prog->declarations = append_declaration_list(
+	gc->prog->declarations, cs_a_pr);
+
+    submitblock->body->statements = append_statement_list(
+	submitblock->body->statements,
+	snew_SmtAddTask(
+	    new_ExprName(
+		    rdup_origsymbol(cs_a_ir->name)),
+	    new_ExprName(
+		    rdup_origsymbol(cs_a_pr->name))));
+    
+	// Register the task so that it can be found
+    gc->prog->statements->statements = append_statement_list(
+	gc->prog->statements->statements,
+	snew_SmtRegisterTask(
+	    new_ExprInt(task_id),
+	    new_ExprName(rdup_origsymbol(callstub->name))));
+
+    rfre_type(tp_g);
+    rfre_statement(e);
+    rfre_TaskId(task);
+    rfre_Arc_list(sends);
+    rfre_Arc_list(recvs);
+    return submitblock;
+}
+
+static statement rewrite_SmtFor_action(
+    SmtFor e, global_context gc )
+{
+    fprintf(stderr, "TP1: 'for' with %d cardinalities\n", e->cards->sz);
+    for (unsigned i=0; i<e->cards->sz; i++)
+    {
+	gc->current_indices = append_origsymbol_list(
+	    gc->current_indices,
+	    rdup_origsymbol(e->cards->arr[i]->name));
+    }
+.call generate_walker_call "    " e SmtFor SmtFor
+    for (unsigned i=0; i<e->cards->sz; i++)
+    {
+	gc->current_indices = delete_origsymbol_list(
+	    gc->current_indices, gc->current_indices->sz-1);
+    }
+    return e;
+}
+
+static statement rewrite_SmtForeach_action(
+    SmtForeach e, global_context gc )
+{
+    fprintf(stderr, "TP1: 'foreach' with %d cardinalities\n", e->cards->sz);
+    for (unsigned i=0; i<e->cards->sz; i++)
+    {
+	gc->current_indices = append_origsymbol_list(
+	    gc->current_indices,
+	    rdup_origsymbol(e->cards->arr[i]->name));
+    }
+.call generate_walker_call "    " e SmtForeach SmtForeach
+    for (unsigned i=0; i<e->cards->sz; i++)
+    {
+	gc->current_indices = delete_origsymbol_list(
+	    gc->current_indices, gc->current_indices->sz-1);
+    }
+    return e;
+}
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_tp1( vnusprog elm, global_context gc )
+{
+    (void) rewrite_SmtProcedureCall_walker;
+    rfre_origsymbol_list(gc->current_indices);
+    gc->current_indices = new_origsymbol_list();
+    symtable_init();
+    gc->current_cs_f_ir = DeclLocalVariableNIL;
+    gc->current_tir = DeclRecordNIL;
+.call generate_descent_call "    " elm vnusprog vnusprog
+    gc->current_cs_f_ir = DeclLocalVariableNIL;
+    gc->current_tir = DeclRecordNIL;
+    symtable_destroy();
+    tasktable_destroy();
+    rfre_origsymbol_list(gc->current_indices);
+    gc->current_indices = NULL;
+    return elm;
+}
+

@@ -1,0 +1,55 @@
+COMPILERSRCROOT = ..
+
+@SET_MAKE@
+
+JUNK = dist.lst
+
+help:
+	@echo "TIMBER FRONTENDS -- Possible make targets:"
+	@echo "--------------------------------------------------------"
+	@echo "spar         Make the Spar compiler"
+	@echo "all          Compile all targets"
+	@echo "tests        Run all Spar test programs."
+	@echo "clean        Delete all temporary files."
+	@echo "empty        Make everything spotless."
+	@echo "depend       Update all dependencies."
+	@echo "install      Install the software."
+	@echo "--------------------------------------------------------"
+
+all:
+	(cd spar && $(MAKE) all)
+	(cd sparlib && $(MAKE) all)
+	(cd spar-rtl && $(MAKE) all)
+
+check:
+	(cd spar-rtl && $(MAKE) check)
+	@(cd spar && $(MAKE) check && $(MAKE) runs && \
+	  cd testsuite && $(MAKE) check)
+tests:
+	(cd spar-rtl && $(MAKE) tests)
+	@(cd spar && $(MAKE) tests && $(MAKE) runs && \
+	  cd testsuite && $(MAKE) tests)
+
+install:
+	(cd spar && $(MAKE) install)
+	(cd sparlib && $(MAKE) install)
+	(cd spar-rtl && $(MAKE) install)
+
+uninstall:
+	(cd spar && $(MAKE) uninstall)
+	(cd sparlib && $(MAKE) uninstall)
+	(cd spar-rtl && $(MAKE) uninstall)
+
+depend:
+	(cd spar && $(MAKE) depend)
+	(cd spar-rtl && $(MAKE) depend)
+
+.PHONY: help all check tests install clean empty depend
+
+DISTFILES = Makefile.in configure configure.ac install-sh
+
+SUBDIRS = spar spar-rtl sparlib
+
+include $(COMPILERSRCROOT)/Makefiles/Make.configure
+include $(COMPILERSRCROOT)/Makefiles/Make.dist
+include $(COMPILERSRCROOT)/Makefiles/Make.std

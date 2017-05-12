@@ -1,0 +1,39 @@
+n=0
+throwing hard exception
+caught hard exception
+reached inner finally clause
+after inner try block
+reached outer finally clause
+
+n=1
+throwing soft exception
+caught soft exception
+reached inner finally clause
+after inner try block
+reached outer finally clause
+
+n=2
+throwing outer exception
+reached inner finally clause
+caught soft exception
+reached outer finally clause
+
+n=3
+throwing chain exception
+caught chain exception; throwing chained exception
+reached inner finally clause
+caught chained exception
+reached outer finally clause
+
+n=4
+the general case
+reached inner finally clause
+after inner try block
+reached outer finally clause
+
+n=5
+the general case
+reached inner finally clause
+after inner try block
+reached outer finally clause
+

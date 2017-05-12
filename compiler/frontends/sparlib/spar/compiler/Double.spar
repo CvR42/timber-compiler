@@ -1,0 +1,61 @@
+// File: Double.spar
+//
+// Helper functions for class java.lang.Double.
+
+package spar.compiler;
+
+public final class Double {
+    private Double() { /* this class is not instantiable */ }    
+
+    private static native double valueOf1(__array(char) s, int slen, __array(char) msg, int msglen) throws NumberFormatException;
+    private native static void formatDoubleString(__array(char) buf, int bufsz, double value, int precision);
+
+    public static String toStringWithPrecision( double value, int precision ){
+	final int bufsz = 70;
+
+	__array(char) buf = (__array(char)) Allocator.allocate( bufsz, __sizeof(char) );
+	int ix;
+
+	formatDoubleString( buf, bufsz, value, precision );
+	for( ix=0; ix<bufsz; ix++ ){
+	    if( buf[ix] == '\0' ){
+		break;
+	    }
+	}
+	String res = new String( buf, ix );
+	Allocator.free( (__array(byte)) buf );
+	return res;
+    }
+
+    public static double valueOf0( char s[], int offset, int count ) throws NumberFormatException
+    {
+	final int bufsz = 70;
+	final int slen = count;
+	__array(char) msg = (__array(char)) Allocator.allocate( bufsz, __sizeof(char) );
+	__array(char) sa = (__array(char)) Allocator.allocate( slen, __sizeof(char) );
+	for( ix :- 0:slen ){
+	    sa[ix] = s[ix+offset];
+	}
+	double res = valueOf1( sa, slen, msg, bufsz );
+
+	if( msg[0] != '\0' ){
+	    // There is an error message in the buffer.
+	    int ix;
+
+	    for( ix=0; ix<bufsz; ix++ ){
+		if( msg[ix] == '\0' ){
+		    break;
+		}
+	    }
+	    String errs = new String( msg, ix );
+
+	    Allocator.free( (__array(byte)) msg );
+	    Allocator.free( (__array(byte)) sa );
+	    throw new NumberFormatException( errs );
+	}
+	Allocator.free( (__array(byte)) msg );
+	Allocator.free( (__array(byte)) sa );
+	return res;
+    }
+
+}

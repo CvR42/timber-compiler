@@ -1,0 +1,100 @@
+/* Apply2owned engine
+
+   Make sure that a statement that causes communication has an
+   owner. If not derive the owner from a surrounding block/statement.
+   */
+
+.. File: apply2owned.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtAssign ExprWrapper
+.append actors statement block
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "applycheck.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+
+.foreach t statement block
+static $t rewrite_$t_action(
+    $t e, global_context gc)
+{
+    if (e->on != OwnerExpr_listNIL && e->on->sz != 0)
+    {
+.call push_current_owner
+	    gc->current_owner = e->on;
+.call generate_walker_call "    " e $t $t
+.call pop_current_owner
+    }
+    else
+    {
+.call generate_walker_call "    " e $t $t
+    }
+    return e;
+}
+.endforeach
+
+static ExprWrapper rewrite_ExprWrapper_action(
+    ExprWrapper e, global_context gc)
+{
+.call generate_walker_call "    " e ExprWrapper ExprWrapper
+    if (e->on != OwnerExpr_listNIL &&
+	e->on->sz != 0)
+	gc->do_transform = true;
+    return e;
+}
+
+static SmtAssign rewrite_SmtAssign_action(
+    SmtAssign e, global_context gc )
+{
+    gc->do_transform = false;
+.call generate_walker_call "    " e SmtAssign SmtAssign
+    if (gc->do_transform)
+    {
+	if (e->on == OwnerExpr_listNIL ||
+	    e->on->sz == 0)
+	{
+	    rfre_OwnerExpr_list(e->on);
+	    if (gc->current_owner != OwnerExpr_listNIL)
+	    {
+		e->on = rdup_OwnerExpr_list(gc->current_owner);
+	    }
+	    else
+	    {
+		OwnerExpr_list oe_l = new_OwnerExpr_list();
+		oe_l = append_OwnerExpr_list(oe_l, new_NewOwnReplicated());
+		e->on = oe_l;
+	    }
+	}
+    }
+    return e;
+}
+
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_2owned( vnusprog elm, global_context gc )
+{
+.call init_current_owner
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}

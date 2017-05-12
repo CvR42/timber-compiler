@@ -1,0 +1,12 @@
+// After JLS2 5.3    Method Invocation Conversion
+
+
+public class errjlsinvoc {
+    static int m(byte a, int b) { return a+b; }
+
+    static int m(short a, short b) { return a-b; }
+
+    public static void main(String[] args) {
+        __println(1,m(12, 2));        // compile-time error
+    }
+}

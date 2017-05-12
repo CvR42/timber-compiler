@@ -1,0 +1,17 @@
+//package spar.testsuite;
+
+import java.io.*;
+
+class t1 {
+    static int n;
+    static {
+	n = t1.wrap( 42 );
+    }
+    static int wrap( int n ) { return n; }
+}
+
+public class okinit1 {
+    public static void main(){
+	__println( 1, "n = ", t1.n );
+    }
+}

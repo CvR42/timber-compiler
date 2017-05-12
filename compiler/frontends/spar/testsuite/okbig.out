@@ -1,0 +1,143 @@
+Hello world
+Hello world
+Yep, true is true
+Yep, false is false
+c: (-2,-3)
+c: (-2,-3)
+c: (3,9)
+c: (-93,81)
+c: (-98,69)
+c: (2,9)
+n: 16
+i: -21
+b: TRUE
+x: -462.8
+s: test string
+c: (2,9)
+
+i: -42
+n: 16
+i: -42
+b: TRUE
+s: test string
+1
+100
+n: 0
+i = 14
+i = 13
+i = 12
+i = 11
+i = 10
+i = 9
+i = 8
+i = 7
+i = 6
+i = 5
+i = 4
+i = 3
+i = 2
+i = 1
+i = 0, j = 0
+i = 0, j = 1
+i = 0, j = 2
+i = 0, j = 3
+i = 1, j = 0
+i = 1, j = 1
+i = 1, j = 2
+i = 1, j = 3
+i = 2, j = 0
+i = 2, j = 1
+i = 2, j = 2
+i = 2, j = 3
+1=2 no
+1!=2 yes
+1<2 yes
+1<=2 yes
+1>2 no
+1>=2 no
+1=1 yes
+1!=1 no
+1<1 no
+1<=1 yes
+1>1 no
+1>=1 yes
+2=1 no
+2!=1 yes
+2<1 no
+2<=1 no
+2>1 yes
+2>=1 yes
+223=1 no
+223!=1 yes
+223<1 no
+223<=1 no
+223>1 yes
+223>=1 yes
+shp[0,0] = 0
+shp[0,1] = 1
+shp[0,2] = 2
+shp[0,3] = 3
+shp[0,4] = 4
+shp[0,5] = 5
+shp[0,6] = 6
+shp[0,7] = 7
+shp[1,0] = 1
+shp[1,1] = 2
+shp[1,2] = 3
+shp[1,3] = 4
+shp[1,4] = 5
+shp[1,5] = 6
+shp[1,6] = 7
+shp[1,7] = 8
+shp[2,0] = 2
+shp[2,1] = 3
+shp[2,2] = 4
+shp[2,3] = 5
+shp[2,4] = 6
+shp[2,5] = 7
+shp[2,6] = 8
+shp[2,7] = 9
+shp[3,0] = 3
+shp[3,1] = 4
+shp[3,2] = 5
+shp[3,3] = 6
+shp[3,4] = 7
+shp[3,5] = 8
+shp[3,6] = 9
+shp[3,7] = 10
+shp[4,0] = 4
+shp[4,1] = 5
+shp[4,2] = 6
+shp[4,3] = 7
+shp[4,4] = 8
+shp[4,5] = 9
+shp[4,6] = 10
+shp[4,7] = 11
+A = 66;
+66 66 66 66 66 66 66 66 66 66 66 66 66 66 66 66 66 66 66 66 
+A[i] = 0;
+A: 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 
+B[i] = i;
+B: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 
+A[i] = B[i];
+A: 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 
+42 84
+42 84 252
+n=3
+n=2
+n=1
+n=0
+lim = 10
+test_dynamic: everything ok
+yes
+12
+three
+one
+left shifts: int:4 byte:4 short:4 long:4
+right shifts: int:13 byte:13 short:13 long:13
+unsigned right shifts: int:13 byte:13 short:13 long:13
+shifts of negative numbers: left:-44 right:-3 unsigned right:1073741821
+bitwise operations: and:16 or:19 xor:3
+boolean operations: and:FALSE or:TRUE xor:TRUE
+bitwise not:-13 143
+boolean not:TRUE FALSE

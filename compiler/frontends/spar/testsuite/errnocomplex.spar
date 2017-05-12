@@ -1,0 +1,16 @@
+// Spar language extensions to Java. These should be flagged by the
+// compiler if the --nocomplex flag is given.
+
+package spar.testsuite;
+
+
+public class errnocomplex {
+    public static void main()
+    {
+	complex c;
+
+	c = 12i;
+
+	__println( 1, "hello world" );
+    }
+}

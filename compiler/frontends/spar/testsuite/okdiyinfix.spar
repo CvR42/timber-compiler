@@ -1,0 +1,10 @@
+// File: okdiyinfix.spar
+//
+// Tests do-it-yourself infix operator support.
+
+public class okdiyinfix {
+    static int add( int a, int b ){ return a+b; }
+    public static void main(){
+	__println( 1, 1 \add 2 );
+    }
+}

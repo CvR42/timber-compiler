@@ -1,0 +1,137 @@
+/* Applyresident test engine
+
+   If a function or procedure has no distributed formal parameters or
+   return type, and no OwnerExpr's can be found anywhere,
+   mark it with FlagPragma("resident").
+   No analysis of local variables, and no analysis of called functions.
+   We are only interested in what should happen locally inside a function,
+   so if the align engine didn't produce anything we should be ok..
+   
+   This will prevent code in a marked function to be parallellised.
+   */
+.. File: applyresident.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors DeclFunction DeclProcedure
+.append actors OwnerExpr
+.append actors SmtForeach
+.append actors TypePragmas ExprWrapper LocWrapper statement block declaration
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "applyresident.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Actors ----------- */
+.call generate_cutoff_pragma_action TypePragmas resident
+.call generate_cutoff_pragma_action ExprWrapper resident
+.call generate_cutoff_pragma_action LocWrapper resident
+.call generate_cutoff_pragma_action statement resident
+.call generate_cutoff_pragma_action block resident
+.call generate_cutoff_pragma_action declaration resident
+
+static int parameter_list_contains_distribution(
+    origsymbol_list l, global_context gc)
+{
+    int result = false;
+    for (unsigned i=0; i<l->sz; i++)
+    {
+        declaration d = declaration_list_find_origsymbol(
+            gc->prog->declarations,
+            l->arr[i]);
+        assert (d->tag == TAGDeclFormalVariable);
+        DeclFormalVariable fv = to_DeclFormalVariable(d);
+        if (hasDistribution(fv->t, gc))
+            result = true;
+    }
+    return result;
+}
+
+static DeclProcedure rewrite_DeclProcedure_action(
+    DeclProcedure e, global_context gc )
+{
+    gc->found_distribution_use = false;
+.call generate_walker_call "    " e DeclProcedure DeclProcedure
+    if (parameter_list_contains_distribution(e->parms, gc))
+	gc->found_distribution_use = true;
+    if (!gc->found_distribution_use)
+    {
+	if (warning_level >= WARN_RULE)
+	    fprintf(stderr,"procedure %s marked as resident\n",e->name->sym->name);
+        e->pragmas = append_Pragma_list(
+            e->pragmas,
+            new_FlagPragma(add_origsymbol("resident")));
+    }
+    return e;
+}
+
+static DeclFunction rewrite_DeclFunction_action(
+    DeclFunction e, global_context gc )
+{
+    gc->found_distribution_use = false;
+.call generate_walker_call "    " e DeclFunction DeclFunction
+    if (parameter_list_contains_distribution(e->parms, gc))
+	gc->found_distribution_use = true;
+    if (!gc->found_distribution_use)
+    {
+	if (warning_level >= WARN_RULE)
+	    fprintf(stderr,"function %s marked as resident\n",e->name->sym->name);
+        e->pragmas = append_Pragma_list(
+            e->pragmas,
+            new_FlagPragma(add_origsymbol("resident")));
+    }
+    return e;
+}
+
+static SmtForeach rewrite_SmtForeach_action(
+    SmtForeach e, global_context gc)
+{
+    if (pragma_list_contains_tmsymbol(
+        e->pragmas, add_tmsymbol("taskparallel")))
+    {
+        e->pragmas = append_Pragma_list(
+            e->pragmas, new_FlagPragma(add_origsymbol("resident")));
+	return e;
+    }
+.call generate_walker_call "    " e SmtForeach SmtForeach
+    return e;
+}
+
+/*
+  If we reach this node, there is a distribution.
+  */
+static OwnerExpr rewrite_OwnerExpr_action(
+    OwnerExpr e, global_context gc)
+{
+    gc->found_distribution_use = true;
+    return e;
+}
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_resident( vnusprog elm, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+    (void) rewrite_OwnerExpr_walker;
+    gc->found_distribution_use = false;
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}
+

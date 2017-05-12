@@ -1,0 +1,27 @@
+// Test some details of code generation:
+// - Fields that are overridden in subclasses are accessed right
+//   in those subclasses. As long as we don't have methods
+//   this cannot be tested directly.
+
+package spar.testsuite;
+
+class t {
+    public int x;
+    public int y;
+    public int z;
+}
+
+class t1 extends t {
+    public int w;
+    public int y;
+}
+
+public class genclass {
+    public static void main(){
+	t1 x = new t1();
+	x.w = 3;
+	x.x = 3;
+	x.y = 3;
+	x.z = 3;
+    }
+}

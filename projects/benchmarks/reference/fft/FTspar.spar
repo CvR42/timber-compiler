@@ -1,0 +1,313 @@
+public final class FTspar {
+  
+    // class W
+
+    static final char Class = 'W';
+    static final int MaxIterations = 6;
+    static final int Dim0 = 128;
+    static final int Dim1 = 128;
+    static final int Dim2 = 32;
+    static final int MaxDim = 128;
+    static final int TotalDim = Dim0 * Dim1 * Dim2;
+  
+    static final complex TestValue[] =
+    {
+    	 567.3612178944+529.3246849175i,
+    	 563.1436885271+528.2149986629i,
+    	 559.4024089970+527.0996558037i,
+    	 556.0698047020+526.0027904925i,
+    	 553.0898991250+524.9400845633i,
+    	 550.4159734538+523.9212247086i
+    };
+
+
+    // class S
+
+    //static final char Class = 'S';
+    //static final int MaxIterations = 6;
+    //static final int Dim0 = 64;
+    //static final int Dim1 = 64;
+    //static final int Dim2 = 64;
+    //static final int MaxDim = 64;
+    //static final int TotalDim = Dim0 * Dim1 * Dim2;
+    
+    //static final complex TestValue[] =
+    //{
+	//554.6087004964 + 484.5363331978i,
+	//554.6385409189 + 486.5304269511i,
+	//554.6148406171 + 488.3910722336i,
+	//554.5423607415 + 490.1273169046i,
+	//554.4255039624 + 491.7475857993i,
+	//554.2683411902 + 493.2597244941i
+    //};
+  
+    static complex omega[];
+ 
+    static complex temp1[] = new complex[MaxDim];
+    static complex temp2[] = new complex[MaxDim];
+
+    static final int expMax = MaxIterations * 
+	(Dim0*Dim0 + Dim1*Dim1 + Dim2*Dim2);
+
+    static final double ex[] = new double[expMax+1];
+    static final complex sums[] = new complex[MaxIterations];
+  
+
+    static final double Pi    = 3.141592653589793238;
+    static final double alpha = 1.0E-6;
+  
+    static void ComputeIndexMap(int indexmap[*,*,*])
+    {
+	foreach(i :- :Dim0 , j :- :Dim1 , k :- :Dim2)    {
+	    int r = (i+Dim0/2)%Dim0 - Dim0/2;
+	    int s = (j+Dim1/2)%Dim1 - Dim1/2;
+	    int t = (k+Dim2/2)%Dim2 - Dim2/2;
+	    indexmap[i,j,k] = t*t + s*s + r*r;
+	}
+	
+	ex[0] = 1.0;
+	ex[1] = Math.exp(-4.0*alpha*Pi*Pi);
+	for (i :- 2:expMax+1)
+	    ex[i] = ex[i-1] * ex[1];
+    }
+  
+    static long powermod(long a, long exponent)
+    {
+	long result = 1L;
+	
+	while(exponent!=0) {
+	    if ((exponent&1)!=0) {
+		result *= a;
+		result &= 0x3fffffffffffL;
+	    }
+	    a*=a;
+	    a&=0x3fffffffffffL;
+	    exponent>>=1;
+	}
+	return result;
+    }
+  
+    static long s,m;
+  
+    static void rnd_seed(final long seed, final long mult)
+    {
+	s = seed;
+	m = mult;
+    }
+  
+    static void rnd_skip(final long N)
+    { // Skip the next N random numbers
+	s*=powermod(m,N);
+	s&=0x3fffffffffffL;
+    }
+  
+    inline static double rnd_double()
+    {
+	s*=m;
+	s&=0x3fffffffffffL;
+	return ((double) s / (double)0x400000000000L);
+    }
+  
+    static void ComputeInitialConditions(final complex u[*,*,*])
+    {
+	final long GenerationSeed = 314159265L;
+	final long GenerationMult = 1220703125L;
+    
+	for(k :- :Dim2) {
+	    rnd_seed(GenerationSeed,GenerationMult);
+	    rnd_skip(2*k*Dim1*Dim0);
+    
+	    for (j :- :Dim1, i :- :Dim0)
+		u[i,j,k] = complex(rnd_double(),rnd_double());
+	}
+    }
+  
+    inline static int ILog2(final int n)
+    {
+	if (n<0x0002) return  0;
+	if (n<0x0004) return  1;
+	if (n<0x0008) return  2;
+	if (n<0x0010) return  3;
+	if (n<0x0020) return  4;
+	if (n<0x0040) return  5;
+	if (n<0x0080) return  6;
+	if (n<0x0100) return  7;
+	if (n<0x0200) return  8;
+	if (n<0x0400) return  9;
+	if (n<0x0800) return 10;
+	if (n<0x1000) return 11;
+	if (n<0x2000) return 12;
+	if (n<0x4000) return 13;
+	if (n<0x8000) return 14;
+	return 15;
+    }
+  
+    static void FFT_Init()
+    {
+	// omega[t] = e^(2*Pi*i/2^t)
+	
+	int m = ILog2(MaxDim)+1;
+	omega = new complex[m];
+	
+	int k = 1;
+	for (i :- :m) {
+	    double t = 2.0*Pi/k;
+
+	    omega[i] = complex(Math.cos(t),Math.sin(t));
+	    k *= 2;
+	}
+    }
+    
+    static void Evolve(int iter, complex v[*,*,*], complex w[*,*,*], int indexmap[*,*,*])
+    {
+	iter++;
+	foreach(i :- :Dim0 , j :- :Dim1 , k :- :Dim2)
+	    w[i,j,k] = v[i,j,k] * ex[iter*indexmap[i,j,k]];
+    }
+    
+    static void CheckSum(final int iter, final complex u[*,*,*])
+    {
+	complex chk = 0.0;
+	foreach (k :- 1:1025)
+	    chk += u[k%Dim0,3*k%Dim1,5*k%Dim2];
+	sums[iter] = chk / TotalDim;
+    }
+    
+    inline static void FFT(final int is, final int N)
+    {
+	// is = normal(1)/inverse(-1)
+	// x.length and y.length must be 2^M
+	// x is input. y is temporary vector
+	// both x and y will be altered
+
+	int M = ILog2(N);
+	complex x[] = temp1;
+	complex y[] = temp2;
+
+	for(t :- 1:M+1) {
+	    int pM = 1 << (M-t);
+	    int pt = 1 << (t-1);
+	
+	    complex om1 = (is==-1) ?  Complex.conj(omega[t]) : omega[t];
+	    complex om = 1.0;
+	
+	    for (k :- :pt) {
+		int id_from = k;
+		int id_to = k;
+
+		for (j :- :pM) {
+		    complex x2 = om * x[id_from+N/2];
+
+		    y[   id_to] = x[id_from] + x2;
+		    y[pt+id_to] = x[id_from] - x2;
+		    id_from += pt;
+		    id_to += (2*pt);
+		}
+		om *=om1;
+	    
+	    }
+	    complex swap[] = x; x = y; y = swap;
+	}
+	temp1 = x;
+	temp2 = y;
+    }
+
+    static void FFT3D(final int is, final complex u[*,*,*], final complex v[*,*,*])
+    {
+	// dim 1
+	foreach(j :- :Dim1, k :- :Dim2) {
+	    foreach (i :- :Dim0)
+		temp1[i] = u[i,j,k];
+	    FFT(is,Dim0);
+	    foreach (i :- :Dim0)
+		v[i,j,k] = temp1[i];
+	}
+	// dim 2
+	foreach(i :- :Dim0, k :- :Dim2) {
+	    foreach (j :- :Dim1)
+		temp1[j] = v[i,j,k];
+	    FFT(is,Dim1);
+	    foreach (j :- :Dim1)
+		v[i,j,k] = temp1[j];
+	}
+	// dim 3
+	foreach(i :- :Dim0, j :- :Dim1) {
+	    for (k :- :Dim2)
+		temp1[k] = v[i,j,k];
+	    FFT(is,Dim2);
+	    for (k :- :Dim2)
+		v[i,j,k] = temp1[k];
+	}
+    }
+    
+    static boolean Verify()
+    {
+	double err;
+	final double epsilon = 1.0E-12;
+
+	foreach(i :- : MaxIterations) {
+	    err = Math.abs((Complex.real(sums[i])-Complex.real(TestValue[i]))/
+			   Complex.real(TestValue[i]));
+	    if (err>=epsilon)
+		return false;
+	    
+	    err = Math.abs((Complex.imag(sums[i])-Complex.imag(TestValue[i]))/
+			   Complex.imag(TestValue[i]));
+	    if (err>=epsilon)
+		return false;
+	}
+	return true;
+    }
+    
+    public static void main(String args[])
+    {
+	final complex u[*,*,*] = new complex[Dim0,Dim1,Dim2];
+	final complex v[*,*,*] = new complex[Dim0,Dim1,Dim2];
+	final complex w[*,*,*] = new complex[Dim0,Dim1,Dim2];
+	final int indexmap[*,*,*] = new int[Dim0,Dim1,Dim2];
+
+	if( false ){
+	    System.out.println("NAS Parallel Benchmarks SPAR version - FT Benchmark");
+	    System.out.println(" Size: "+Dim0+"x"+Dim1+"x"+Dim2+" (class "+Class+")");
+	    System.out.println("  Iterations:   "+MaxIterations);
+	}
+	
+	long T1 = System.currentTimeMillis();
+
+	ComputeIndexMap(indexmap);
+	
+	ComputeInitialConditions(v);
+	
+	FFT_Init();
+	FFT3D(1,v,u);
+	
+	for(iter :- : MaxIterations) {
+	    Evolve(iter,u,v,indexmap);
+	    FFT3D(-1,v,w);
+	    CheckSum(iter,w);
+	}
+	long T2 = System.currentTimeMillis();
+	
+	double TIME = 0.001*(T2-T1);
+	
+	boolean passedVerification = Verify();
+
+	double mops = 1.0E-6*TotalDim *
+	    (14.8157+7.19641*Math.log((double)TotalDim) +
+	     5.23518+7.21113*Math.log((double)TotalDim)) *
+	    MaxIterations/TIME;
+
+	if( false ){
+	    System.out.println("\n\n Benchmark Completed");
+	    System.out.println(" Class           =             " + Class);  
+	    System.out.println(" Size            =             " + Dim0 + " x " + Dim1 + " x " + Dim2);
+	    System.out.println(" Iterations      =             " + MaxIterations);
+	    System.out.println(" Time in seconds =             " + TIME);
+	    System.out.println(" Mop/s total     =             " + mops);
+	    System.out.println(" Operation type  =             " + "floating point");
+	    System.out.println(" Verification    =             " +
+			       (passedVerification ? "SUCCESSFUL" : "UNSUCCESSFUL"));
+	    System.out.println(" Version         =             "+"SIDNEY (Java)");
+	}
+    }
+}

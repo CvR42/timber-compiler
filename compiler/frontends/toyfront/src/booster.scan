@@ -1,0 +1,166 @@
+/*****
+
+$Author: leo $
+$Date: 1995/10/17 13:33:58 $
+$Log: booster.scan,v $
+Revision 1.1.1.1  1995/10/17 13:33:58  leo
+Initial frontend source tree.
+
+Revision 0.1  1995/06/23  12:42:36  joachim
+initial revision derived from arnauds frontend
+
+$Revision: 1.1.1.1 $
+$Source: /home/rama/timber/CVS/compiler/frontends/toyfront/src/booster.scan,v $ 
+
+*****/
+
+SCANNER boos_scan
+
+EXPORT {
+#include "Idents.h"
+#include "Positions.h"
+
+INSERT tScanAttribute
+}
+
+GLOBAL {
+# include <stdlib.h>
+# include "Idents.h"
+# include "Positions.h"
+# include "StringMem.h"
+# include "Errors.h"
+# include "ErrorStr.h"
+# include "MagicNumbers.h"
+
+INSERT ErrorAttribute
+
+int   level = 0;
+}
+
+LOCAL{
+    char  Word [MaxCharsPerString], S[5];
+    int	  L;
+}
+
+DEFAULT{
+    MessageI ((char *)ErrStr[31], xxError, boos_scan_Attribute.Position,
+    	xxCharacter,boos_scan_TokenPtr); 
+}
+
+EOF{
+    if (yyStartState == comment)
+      Message ((char *)ErrStr[32], xxError, boos_scan_Attribute.Position);
+    if (yyStartState == string)
+      Message ((char *)ErrStr[33], xxError, boos_scan_Attribute.Position);
+}
+
+
+DEFINE
+
+    Letter  	     =   {a-z A-Z} .
+    OctDigit         =   {0-7} .
+    Digit   	     =   {0-9} .
+    StringChars	     =   - {\00-\31 \39 \92 \127} .
+    EscapedChars     =   "\b" | "\f" | "\n" | "\r" | "\t" | "\'" | 
+                         "\\" | "\" OctDigit [1-3].
+
+START	comment, commentline, string
+
+RULE
+
+NOT #commentline, string#
+	"//"	    	:-  {yyStart(commentline);}
+
+
+#commentline#
+    	\n	    	:-  { yyEol(0);
+                              if (level == 0 ) yyStart(STD) else 
+    	    	    	        yyStart(comment);
+                            }
+
+#commentline#
+    	- {\n} +        :-  {}	
+
+
+NOT #commentline, string#   
+    	"/*"	    	:-  {++level; yyStart(comment);}
+
+
+#comment#
+    	"*/"	    	:-  {--level; if (level == 0) yyStart(STD);}
+
+
+#comment#
+    	"*" | - {*\n\t} +
+    	    	    	:-  {}
+
+NOT #commentline, string#
+    	\n   	    	:-  {yyEol(0);}   	
+
+
+NOT #string#
+    	\t  	    	:-  {yyTab;}
+    	\r | \f   	:-  {}    	
+    	
+
+INSERT RULES #STD#
+
+
+#STD#	    Digit+ : {
+  (void) boos_scan_GetWord(Word);
+   boos_scan_Attribute.NaturalConst.Value = atoi((char *) Word);
+   return NaturalConst;
+}
+
+
+#STD#	   "-" Digit+ : {
+  (void) boos_scan_GetWord(Word);
+   boos_scan_Attribute.IntegerConst.Value = atoi((char *) Word);
+   return IntegerConst;
+}
+
+
+#STD#	   ("-")? Digit+ ("." Digit+)? ("E" ("+" | "-")? Digit +)? : {
+  (void) boos_scan_GetWord(Word);
+   boos_scan_Attribute.RealConst.Value = atof((char *) Word);
+   return RealConst;
+}
+
+
+#STD#	    "'" : {yyStart(string); L = 0;}
+#STD#	    "\" : {return Exclude;}
+#STD#	    "_" : {return Under_Score;}
+#STD#	    "+" : {return Plus;}
+#STD#	    "-" : {return Minus;}
+
+
+#STD#	Letter (Letter|Digit)* : {
+  boos_scan_Attribute.Identifier.Ident = 
+    MakeIdent (boos_scan_TokenPtr, boos_scan_TokenLength);
+  return Identifier;
+}
+
+
+#string#    (EscapedChars | StringChars) + :-  {
+  L += boos_scan_GetWord(& Word[L]);
+}
+
+
+#string#    ' :- {
+  yyStart(STD); 
+  Word[L] = '\0';
+  boos_scan_Attribute.StringLiteral.StringValue = PutString(Word, L);
+  return StringLiteral;
+}
+
+
+#string#    \n	:- {
+  MessageI((char *)ErrStr[35],xxError, boos_scan_Attribute.Position,
+    xxString, boos_scan_TokenPtr);
+  yyEol(0); 
+  yyStart(STD); 
+  Word[L] = '\0';
+  boos_scan_Attribute.StringLiteral.StringValue = PutString(Word,L); 
+  return StringLiteral;
+}
+

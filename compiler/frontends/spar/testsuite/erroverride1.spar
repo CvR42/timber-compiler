@@ -1,0 +1,18 @@
+// File: erroverride1.spar
+//
+// Small test to excercise the checking of a method with default access with
+// a private method.
+// See JLS2 8.4.6.3, third bullet
+
+class t1 {
+    void bla() {}
+}
+
+public class erroverride1 extends t1 {
+    private void bla() {}
+    public static void main(String args[])
+    {
+	erroverride1 x = null;
+	x.bla();
+    }
+}

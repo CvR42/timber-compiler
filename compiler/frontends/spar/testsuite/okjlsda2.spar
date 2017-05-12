@@ -1,0 +1,16 @@
+// After JLS2 16 Definite assignment
+
+public final class okjlsda2 {
+    public static void main(){
+	int n = 2;
+	{
+	    int k;
+	    while( true ){
+		k = n;
+		if( k >= 5 ) break;
+		n = 6;
+	    }
+	    System.out.println(k);
+	}
+    }
+}

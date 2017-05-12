@@ -1,0 +1,43 @@
+// File: MatMulSpar.java
+//
+// Reference benchmark program
+//
+// This version was re-written to use Spar features.
+//
+// After the matrix multiplication benchmark shown by the Ninja
+// compiler people.
+
+public class MatMulSpar {
+    static void matmul( double [*,*] A, double [*,*] B, double [*,*] C,
+		      int m, int n, int p ){
+	for( i :- 0:m, j :- 0:p, k :- 0:n )
+	    C[i,j] += A[i,k]*B[k,j];
+    }
+    public static void main( String args[] ){
+	if( args.length != 1 ){
+	    System.err.println( "Exactly one command line argument required" );
+	    System.exit( 1 );
+	}
+	String s = args[0];
+	if( s.equals( "small" ) ){
+	    final int sz = 64;
+	    final double [*,*] A = new double[sz,sz];
+	    final double [*,*] B = new double[sz,sz];
+	    final double [*,*] C = new double[sz,sz];
+
+	    matmul( A, B, C, sz, sz, sz );
+	}
+	else if( s.equals( "large" ) ){
+	    final int sz = 500;
+	    final double [*,*] A = new double[sz,sz];
+	    final double [*,*] B = new double[sz,sz];
+	    final double [*,*] C = new double[sz,sz];
+
+	    matmul( A, B, C, sz, sz, sz );
+	}
+	else {
+	    System.err.println( "Argument should be `small' or `large', not `" + s + "'" );
+	    System.exit( 1 );
+	}
+    }
+}

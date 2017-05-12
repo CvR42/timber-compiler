@@ -1,0 +1,8 @@
+public class errforkstatic implements spar.lang.Forkable {
+    static protected int n = 3;
+
+    public static void main()
+    {
+	String s = "";
+    }
+}

@@ -1,0 +1,21 @@
+globalpragmas <$
+  ProcessorType = ((gpp "trimedia") (dsp "TI_C60")),
+  Processors    = ((gpp gpp1) (dsp dsp1D[4]) (dsp dsp2D[2,3]))
+$>;
+
+public class tst1 {
+  public static void main() {
+     int [*,*]<$ on = (lambda (i j) dsp2D[(block j),(block i 5)]) $> a = new int[50,50]<$ on = (lambda (i j) dsp2D[(block j),(block i 5)]) $>;
+
+    <$ on = dsp2D[(cyclic 7-8-9-10/11/12/13), (cyclic 3%4%5%i 17)] $> 
+      a[3,4] = 7;
+    <$ on = dsp2D[_all, _] $> 
+      a[5,6] = 8;
+    foreach [ i:- 0:10]
+      <$ on = dsp2D[map[@i], _] $>{ 
+        a[i,2] = 0;
+    }
+    <$ on = _all, on = _ $> 
+      a[6,7] = a[8,9];
+  }
+};

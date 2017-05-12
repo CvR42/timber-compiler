@@ -1,0 +1,18 @@
+class TestException extends Exception {
+   TestException() { super(); }
+   TestException(String s) { super(s); }
+}
+
+class TestSubException extends Exception {
+   TestSubException() { super(); }
+   TestSubException(String s) { super(s); }
+}
+
+public final class errbadthrows {
+    static void f() throws TestException {
+	System.out.println( "Hi there" );
+    }
+    public static void main( String args[] ) throws TestSubException {
+	f();
+    }
+}

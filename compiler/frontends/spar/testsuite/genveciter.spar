@@ -1,0 +1,13 @@
+// File: genveciter.spar
+//
+// Test the code that is generated for a vector iterator.
+
+public final class genveciter {
+    public static void main(){
+	int a[*,*] = new int[10,10];
+
+	for( v :- :a.getSize() ){
+	    a@v = 0;
+	}
+    }
+}

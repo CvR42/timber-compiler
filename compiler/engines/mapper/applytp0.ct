@@ -1,0 +1,64 @@
+/* Applytp0 engine
+
+   Do Andrei's stuff.
+   Read the task and task_id pragmas and fill the task name to task id table.
+   
+   */
+
+.. File: applytp0.ct
+..
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtProcedureCall
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "vnusctl.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "parsepragmas.h"
+#include "applytp0.h"
+#include "symtable.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* ----------- Support ----------- */
+/* ----------- Actors ----------- */
+
+static SmtProcedureCall rewrite_SmtProcedureCall_action(
+    SmtProcedureCall e, global_context /*gc*/ )
+{
+    int task_pos = pragma_list_find_index_tmsymbol(e->pragmas, add_tmsymbol("task"));
+    int taskid_pos = pragma_list_find_index_tmsymbol(e->pragmas, add_tmsymbol("task_id"));
+    if (task_pos == -1)
+	return e;
+    assert(taskid_pos != -1);
+    TaskId task = parse_task_pragma(e->pragmas->arr[task_pos]);
+    int id = parse_taskid_pragma(e->pragmas->arr[taskid_pos]);
+    tasktable_add_translation(task->name->sym,id);
+    fprintf(stderr,"TP0:added %s->%d task table entry\n",task->name->sym->name,id);
+    rfre_TaskId(task);
+    return e;
+}
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_tp0( vnusprog elm, global_context gc )
+{
+    (void) rewrite_SmtProcedureCall_walker;
+    tasktable_init();
+.call generate_descent_call "    " elm vnusprog vnusprog
+    return elm;
+}

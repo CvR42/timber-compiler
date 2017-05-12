@@ -1,0 +1,27 @@
+This file contains text that has been removed from the official 
+README texts, since it describes features that are not (officially) supported.
+
+PANDA
+-----
+
+Panda is a runtime system made at the VU in Amsterdam. You need to set the
+PANDA environment variable, for example $(HOME)/panda/panda4.0.
+If you want to run on the DAS (a cluster with Myrinet) you should also
+use the --enable-das option.
+
+
+Other support
+-------------
+
+The compiler contains some code to support compilation for pthreads
+and for Philips Trimedia plugin cards. This code is not supported
+in any form.
+
+
+If you go to the Makefiles directory and run ./configure --help you will get
+a list of options with at the bottom:
+--with options recognized:
+  --with-pthreads         create pthreads glue library
+  --with-panda            create panda glue library
+  --with-trimedia         create trimedia glue library
+  --enable-das            use Myrinet on DAS

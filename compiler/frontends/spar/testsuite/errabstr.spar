@@ -1,0 +1,15 @@
+// File: errabstr.spar
+//
+// An abstract method in a concrete class should cause an error.
+
+package spar.testsuite;
+
+public class errabstr {
+    public abstract void foo();
+    public static void main()
+    {
+	errabstr x = new errabstr();
+	x.foo();
+	__println( 1, "Hello world" );
+    }
+}

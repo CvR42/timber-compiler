@@ -1,0 +1,524 @@
+.. File: applyred1.ct
+..
+/*
+   Applyred1 engine
+
+   Do simple reduction.
+   */
+
+/*
+  This engine rewrites statements of the form :
+
+  <$ reduction $> foreach( <cardinality-list> ){
+      <x> = <x> <op> <y>;
+          OR
+      <x> = <func>(<x>, <y>);
+  }
+
+  where <op> and <func> are commutative operators.
+  Also, the statement has an owner O1().
+  Also, either <y> or the whole rhs has an owner O2(i).
+
+  This is rewritten to :
+ 
+  {
+      local typeof(<x>) sum = <neutral_element(<op>)>;
+      <$ independent $>foreach( <cardinality-list> ){
+          if (isNewMaster(O2(i),thisProcessor()){
+              sum = sum <op> <y>;
+              OR
+              sum = <func>(sum, <y>);
+	  }
+      }
+      foreach( p=0:np ){
+          <$ on=O1() $> <x> = <x> <op> sum@local(p);
+	      OR
+	  <$ on=O1() $> <x> = <func>(<x>, sum@local(p));
+      }
+  }
+  
+  Notes:
+  *   We blindly assume that the left operand of the binop and the
+      lhs of the assignment are identical.
+  *   We blindly assume that <x> is independent of the iteration variable(s).
+  *   If the whole rhs has an owner this probably means that the lhs is
+      replicated. Should check that there is no other owner inside the rhs.
+  *   If the lhs is replicated we should accumulate in another tempo on
+      local(0) and broadcast from there. This prevents excessive broadcasts.
+  */
+.insert genwalk.t
+..
+.. For which types are there actions defines?
+.set actors
+.append actors SmtForeach
+.append actors DeclFunction DeclProcedure
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "vnusprog" "$(actors)"}
+..
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "global.h"
+#include "error.h"
+#include "service.h"
+#include "applyred1.h"
+#include "vnusctl.h"
+#include "replace.h"
+
+.call generate_walker_forwards "$(visit_types)"
+
+/* Helper functions */
+
+/* Given an operator, return true iff it is commutative. */
+static bool is_commutative_operator( BINOP op )
+{
+    return
+        op == BINOP_PLUS ||
+        op == BINOP_TIMES ||
+        op == BINOP_AND ||
+        op == BINOP_XOR ||
+        op == BINOP_OR
+        ;
+}
+
+/* Given a basetype t and a constant 'n', return a constant expression
+ * of that type.
+ */
+static expression build_cast_constant( BASETYPE t, int n )
+{
+    if( t == BT_INT ){
+        return new_ExprInt( n );
+    }
+    return new_ExprCast( new_TypeBase( t ), new_ExprInt( n ) );
+}
+
+static expression retrieve_neutral_element( SmtForeach e, int neutral_pos, BASETYPE t )
+{
+    assert(neutral_pos != -1);
+    assert (e->pragmas->arr[neutral_pos]->tag == TAGValuePragma);
+    ValuePragma vpr = to_ValuePragma(e->pragmas->arr[neutral_pos]);
+    assert(vpr->x->tag == TAGNumberPragmaExpression);
+    NumberPragmaExpression npre = to_NumberPragmaExpression(vpr->x);
+    return new_ExprCast( new_TypeBase(t), new_ExprDouble(npre->v));
+}
+
+/* Given an operator and the type of its operands, return a new expression
+ * containing the neutral element of that operator.
+ */
+static expression build_neutral_element( BINOP op, BASETYPE t )
+{
+    expression res = expressionNIL;
+
+    switch( op ){
+        case BINOP_AND:
+            if( t == BT_BOOLEAN ){
+                res = new_ExprBoolean( TMTRUE );
+            }
+            else {
+                res = new_ExprUnop( UNOP_NEGATE, build_cast_constant( t, 0 ) );
+            }
+            break;
+
+        case BINOP_OR:
+            if( t == BT_BOOLEAN ){
+                res = new_ExprBoolean( TMFALSE );
+            }
+            else {
+                res = build_cast_constant( t, 0 );
+            }
+            break;
+
+        case BINOP_XOR:
+            res = build_cast_constant( t, 0 );
+            break;
+
+        case BINOP_PLUS:
+            res = build_cast_constant( t, 0 );
+            break;
+
+        case BINOP_TIMES:
+            res = build_cast_constant( t, 1 );
+            break;
+
+        default:
+            internal_error( "only a commutative operator has a neutral element" );
+            break;
+    }
+    return res;
+}
+
+
+static void remove_reduction_pragma(
+    SmtForeach e)
+{
+    int pos = pragma_list_find_index_tmsymbol(
+        e->pragmas,
+        add_tmsymbol("reduction"));
+    assert(pos != -1);
+    e->pragmas = delete_Pragma_list(e->pragmas, pos);
+    if (warning_level >= WARN_DEBUG)
+	fprintf(stderr, "RED1: removed reduction pragma\n");
+}
+
+
+static statement rewrite_reduction(
+    SmtForeach e, global_context gc, SmtAssign as, int neutral_pos, bool isOpRed)
+{
+    location lhs = as->lhs;
+    expression rhs = as->rhs;
+
+    BINOP optor = BINOPNIL;
+    expression operandA = expressionNIL;
+    expression operandB = expressionNIL;
+    expression function = expressionNIL;
+
+    OwnerExpr_list lhsOwner = OwnerExpr_listNIL;
+    OwnerExpr_list rhsOwner = OwnerExpr_listNIL;
+
+    assert (lhs->tag != TAGLocWrapper);
+    
+    assert (as->on != OwnerExpr_listNIL && as->on->sz == 1);
+    lhsOwner = as->on;
+
+    if (rhs->tag == TAGExprWrapper)
+    {
+	ExprWrapper ew = to_ExprWrapper(rhs);
+	assert(ew->on != OwnerExpr_listNIL && ew->on->sz == 1);
+	rhsOwner = ew->on;
+	rhs = ew->x;
+    }
+    
+    if (isOpRed)
+    {
+	assert(rhs->tag == TAGExprBinop);
+	ExprBinop ebo = to_ExprBinop(rhs);
+	optor = ebo->optor;
+	
+	if( !is_commutative_operator( optor ) ){
+	    if (warning_level >= WARN_WARNING)
+		fprintf(stderr, "RED1: unsupported operator\n");
+	    return e;
+	}
+	operandA = ebo->left;
+	operandB = ebo->right;
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr, "RED1: commutative operator\n");
+    }
+    else 
+    {
+	assert(rhs->tag == TAGExprFunctionCall);
+	ExprFunctionCall ef = to_ExprFunctionCall(rhs);
+	assert(ef->parameters->sz == 2); // 2 parameters, no common block:-)
+	
+	if (neutral_pos == -1)
+	{
+	    if (warning_level >= WARN_WARNING)
+		fprintf(stderr, "RED1: function reduction must have neutral element\n");
+	    return e;
+	}
+	function = ef->function;
+	operandA = ef->parameters->arr[0];
+	operandB = ef->parameters->arr[1];
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr, "RED1: function call\n");
+    }
+    assert (operandA->tag != TAGExprWrapper);
+    if ((rhsOwner != OwnerExpr_listNIL &&
+	 operandB->tag == TAGExprWrapper) ||
+	(rhsOwner == OwnerExpr_listNIL &&
+	 operandB->tag != TAGExprWrapper))
+    {
+	if (warning_level >= WARN_WARNING)
+	    fprintf(stderr,"RED1: reduction does not match, please rewrite\n");
+	return e;
+    }
+    
+    if (operandB->tag == TAGExprWrapper)
+    {
+	ExprWrapper ew = to_ExprWrapper(operandB);
+	assert(ew->on != OwnerExpr_listNIL && ew->on->sz == 1);
+	rhsOwner = ew->on;
+	operandB = ew->x;
+    }
+    assert (lhsOwner != OwnerExpr_listNIL && lhsOwner->sz == 1);
+    assert (rhsOwner != OwnerExpr_listNIL && rhsOwner->sz == 1);
+    
+    if (warning_level >= WARN_RULE)
+	fprintf(stderr, "RED1: doing transformation\n");
+        // TODO: make sure the lhs and one of the operands are
+        // the same, and the other one is independent of these.
+    type t_elm = derive_type_location( gc->prog->declarations, as->orig, lhs );
+    assert( t_elm->tag == TAGTypeBase );
+    BASETYPE bt_elm = to_TypeBase(t_elm)->base;
+    tmsymbol scopenm = gen_tmsymbol( "redscope" );
+    expression neutral_elt = expressionNIL;
+    if (isOpRed)
+    {
+	if (neutral_pos == -1)
+	    neutral_elt = build_neutral_element( optor, bt_elm );
+	else
+	    neutral_elt = retrieve_neutral_element(e, neutral_pos, bt_elm);
+    }
+    else
+    {
+	neutral_elt = retrieve_neutral_element(e, neutral_pos, bt_elm);
+    }
+    DeclLocalVariable sum_decl = new_DeclLocalVariable(
+        gen_origsymbol("sum"),
+        MOD_LOCAL,
+        Pragma_listNIL,
+        scopenm,
+        t_elm,
+        new_OptExpr( neutral_elt )
+        );
+        /* Above MOD_LOCAL bit is not supported. Scalar can't have distribution.
+           Should have local(0) distribution.
+           Not important though, IF we remove communication and computation
+           pragmas from pragma lists! Better yet, make sure. that these pragmas
+           won't be generated at all by decompose and align! */
+
+    block blk = snew_block();
+    blk->scope = scopenm;
+
+    SmtForeach innerLoop1 = snew_SmtForeach(
+	rdup_cardinality_list(e->cards),
+	OwnerExpr_listNIL,
+	snew_block());
+    innerLoop1->pragmas = new_Pragma_list();
+    innerLoop1->pragmas = append_Pragma_list(
+	innerLoop1->pragmas,
+	new_FlagPragma(add_origsymbol("independent")));
+    
+    SmtForeach outerLoop2 = snew_SmtForeach(
+	new_cardinality_list(),
+	OwnerExpr_listNIL,
+	snew_block());
+    cardinality outerCard2 = new_cardinality(
+	gen_origsymbol("red_cv"),
+	new_ExprInt(0),
+	build_numberOfProcessors_expression(gc),
+	new_ExprInt(1),
+	secondary_listNIL);
+    outerLoop2->cards = append_cardinality_list(
+	outerLoop2->cards,
+	outerCard2);
+
+    DeclCardinalityVariable cv2 = new_DeclCardinalityVariable(
+	rdup_origsymbol(outerCard2->name),
+	0,
+	Pragma_listNIL);
+
+    expression_list proc = new_expression_list();
+    proc = append_expression_list(
+	proc,
+	build_currentProcessor_expression(gc));
+	
+    SmtIf theIf = snew_SmtIf(
+	new_ExprIsNewMaster(
+	    rdup_OwnerExpr(rhsOwner->arr[0]),
+	    proc),
+	snew_block(),
+	snew_block());
+
+    SmtAssign localGather = SmtAssignNIL;
+    if (isOpRed)
+    {
+	localGather = snew_SmtAssign(
+	    new_LocName(
+		rdup_origsymbol(sum_decl->name)),
+	    new_ExprBinop(
+		new_ExprName(
+		    rdup_origsymbol(sum_decl->name)),
+		optor,
+		rdup_expression(operandB)));
+    }
+    else
+    {
+	expression_list parms = new_expression_list();
+	parms = append_expression_list(
+	    parms,
+		new_ExprName(
+		    rdup_origsymbol(sum_decl->name)));
+	parms = append_expression_list(
+	    parms,
+	    rdup_expression(operandB));
+	localGather = snew_SmtAssign(
+	    new_LocName(
+		rdup_origsymbol(sum_decl->name)),
+	    new_ExprFunctionCall(
+		rdup_expression(function),
+		parms));
+    }
+
+    OwnerExpr_list sumOwner = new_OwnerExpr_list();
+    {
+	NewDistLocal ndl = new_NewDistLocal(
+	    new_ExprName(
+		rdup_origsymbol(outerCard2->name)));
+	NewOwnLocation nol = new_NewOwnLocation(
+	    new_ExprName(add_origsymbol("P")),
+	    new_DistrExpr_list());
+	nol->distr = append_DistrExpr_list(
+	    nol->distr, ndl);
+	sumOwner = append_OwnerExpr_list(
+	    sumOwner, nol);
+    }
+    
+    SmtAssign globalGather = SmtAssignNIL;
+    if (isOpRed)
+    {
+	globalGather = snew_SmtAssign(
+	    rdup_location(lhs),
+	    new_ExprBinop(
+		rdup_expression(operandA),
+		optor,
+		new_ExprWrapper(
+		    Pragma_listNIL,
+		    sumOwner,
+		    new_ExprName(
+			rdup_origsymbol(sum_decl->name)))));
+    }
+    else
+    {
+	expression_list parms = new_expression_list();
+	parms = append_expression_list(
+	    parms,
+	    rdup_expression(operandA));
+	parms = append_expression_list(
+	    parms,
+		new_ExprWrapper(
+		    Pragma_listNIL,
+		    sumOwner,
+		    new_ExprName(
+			rdup_origsymbol(sum_decl->name))));
+	globalGather = snew_SmtAssign(
+	    rdup_location(lhs),
+	    new_ExprFunctionCall(
+		rdup_expression(function),
+		parms));
+    }
+    globalGather->on = rdup_OwnerExpr_list(lhsOwner);
+
+    theIf->thenbody->statements = append_statement_list(
+	theIf->thenbody->statements,
+	localGather);
+    innerLoop1->body->statements = append_statement_list(
+	innerLoop1->body->statements,
+	theIf);
+    outerLoop2->body->statements = append_statement_list(
+	outerLoop2->body->statements,
+	globalGather);
+    blk->statements = append_statement_list(
+	blk->statements,
+	innerLoop1);
+    blk->statements = append_statement_list(
+	blk->statements,
+	outerLoop2);
+    
+    SmtBlock res = new_SmtBlock(
+        rdup_origsymbol(e->label),
+        rdup_origin(e->orig),
+        rdup_Pragma_list(e->pragmas),
+        rdup_OwnerExpr_list(e->on),
+        blk
+        );
+    
+    gc->prog->declarations = append_declaration_list(
+        gc->prog->declarations, sum_decl);
+    gc->prog->declarations = append_declaration_list(
+        gc->prog->declarations, cv2);
+
+    rfre_statement( e );
+    return res;
+}
+
+
+/* ----------- Actors ----------- */
+
+.call generate_admin_current_parms_action DeclFunction
+.call generate_admin_current_parms_action DeclProcedure
+
+
+/*
+  If foreach statement is a reduction, then generate scheme.
+  */
+static statement rewrite_SmtForeach_action(
+    SmtForeach e, global_context gc )
+{
+.call generate_walker_call "    " e SmtForeach SmtForeach
+    if (!pragma_list_contains_tmsymbol(
+        e->pragmas,
+        add_tmsymbol("reduction")))
+        return e;
+    remove_reduction_pragma(e);
+    if (warning_level >= WARN_DEBUG)
+	fprintf(stderr, "RED1: found  reduction foreach\n");
+
+    int neutral_pos = pragma_list_find_index_tmsymbol(
+        e->pragmas,
+        add_tmsymbol("neutral_element"));
+    if (neutral_pos != -1)
+    {
+        assert (e->pragmas->arr[neutral_pos]->tag == TAGValuePragma);
+        ValuePragma vpr = to_ValuePragma(e->pragmas->arr[neutral_pos]);
+        assert(vpr->x->tag == TAGNumberPragmaExpression);
+        NumberPragmaExpression npre = to_NumberPragmaExpression(vpr->x);
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr, "RED1: found neutral elt:%f\n",npre->v);
+    }
+    
+//    if (e->cards->sz != 1)
+//        return e;
+//    fprintf(stderr, "RED1: found 1-dim foreach\n");
+    
+    statement_list sl = e->body->statements;
+    if (sl->sz != 1)
+    {
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr, "RED1: can be only 1 statement in body\n");
+        return e;    
+    }
+    if (sl->arr[0]->tag != TAGSmtAssign)
+    {
+	if (warning_level >= WARN_DEBUG)
+	    fprintf(stderr, "RED1: statement must be assignment\n");
+        return e;
+    }
+    if (warning_level >= WARN_DEBUG)
+	fprintf(stderr, "RED1: found ass.stmt\n");
+    SmtAssign as = to_SmtAssign(sl->arr[0]);
+
+    switch (pierceExprWrapper(as->rhs)->tag)
+    {
+        case TAGExprBinop:
+            return rewrite_reduction(e,gc,as,neutral_pos, true);
+            break;
+        case TAGExprFunctionCall:
+            return rewrite_reduction(e,gc,as,neutral_pos, false);
+            break;
+        default:
+	    if (warning_level >= WARN_DEBUG)
+		fprintf(stderr, "RED1: expr type not handled yet\n");
+            break;
+    }
+
+    return e;
+}
+
+.call generate_walker "$(visit_types)"
+
+/* Given a vnusprog, rewrite it to the final form for output. */
+vnusprog apply_red1(
+    vnusprog elm, global_context gc )
+{
+        // A hack to avoid 'unused' warnings
+.call init_current_parms
+.call generate_descent_call "    " elm vnusprog vnusprog
+    gc->prog->declarations = delete_marked_declaration_list(gc->prog->declarations);
+    return elm;
+}

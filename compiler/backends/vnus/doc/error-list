@@ -1,0 +1,100 @@
+The following errors can be emitted by the Vnus backend.
+
+There are some internal errors of the lexical analyzer that are not listed
+here, but hopefully these are never generated.
+
+* a binary operator requires operands of the same type
+* a blocksize must be an expression of type int
+* a boolean operator requires boolean operands
+* a cardinality range expression must be of type int
+* a cardinality variable cannot be used as a location
+* a complex number is not allowed as printf argument
+* a condition expression must be of type boolean
+* a function can not be local
+* a numeric operator requires numeric operands
+* a procedure can not be local
+* a processor number must be an expression of type int
+* a range requires operands of type int
+* a set is not allowed as printf argument
+* a set operator requires set operands
+* a subscript cannot be negative
+* a subscript must be of type int
+* an expression list is a complex; it should contain exactly two elements
+* bad assignment: cannot assign a <type> to a <type>
+* bad cast: cannot cast a <type> to a <type>
+* bad comparison: cannot compare a <type> with a <type>
+* bad parameter: cannot pass a <type> to a <type> parameter
+* bad processor array: a <n>-dim array is used, not a 1-dim or <m>-dim one
+* barrier only allowed in threaded programs
+* base type expected
+* broadcast not allowed in a sequential program
+* cannot lookup NIL symbol
+* cannot select elements of a scalar
+* distributed execution not implemented
+* double entry: in aggregate formals
+* double entry: in argument list
+* double entry: in cardinality list
+* double entry: in declarations
+* double entry: in symbol table
+* end of file in comment
+* expression for destination must be of type int
+* expression for dimension must be of type int
+* expression for source must be of type int
+* fatal error - scanner input buffer overflow
+* forkall not allowed in a sequential program
+* form expression must be of type int
+* function or procedure called with too few parameters
+* function or procedure called with too many parameters
+* function parameters must be of type 'in'
+* function parameters must be value parameters
+* illegal block size
+* index variables should not be negative
+* is a function or procedure
+* missing argument for -e
+* missing argument for -o
+* missing argument: number of processors 
+* not a cardinality variable
+* not a formal parameter
+* not a function
+* not a function or procedure
+* not a procedure
+* not a return variable
+* not an aggregate
+* not an aggregate formal variable
+* not declared
+* only shapes have a blocksize
+* only shapes have a size
+* only single elements have a sender
+* only single elements have an owner
+* parse error
+* passing mechanism is different in argument list and symbol table
+* receive not allowed in a sequential program
+* scope does not exist
+* scope name already used
+* send not allowed in a sequential program
+* subscript out of range
+* the 'not' operator requires a boolean operand
+* the expression for a dimension number must be of type int
+* the expression for a processor number must be of type int
+* the imaginary part of a complex number must be of type real
+* the negation operator requires a numeric operand
+* the range of a cardinality cannot be a boolean
+* the range of a cardinality must be of type int
+* the real part of a complex number must be of type real
+* the set difference operator requires a set operand
+* the top level for threaded execution should contain exactly one forkall
+* the top level statement block should not to have a name
+* the unary 'plus' operator requires a numeric operand
+* there must be distributions for all dimensions of the shape
+* this aggregate formal variable is not in the symbol table
+* too few subscripts
+* too many subscripts
+* unknown aggregate symbol
+* unknown cardinality variable
+* unknown formal parameter
+* unknown local symbol
+* unknown return variable
+* unknown symbol
+* unknown system error
+* unknown variable
+* variable is not local

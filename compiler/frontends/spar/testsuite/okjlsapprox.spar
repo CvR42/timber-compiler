@@ -1,0 +1,10 @@
+// After JLS2 5.1.2    Widening Primitive Conversions
+
+
+public class okjlsapprox {
+    public static void main(String[] args) {
+        int big = 1234567890;
+        float approx = big;
+        __println(1,big - (int)approx);
+    }
+}

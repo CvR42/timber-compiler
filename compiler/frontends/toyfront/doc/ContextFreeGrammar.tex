@@ -1,0 +1,338 @@
+% Written by:
+% * Paul Dechering
+% * Arnaud Poelman
+% * Joachim Trescher
+% * Hans de Vreught
+
+We define the syntax of \Booster\ using an extended {\small BNF}. The
+extensions have the following meaning:
+
+\begin{tabular}{ll}
+\\
+{\em EBNF Construct} & {\em Meaning}\\
+\\
+\terminal{$\alpha$} & $\alpha$ is a terminal symbol\\
+\optional{$\alpha$} & zero or one $\alpha$ \\
+\compound{$\alpha$}  & $\alpha$ is a syntactical unit\\
+$\alpha$\separation{$\beta$} & a non empty sequence of $\alpha$'s
+separated by $\beta$'s \\
+\any{$\alpha$} & an arbitrary number of $\alpha$'s\\
+\iteration{$\alpha$} & one or more $\alpha$'s\\
+$\alpha \beta$ & first $\alpha$ then $\beta$\\
+$\alpha$\alternative $\beta$ & either $\alpha$ or $\beta$
+\end{tabular}
+
+\section{Modules}
+
+\begin{production}
+\NT{Booster}
+   & \rewrite & \NT{DefinitionModule} \\
+   & \alternative & \NT{ImplementationModule} \\
+   & \alternative & \NT{AnnotationModule} \\
+   & \point \\
+\NT{DefinitionModule}
+   & \rewrite & \NT{DefinitionHeader} \NT{DefinitionBody} \\
+   & \point \\
+\NT{DefinitionHeader}
+   & \rewrite & \T{DEFINITION} \T{MODULE} \TC{Identifier} \T{;} \\
+   & \point \\
+\NT{DefinitionBody}
+   & \rewrite & \any{\NT{DefinitionUnit}} \T{END} \TC{Identifier} \T{.} \\
+   & \point \\
+\NT{ImplementationModule}
+   & \rewrite & \NT{ImplementationHeader} \NT{ImplementationBody} \\
+   & \point \\
+\NT{ImplementationHeader}
+   & \rewrite & \optional{\T{IMPLEMENTATION}} \T{MODULE} \TC{Identifier} \T{;} \\
+   & \point \\
+\NT{ImplementationBody}
+   & \rewrite & \any{\NT{ImplementationUnit}} \optional{\T{BEGIN} \NT{StatementList}} \\
+   & & \tab \T{END} \TC{Identifier} \T{.} \\
+   & \point \\
+\NT{AnnotationModule} & \rewrite & \NT{AnnotationHeader} \NT{AnnotationBody} \\
+   & \point \\
+\NT{AnnotationHeader} & \rewrite & \T{ANNOTATION} \T{MODULE} \TC{Identifier} \T{;} \\
+   & \point \\
+\NT{AnnotationBody} & \rewrite & \any{\NT{AnnotationUnit}}
+                      \optional{\T{BEGIN} \NT{AnnotationList}}\\
+   & & \tab \T{END} \TC{Identifier} \T{.} \\
+   & \point \\
+\end{production}
+
+\section{Units}
+
+\begin{production}
+\NT{DefinitionUnit}
+   & \rewrite & \NT{ImportDefinition} \\
+   & \alternative & \NT{ConstDefinition} \\
+   & \alternative & \NT{TypeDefinition} \\
+   & \alternative & \NT{VarDeclaration} \\
+   & \alternative & \NT{ProcedureHeader} \\
+   & \alternative & \NT{FunctionHeader} \\
+   & \point \\
+\NT{ImplementationUnit}
+   & \rewrite & \NT{ImportDefinition} \\
+   & \alternative & \NT{ConstDefinition} \\
+   & \alternative & \NT{TypeDefinition} \\
+   & \alternative & \NT{VarDeclaration} \\
+   & \alternative & \NT{Procedure} \\
+   & \alternative & \NT{Function} \\
+   & \point \\
+\NT{AnnotationUnit}
+   & \rewrite & \NT{ImportDefinition}\\
+   & \alternative & \NT{MachineDeclaration}\\
+   & \point \\
+\NT{ImportDefinition}
+   & \rewrite & \optional{\T{FROM} \TC{Identifier}} \T{IMPORT}
+     \compound{\TC{Identifier} \separation \T{,}} \T{;} \\ 
+   & \point \\ 
+\NT{ConstDefinition}
+   & \rewrite &  \T{CONST} \NT{ConstList} \T{END} \T{;} \\
+   & \point \\
+\NT{TypeDefinition}
+   & \rewrite &  \T{TYPE} \NT{TypeList} \T{END} \T{;} \\
+   & \point \\
+\NT{VarDeclaration}
+   & \rewrite & \T{VAR} \NT{DeclarationList} \T{END} \T{;} \\
+   & \point \\
+\NT{MachineDeclaration}
+   & \rewrite & \T{MACHINE} \NT{DeclarationList} \T{END} \T{;} \\
+   & \point \\
+\NT{Procedure}
+   & \rewrite & \NT{ProcedureHeader} \NT{Body} \\
+   & \point \\
+\NT{ProcedureHeader}
+   & \rewrite & \optional{\T{EXTERN}} \T{PROCEDURE} \TC{Identifier}\\
+   &          & \tab  \T{(} \optional{\NT{ArgumentList}} \T{)} \T{;} \\  
+   & \point \\
+\NT{Function}
+   & \rewrite & \NT{FunctionHeader} \NT{Body} \\
+   & \point \\
+\NT{FunctionHeader}
+   & \rewrite & \optional{\T{EXTERN}} \T{FUNCTION} \TC{Identifier}
+                  \T{(}\optional{\NT{ArgumentList}}\T{)} \\ 
+   &  & \tab \T{RESULT} \NT{SingleDeclaration} \T{;} \\
+   & \point \\
+\NT{Body}
+   & \rewrite & \optional{\NT{VarDeclaration}} \T{BEGIN}
+   \NT{StatementList}\\
+   &  & \tab \T{END} \TC{Identifier} \T{;} \\ 
+   & \point \\
+\end{production}
+
+\section{Declarations}
+
+\begin{production}
+\NT{ConstList}
+   & \rewrite & \optional{\TC{Identifier} \T{=} \NT{Expression}} \separation\ \T{;} \\
+   & \point \\
+\NT{TypeList}
+   & \rewrite & \optional{\TC{Identifier} \T{=} \NT{Type}} \separation\ \T{;} \\
+   & \point \\
+\NT{DeclarationList}
+   & \rewrite & \optional{\compound{\TC{Identifier} \separation\ \T{,}} \T{:} \NT{Type}} \separation\ \T{;} \\
+   & \point \\
+\NT{SingleDeclaration}
+   & \rewrite & \TC{Identifier} \T{:} \NT{Type} \\
+   & \point \\
+\NT{ArgumentList}
+   & \rewrite & \NT{Argument} \separation\ \T{;} \\
+   & \point \\
+\NT{Argument}
+   & \rewrite & \NT{FlowType} \compound{\TC{Identifier} \separation\ \T{,}} \T{:} \NT{Type} \\
+   & \point \\
+\NT{FlowType}
+   & \rewrite & \T{IN} \alternative\ \T{OUT} \alternative\ \T{INOUT} \\
+   & \point \\
+\NT{Type}
+   & \rewrite & \TC{Identifier} \\
+   & \alternative & \NT{TypeConstructor} \\
+   & \point \\
+\NT{TypeConstructor}
+   & \rewrite & \NT{Kind} \verb*"{"* \NT{CardinalityList} \verb*"}" \T{OF}
+                \NT{Type} \\ 
+   & \point \\
+\NT{Kind}
+   & \rewrite & \T{SHAPE}\\
+   & \alternative & \T{VIEW}\\
+   & \point\\
+\NT{CardinalityList}
+   & \rewrite & \NT{Cardinality} \separation\ \T{\#} \\
+   & \point \\
+\NT{Cardinality}
+   & \rewrite & \T{CONST} \TC{Identifier} \\
+   & \alternative & \optional{\TC{Identifier} \T{:}} \NT{Expression} \\
+   & \alternative & \T{*} \\
+   & \point \\
+\end{production}
+
+\section{Flow of Control}
+
+\begin{production}
+\NT{AnnotationList}
+   & \rewrite & \optional{\NT{AnnotationStatement}} \separation\ \T{;} \\
+   & \point \\
+\NT{StatementList}
+   & \rewrite & \optional{\NT{Statement}} \separation\ \T{;} \\
+   & \point \\
+\NT{Statement}
+   & \rewrite & \NT{ControlFlowStatement} \\
+   & \alternative & \NT{ViewStatement} \\
+   & \alternative & \NT{ContentStatement} \\
+   & \alternative & \NT{ProcedureCall} \\
+   & \point \\
+\NT{ControlFlowStatement}
+   & \rewrite & \NT{WhileStatement} \\
+   & \alternative & \NT{IterStatement} \\
+   & \alternative & \NT{IfStatement} \\
+   & \point \\
+\NT{WhileStatement}
+   & \rewrite & \T{WHILE} \NT{Expression} \T{DO} \NT{StatementList} \T{END} \\
+   & \point \\
+\NT{IterStatement}
+   & \rewrite & \T{ITER} \NT{Expression} \T{TIMES} \NT{StatementList} \T{END} \\
+   & \alternative & \T{ITER} \TC{Identifier} \T{OVER} \NT{Expression} \\
+   & & \tab \T{DO} \NT{StatementList} \T{END} \\
+   & \point \\
+\NT{IfStatement}
+   & \rewrite & \T{IF} \NT{Expression} \T{THEN} \NT{StatementList} \optional{\NT{ElsePart}} \T{END} \\
+   & \point \\
+\NT{ElsePart}
+   & \rewrite & \T{ELSE} \NT{StatementList} \\
+   & \alternative & \T{ELSEIF} \NT{Expression} \T{THEN} \NT{StatementList} \optional{\NT{ElsePart}} \\
+   & \point \\
+\end{production}
+
+\section{Statements}
+
+\begin{production}
+\NT{AnnotationStatement}
+   & \rewrite & \NT{AnnotationDesignator} \T{$\mathtt{<-}$} \NT{Structure} \\
+   & \point \\
+\NT{AnnotationDesignator} 
+   & \rewrite & \NT{QualIdent} \optional{\T{\{} \NT{CardinalityList} \T{\}}} \\
+   & \point \\
+\NT{ViewStatement}
+   & \rewrite & \NT{ViewDesignator} \T{$<-$} \NT{Structure} \\
+   & \point \\
+\NT{ViewDesignator} 
+   & \rewrite & \NT{QualIdent} \optional{\T{\{} \NT{CardinalityList} \T{\}}} \\
+   & \point \\
+\NT{ContentStatement}
+   & \rewrite & \NT{ContentDesignator} \NT{Assignment} \NT{Expression} \\
+   & \point \\
+\NT{Assignment}
+   & \rewrite & \T{:=} \\
+   & \alternative & \T{||=} \\
+   & \point \\
+\NT{ContentDesignator}
+   & \rewrite & \NT{Structure} \\
+   & \point \\
+\NT{SelectorList}
+   & \rewrite & \NT{Selector} \separation\ \T{,} \\
+   & \point \\
+\NT{Selector}
+   & \rewrite & \optional{\TC{Identifier} \T{:}} \NT{Expression} \\
+   & \point \\
+\NT{ProcedureCall}
+   & \rewrite & \NT{QualIdent} \T{(} \optional{\NT{ExpressionList}} \T{)}  \\
+   & \point \\
+\end{production}
+
+\section{Expressions}
+
+\begin{production}
+\NT{Expression}
+   & \rewrite & \NT{Expression} \TC{RelOp} \NT{ArithmeticExpression} \\
+   & \alternative & \NT{ArithmeticExpression} \\
+   & \point \\
+\NT{ArithmeticExpression}
+   & \rewrite & \NT{ArithmeticExpression} \TC{AddOp} \NT{Term} \\
+   & \alternative & \NT{Term} \\
+   & \point \\
+\NT{Term}
+   & \rewrite & \NT{Term} \TC{MulOp} \NT{Factor} \\
+   & \alternative & \NT{Factor} \\
+   & \point \\
+\NT{Factor}
+   & \rewrite & \optional{\TC{UnOp}} \T{(} \compound{\NT{Expression} \separation \T{,}} \T{)}  \\
+   & \alternative &  \optional{\TC{UnOp}} \T{\{} \NT{ExpressionList} \T{\}} \\
+   & \alternative & \optional{\TC{UnOp}} \NT{Structure} \\
+   & \alternative & \optional{\TC{UnOp}} \TC{Number} \\
+   & \alternative & \optional{\TC{UnOp}} \T{\$} \\
+   & \alternative & \TC{StringLiteral} \\
+   & \alternative & \T{\_} \\
+   & \point \\
+\NT{ExpressionList}
+   & \rewrite & \NT{Expression} \separation\ \T{,} \\
+   & \point \\
+\NT{Structure}
+   & \rewrite & \NT{FunctionCall} \\
+   & \alternative & \NT{Designator} \\
+   & \point \\
+\NT{FunctionCall}
+   & \rewrite & \optional{\TC{Identifier} \T{.}} \TC{Identifier} \T{(}
+   \optional{\NT{ExpressionList}} \T{)}\\
+   & & \tab  \optional{\T{[} \NT{SelectorList} \T{]}} \\ 
+   & \point \\
+\NT{Designator} 
+   & \rewrite & \optional{\TC{Identifier} \T{.}} \TC{Identifier} \optional{\T{[} \NT{SelectorList \T{]}}} \\
+   & \point \\
+\end{production}
+
+\section{Tokens}
+
+\begin{production}
+\TC{RelOp}
+   & \rewrite & \T{>} \alternative\ \T{>=} \alternative\ \T{<>} \alternative\ \T{=} \alternative\ \T{<=} \alternative\ \T{<} \alternative\ \T{|} \\
+   & \point \\
+\TC{AddOp}
+   & \rewrite & \T{OR} \alternative\ \T{+} \alternative\ \T{-} \alternative\ \T{\&} \\
+   & \point \\
+\TC{MulOp}
+   & \rewrite & \T{AND} \alternative\ \T{DIV} \alternative\ \T{MOD} \alternative\ \T{*} \alternative\ \T{/} \alternative\ \T{..} \\
+   & \point \\
+\TC{UnOp}
+   & \rewrite & \T{NOT} \alternative\ \T{+} \alternative\ \T{-} \alternative\ \T{$\backslash$} \\
+   & \point \\
+\TC{Identifier}
+   & \rewrite & \TC{Letter} \any{\compound{\TC{Letter} \alternative\ \TC{Digit}}} \\
+   & \point \\
+\TC{Letter}
+   & \rewrite & \T{A} \class\ \T{Z} \alternative\ \T{a} \class\ \T{z} \\
+   & \point \\
+\TC{Number}
+   & \rewrite & \iteration{\TC{Digit}} \optional{\T{.} \iteration{\TC{Digit}}} \optional{\T{E} \optional{\T{+} \alternative\ \T{-}} \iteration{\TC{Digit}}} \\
+   & \point \\
+\TC{Digit}
+   & \rewrite & \T{0} \class\ \T{9} \\
+   & \point \\
+\TC{StringLiteral}
+   & \rewrite & \T{'} \any{\compound{\TC{Character} \alternative\ \TC{EscapedCharacter}}} \T{'} \\
+   & \point \\
+\TC{EscapedCharacter}
+   & \rewrite & \T{$\backslash$b} \alternative\ \T{$\backslash$f} \alternative\ \T{$\backslash$n} \alternative\ \T{$\backslash$r} \alternative\ \T{$\backslash$t} \alternative\ \T{$\backslash$'} \alternative\ \T{$\backslash\backslash$} \\
+   & \alternative & \T{$\backslash$} \TC{Digit} \optional{\TC{Digit}
+   \optional{\TC{Digit}}} \\
+   & \point \\
+\TC{Character}
+   & \rewrite & $\Sigma\setminus$\compound{\T{$\backslash$} \alternative\ \T{'}} \\
+   & \point \\
+\end{production}
+
+\noindent
+$\Sigma$ contains all printable ASCII characters \T{ } \class\ \T{\~{}}.
+
+\section{White Space}
+
+White space outside string literals may be used to separate tokens and is no
+part of the language. It should be filtered out before parsing starts under
+the condition that separated tokens remain separated. Beside space, tab,
+linefeed, carriage return, and formfeed comments also count as white space.
+There are two types of comments:
+\begin{itemize}
+\item A comment starts with \T{//} and ends at the end of the line. This is a
+	single line comment.
+\item A comment starts with \T{/*} and ends with \T{*/}. These comments may
+	be nested.
+\end{itemize}

@@ -1,0 +1,69 @@
+This file gives an overview of the changes between the releases of
+the Timber compiler.
+
+*** New features in Timber 2.0.1 compared to 2.0. ***
+
+Timber 2.0.1 was released 13 december 2002
+
++ The elements of an array are no longer stored in a separately allocated
+block, but starts immediately after the array descriptor.
+
++ When a program never catches a null pointer or bounds violation
+exception, generate a special handler that does an exit() instead of
+throwing an exception, and take this into account in in the program
+analysis.
+
++ Other optimizations to generated code.
+
++ Improved language compatibility.
+
++ Added an 'uninstall' make rule.
+
++ Added support for MacOS X.
+
+
+
+*** New features in Timber 2.0 compared to 1.6. ***
+
+Timber 2.0 was released 28 march 2002
+
++ Official support for parallelization.
+
++ Further improvements for language compliance.
+
+
+*** New features in Timber 1.6 compared to 1.5. ***
+
+Timber 1.6 was released 21 November 2001.
+
++ Some modifications to the compiler to improve language compliance.
+
++ Some performance improvements.
+
+
+*** New features in Timber 1.5 compared to 1.4. ***
+
+Timber 1.5 was released 23 October 2001.
+
++ A lot of tuning has been done to improve the analyzer, resulting
+in better performance for a larger set of programs. For exmaple,
+an attempt is made to do static garbage collection, by letting the
+compiler insert __delete statements for objects that are known to be
+garbage. This currently almost never works for class objects, but for
+arrays it works better. In many cases, significantly more efficient
+programs are generated.
+
++ This version of the compiler uses the new analyzer treewalkers in
+Tm version 2.0.8. It may be necessary to get a new version of Tm from
+<http://www.pds.its.tudelft.nl/~reeuwijk/software/Tm/downloading.html>.
+
++ The Jacks compiler validation suite has been applied, and a lot
+of small details have been modified to be more conformant with Java.
+The current score is comparable to that of the Sun Java compiler.
+
++ The compiler now contains parallelization engines (in the directory
+'engines'). The portability and documentation of these engines does
+not yet meet our quality requirements, so for now these engines must
+be considered experimental. We plan to release a working parallelizing
+compiler in the near future.
+

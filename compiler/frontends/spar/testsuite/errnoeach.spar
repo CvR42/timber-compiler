@@ -1,0 +1,14 @@
+// Spar language extensions to Java. These should be flagged by the
+// compiler if the --noeach flag is given.
+
+package spar.testsuite;
+
+public class errnoeach {
+    public static void main()
+    {
+	each {
+	    __println( 1, "hello " );
+	    __println( 1, "world " );
+	}
+    }
+}

@@ -1,0 +1,140 @@
+.. File: countrefs.ct
+..
+.. Given a block of code, update the use counts of the functions in it.
+..
+..
+.. Return 'walk' or 'action', depending on the contents of 'actors'
+.macro walkername t
+.if ${member $t $(actors)}
+.return action
+.else
+.return walker
+.endif
+.endmacro
+..
+.. Given an indent 'indent', the name 'var' of the variable that holds
+.. the datastructure we're walking on, and a type 't', of that variable,
+.. generate a return statement/
+.macro generate_walker_return indent var t
+$(indent)return;
+.endmacro
+..
+.. Given an indent 'ident' and a type 't', generate a list of local
+.. declarations for the walker function of that type.
+.macro generate_walker_locals indent var t
+.if ${member ${stemname $t} ${typelist}}
+$(indent)if( $(var) == $tNIL ){
+$(indent)    return;
+$(indent)}
+.endif
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we`re walking on, and the type 't' of that variable, generate a
+.. signature for the walker function of the given type.
+.macro generate_walker_signature var t
+static void countrefs_$t_walker( const_$t $(var), Entry_list symtab, int step )
+.endmacro
+..
+.. Given the name 'var' of the variable that holds the datastructure
+.. we're walking on, and the type 't' of that variable, generate a forward
+.. declaration for the walker function of the given type.
+.macro generate_walker_declaration var t
+static void countrefs_$t_walker( const_$t $(var), Entry_list symtab, int step );
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to an action.
+.macro generate_action_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)countrefs_$(type)_action( $(var), symtab, step );
+.else
+$(indent)countrefs_$(type)_action( to_const_$(type)( $(var) ), symtab, step );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of
+.. the variable 'type', and the current type of the variable 'nowtype',
+.. generate an invokation to a walker.
+.macro generate_walker_call indent var type nowtype
+.if ${eq $(type) $(nowtype)}
+$(indent)countrefs_$(type)_walker( $(var), symtab, step );
+.else
+$(indent)countrefs_$(type)_walker( to_const_$(type)( $(var) ), symtab, step );
+.endif
+.endmacro
+..
+.. Given an indent 'indent', a variable 'var' to walk into, the type of the
+.. variable 'type', and the current type of the variable 'nowtype', generate
+.. an invocation to an action or walker.
+.macro generate_descent_call indent var type nowtype
+.if ${member $(type) $(actors)}
+.call generate_action_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.else
+.call generate_walker_call "$(indent)" "$(var)" "$(type)" "$(nowtype)"
+.endif
+.endmacro
+..
+.. For which types are there actions defines?
+.set actors
+.append actors MethodInvocation
+..
+.insert tmcwalk.t
+..
+.set visit_types ${call calc_treewalk "Block" "$(actors)"}
+..
+// ->->-> This is a GENERATED FILE <-<-<-
+
+/* File: countrefs.c
+ *
+ * See which variables and formal parameters are never assigned to,
+ * and mark them as such.
+ *
+ * This helps quite a lot in the other analysis of the program.
+ */
+
+#include <assert.h>
+#include <tmc.h>
+
+#include "defs.h"
+#include "tmadmin.h"
+#include "countrefs.h"
+#include "symbol_table.h"
+
+.call generate_walker_forwards "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+/* -------- actors ---------- */
+
+/* Action for type MethodInvocation. */
+static void countrefs_MethodInvocation_action(
+    const_MethodInvocation call,
+    Entry_list symtab,
+    const int step
+)
+{
+.call generate_walker_call "    " call MethodInvocation MethodInvocation
+    if( call->vtab == expressionNIL ){
+        // This is a static call.
+
+	MethodEntry e = lookup_MethodEntry( symtab, call->name->sym );
+	if( e != MethodEntryNIL && e->tag == TAGFunctionEntry ){
+	    e->directusecount += step;
+	}
+    }
+}
+
+/* -------- End of action functions ---------- */
+
+.call generate_walker "$(visit_types)"
+#line $[1+${tpllineno}] "${tplfilename}"
+
+/* Given a Block, add `step' to the usage count of all static methods
+ * that are invoked in this block. Typically `step' is 1 for inlined code
+ * and -1 for deleted code.
+ */
+void countrefs_Block( const_Block decl, Entry_list symtab, int step )
+{
+.call generate_descent_call "    " decl Block Block
+}

@@ -1,0 +1,15 @@
+// This tests conformance with the rule that says that you may
+// assign an int to a byte, short or char, provided that the int is
+// constant
+public class okbyteconst {
+    static final int N = 42;
+
+    public static void main(){
+	byte x;
+	short y;
+
+	x = 3;
+	y = N;
+	__println( 1, x, " ", y );
+    }
+}

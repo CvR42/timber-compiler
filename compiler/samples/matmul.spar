@@ -1,0 +1,33 @@
+// Simple data-parallel matrix multiplication.
+
+globalpragmas <$
+    ProcessorType=((generic "generic")),
+    Processors=((P generic[12]))
+$>;
+
+package spar.testsuite;
+
+public class matmul
+{
+    static final int N = 30;
+    static double A[*,*] <$on = (lambda (i j) P[(cyclic i)])$> = new double[N,N];
+    static double B[*,*] <$on = (lambda (i j) P[(cyclic j)])$> = new double[N,N];
+    static double C[*,*] <$on = (lambda (i j) P[(cyclic j)])$> = new double[N,N];
+
+    public static void main()
+        {
+            __println(1, "In the air");
+	    foreach (i:-0:N, j:-0:N)
+		A[i,j] = i*2+j;
+	    foreach (i:-:N, j:-:N)
+		B[i,j] = i + j*3;
+	    foreach (i:-:N, j:-:N)
+		C[i,j] = 0;
+	    foreach (k:-:N)
+		<$independent$> foreach (i:-:N, j:-:N){
+		    C[i,j] += A[i,k]*B[k,j];
+	    }
+            __println(1, "Finished");
+        }
+}
+

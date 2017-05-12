@@ -1,0 +1,26 @@
+.. file: tmadmin.ct
+/* file: tmadmin.c
+
+   template file:      tmcode.ct
+   datastructure file: ${dsfilename}
+   tm version:         $(tmvers) 
+ */
+
+#define STAT
+
+/* Standard UNIX libraries */
+#include <stdio.h>
+#include <ctype.h>
+#include <string.h>
+
+/* Standard tm library */
+#include <tmc.h>
+
+/* Local definitions */
+#include "defs.h"
+#include "tmadmin.h"
+
+#define rfre_bool(e)
+
+.insert tmadmin.t
+.include tmc.ct

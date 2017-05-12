@@ -1,0 +1,96 @@
+#!/bin/sh
+#
+# Run a test that is supposed to succeed.
+
+TIMBERSRCROOT=../../..
+VNUSFLAGS=
+CFLAGS="-g"
+LIBS="$TIMBERSRCROOT/backends/runtime/libvnusio-s.a $TIMBERSRCROOT/backends/runtime/libvnusrtl-s.a"
+
+# Places of executables
+DRIVER=$TIMBERSRCROOT/driver/spar
+VERBOSE=0
+FILE=
+
+for f; do
+    case "$f" in
+	-v)
+	    VERBOSE=1;;
+
+	-*)
+	    echo "unknown option '$f'"; exit 2 ;;
+
+	*)
+	    FILE=$f ;;
+    esac
+done
+
+if [ x$FILE = x ]; then
+    echo "No file specified"
+    exit 2
+fi
+BASENAME=`basename $FILE .v`
+EXEFILE=$BASENAME
+OUTFILE=$BASENAME.out
+ERRFILE=$BASENAME.err
+TESTOUTFILE=$BASENAME.testout
+TESTERRFILE=$BASENAME.testerr
+FLAGSFILE=$BASENAME.flags
+if [ ! -e $ERRFILE ]; then
+    echo "Creating default (=empty) error reference file '$ERRFILE'"
+    touch $ERRFILE
+fi
+if [ ! -e $OUTFILE ]; then
+    echo "Creating default (=empty) output reference file '$OUTFILE'"
+    touch $OUTFILE
+fi
+if [ -e $FLAGSFILE ]; then
+    VNUSFLAGS="$VNUSFLAGS `cat $FLAGSFILE`"
+fi
+if [ $VERBOSE = 1 ]; then
+    echo $DRIVER $VNUSFLAGS $FILE
+fi
+$DRIVER $VNUSFLAGS $CFLAGS $FILE -o $EXEFILE 2> $TESTERRFILE
+COMPILESTATUS=$?
+CMD="diff $TESTERRFILE $ERRFILE"
+if [ $VERBOSE = 1 ]; then
+    echo $CMD
+fi
+$CMD
+STATUS=$?
+if [ $STATUS != 0 ]; then
+    echo "Compiler error messages differ from reference"
+    echo "To update: cp $TESTERRFILE $ERRFILE"
+    exit 1
+fi
+if [ $COMPILESTATUS != 0 ]; then
+    echo "Compilation failed with status code $COMPILESTATUS"
+    exit 1
+fi
+CMD="diff $TESTERRFILE $ERRFILE"
+if [ $VERBOSE = 1 ]; then
+    echo $CMD
+fi
+$CMD
+if [ $VERBOSE = 1 ]; then
+    echo $EXEFILE
+fi
+./$EXEFILE > $TESTOUTFILE 2>> $TESTERRFILE
+STATUS=$?
+if [ $STATUS != 0 ]; then
+    echo "Execution failed with status code $STATUS"
+    exit 1
+fi
+CMD="diff $TESTOUTFILE $OUTFILE"
+if [ $VERBOSE = 1 ]; then
+    echo $CMD
+fi
+$CMD
+STATUS=$?
+if [ $STATUS != 0 ]; then
+    echo "Output differs from reference"
+    echo "To update: cp $TESTOUTFILE $OUTFILE"
+    exit 1
+fi
+rm -f $EXEFILE $TESTOUTFILE $CFILE $TESTERRFILE
+exit 0

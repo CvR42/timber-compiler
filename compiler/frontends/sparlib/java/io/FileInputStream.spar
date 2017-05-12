@@ -1,0 +1,131 @@
+/*
+ * Java core library component.
+ *
+ * Copyright (c) 1997, 1998
+ *      Transvirtual Technologies, Inc.  All rights reserved.
+ *
+ * See the file "license.terms" for information on usage and redistribution
+ * of this file.
+ */
+
+package java.io;
+
+import java.lang.String;
+
+public class FileInputStream
+  extends InputStream {
+
+private FileDescriptor fd = new FileDescriptor();
+
+static {
+        System.loadLibrary("io");
+}
+
+public FileInputStream(File file) throws FileNotFoundException {
+	this(file.getPath());
+}
+
+public FileInputStream(FileDescriptor fdObj) {
+	System.getSecurityManager().checkRead(fdObj);
+	fd=fdObj;
+}
+
+public FileInputStream(String name) throws FileNotFoundException {
+	System.getSecurityManager().checkRead(name);		
+	try {
+		open(name);
+	} catch (IOException e) {
+		/* Note that open may throw an IOException, but the spec says 
+		 * that this constructor throws only FileNotFoundExceptions, 
+		 * hence we must map them.
+		 */
+		throw new FileNotFoundException(name + " " + e.getMessage());
+	}
+}
+
+public int available() throws IOException
+{
+    return spar.compiler.File.available( fd.getFd() );
+}
+
+public void close() throws IOException
+{
+    boolean ok = spar.compiler.File.close( fd.getFd() );
+    if( !ok ){
+	throw new IOException();
+    }
+}
+
+protected void finalize() throws IOException {
+	close();
+	try {
+	    super.finalize();
+	}
+	catch(Throwable e){
+	    throw new IOException(e.getMessage());
+	}
+}
+
+final public FileDescriptor getFD() throws IOException {
+	return fd;
+}
+
+private void open(String name) throws IOException
+{
+    char namebuf[] = name.toCharArray();
+    int hnd = spar.compiler.File.openInput( __getbuf(namebuf), namebuf.length );
+    __delete( namebuf );
+    if( hnd<0 ){
+	throw new IOException();
+    }
+    fd.setFd( hnd );
+}
+
+// Not very subtle way to read 1 byte.
+// If this ever becomes a bottleneck, a separate function could be added.
+public int read() throws IOException
+{
+    byte buf[] = new byte[1];
+    int n = spar.compiler.File.read( fd.getFd(), __getbuf(buf), 0, 1 );
+    if( n<0 ){
+	throw new IOException();
+    }
+    if( n == 0 ){
+	// End of file
+	return -1;
+    }
+    byte res = buf[0];
+    __delete( buf );
+    return (int) res;
+}
+
+public int read(byte b[]) throws IOException {
+	return read(b, 0, b.length);
+}
+
+public int read(byte b[], int off, int len) throws IOException {
+	return readBytes(b, off, len);
+}
+
+private int readBytes(byte b[], int off, int len) throws IOException
+{
+    int n = spar.compiler.File.read( fd.getFd(), __getbuf(b), off, len );
+    if( n<0 ){
+	throw new IOException();
+    }
+    if( n == 0 ){
+	// end of file
+	return -1;
+    }
+    return n;
+}
+
+public long skip(long n) throws IOException
+{
+    long real_n = spar.compiler.File.skip( fd.getFd(), n );
+    if( real_n<=0 ){
+	throw new IOException();
+    }
+    return real_n;
+}
+}

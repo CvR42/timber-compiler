@@ -1,0 +1,51 @@
+// File: okmacroexpand.spar
+// Test the handling of inlining.
+import java.io.*;
+
+public class okmacroexpand {
+    int x;
+    inline public okmacroexpand() { __println( 1, "Hello from inlined constructor" ); }
+    public inline final void setX( final int n ) { x = n; }
+    public inline final int getX() { return x; }
+    public static inline int SZ() { return 42; }
+    public static inline int fac( final int n )
+    {
+	if( n<=1 ){
+	    return 1;
+	}
+	else {
+	    return n*fac( n-1 );
+	}
+    }
+    public static inline void test_fac( final int n ){
+	__println( 1, n, ' ', fac( n ) );
+    }
+    public static void main(){
+	okmacroexpand x;
+
+	x = new okmacroexpand();
+	x.setX( 7 );
+	__println( 1, x.getX() );
+	__println( 1, SZ() );
+	test_fac( 1 );
+	test_fac( 2 );
+	test_fac( 3 );
+	test_fac( 4 );
+	test_fac( 5 );
+	test_fac( 6 );
+	test_fac( 7 );
+	test_fac( 8 );
+	test_fac( 9 );
+	test_fac( 10 );
+	__println( 1, 1, ' ', fac( 1 ) );
+	__println( 1, 2, ' ', fac( 2 ) );
+	__println( 1, 3, ' ', fac( 3 ) );
+	__println( 1, 4, ' ', fac( 4 ) );
+	__println( 1, 5, ' ', fac( 5 ) );
+	__println( 1, 6, ' ', fac( 6 ) );
+	__println( 1, 7, ' ', fac( 7 ) );
+	__println( 1, 8, ' ', fac( 8 ) );
+	__println( 1, 9, ' ', fac( 9 ) );
+	__println( 1, 10, ' ', fac( 10 ) );
+    }
+}

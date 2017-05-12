@@ -1,0 +1,3 @@
+errjlsrefass.spar:49: cannot assign a byte[] to a int[]
+errjlsrefass.spar:54: assigning a Point[] to a Point3D[] requires an explicit cast
+errjlsrefass.spar:30: assigning a Point to a Point3D requires an explicit cast

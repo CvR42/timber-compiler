@@ -1,0 +1,2 @@
+errsuperfield.spar:19: Unknown field in type 'java.lang.Object': 'x'
+errsuperfield.spar:13: Unknown field in type 'spar.testsuite.t1': 'z'

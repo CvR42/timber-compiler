@@ -1,0 +1,16 @@
+// File: errinfbadreturn.spar
+//
+// See if the compiler complains about a method that implements 
+// and interface method, but has a different return type.
+
+interface inf {
+    void foo();
+}
+
+public class errinfbadreturn implements inf {
+    public int foo() { return 2; }
+    public static void main( String args[] )
+    {
+	System.out.println( "Hello" );
+    }
+}

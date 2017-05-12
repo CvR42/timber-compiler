@@ -1,0 +1,5 @@
+|| The locally required Tm datastructures
+
+%include "vnus.ds";
+%include "../mapper/system.ds";
+%include "../mapper/varowner.ds";

@@ -1,0 +1,22 @@
+.insert lib.t
+/*
+ * Distributed write operations do not use barriers
+ */
+
+#include "vnusstio.h"
+#include "io/ioseq.h"
+#include "io/iopar.h"
+#include "../runtime/vnusrtl.h"
+#include <stdio.h>
+
+.foreach type $(typelist)
+${call gen_write_hdr $(type) vp__}
+{
+    VnusInt result = NOT_EXECUTED;
+    if (isThisProcessor(0))
+    {
+        result = ${call gen_write_call $(type) vs__};
+    }
+    return result;
+}
+.endforeach
