@@ -1,0 +1,154 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML r1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+<title>Spar - an example: the SimpleArray class</title>
+<link rev="made" href="mailto:C.vanReeuwijk@its.tudelft.nl" />
+<meta name="generator" content="Perl" />
+<link rel="stylesheet" href="../timber.css" type="text/css" />
+</head>
+<body>
+<table class="navigation">
+<tr>
+<td class="parent"><a href="../index.html">Timber</a></td>
+<td class="parent"><a href="../implementation.html">Implementation</a></td>
+<td class="parent"><a href="index.html">Spar</a></td>
+<td class="parent"><a href="overview.html">Overview</a></td>
+<td class="brother"><a href="foreach.html">foreach</a></td>
+<td class="brother"><a href="arrays.html">arrays</a></td>
+<td class="brother"><a href="array_expressions.html">array expressions</a></td>
+<td class="brother"><a href="macros.html">inline</a></td>
+<td class="brother"><a href="vectors.html">Vectors</a></td>
+<td class="brother"><a href="templates.html">Templates</a></td>
+<td class="brother"><a href="array_interface.html">array interface</a></td>
+<td class="brother"><a href="elastic_array_interface.html">elastic array interface</a></td>
+<td class="brother">example</td>
+<td class="brother"><a href="sins.html">Sins</a></td>
+
+</tr>
+</table>
+<h1>Spar - an example: the SimpleArray class</h1>
+<a href="index.html"><img class="noborder" src="../povray/icon_spar.jpg" alt="spar" width="80" height="70" /></a><p>
+To demonstrate the implementation of the <a
+href="elastic_array_interface.html"><code>ElasticArray</code></a>
+interface, and special array representations in general, the following
+class implements a parameterized class <code>SimpleArray</code> that
+provides the same functionality as the built-in arrays, but maps them to
+fictional <code>malloc</code>, <code>realloc</code> and <code>free</code>
+ function calls.
+See the pages on <a href="macros.html">inlining</a>,
+<a href="templates.html">parameterized classes</a>, and <a
+href="arrays.html">multidimensional arrays</a> for an explanation of
+the used language constructs.
+<pre>
+class SimpleArray( type t, int n )
+    implements ElasticArray( t, n )
+{
+    t[*] mem;
+    [int^n] size;
+    int room;
+
+    // Some helper methods.
+    inline static private int vecProd( [int^n] v )
+    {
+        int res = 1;
+
+        inline for( ix :- 0:n ) {
+            res *= v[ix];
+        }
+        return res;
+    }
+
+    inline private int calcElement( int^n v )
+    {
+        int res = 0;
+        int w = 1;
+
+        for( ix :- 0:n ){
+            res += w*v[ix];
+            w *= size[ix];
+        }
+        return res;
+    }
+
+    // The constructor for this array
+    SimpleArray( [int^n] sz )
+        throws NegativeArraySizeException
+    {
+        room = 0;
+        size[:] = 0;
+        mem = null;
+        setSize( sz );
+    }
+
+    inline t getElement( [int^n] index )
+        throws IndexOutOfBoundsException
+    {
+        int ix = calcElement( index );
+        return mem[ix];
+    }
+
+    inline void storeElement( [int^n] index, t elm )
+        throws IndexOutOfBoundsException,
+               ArrayStoreException;
+    {
+        int ix = calcElement( index );
+        mem[ix] = elm;
+    }
+
+    inline [int^n] getSize() { return size; }
+
+    void setSize( [int^n] sz )
+        throws NegativeArraySizeException
+    {
+        setRoom( sz );
+        if( vecProd( sz )&lt;0 ){
+            throw new NegativeArraySizeException();
+        }
+        size = sz;
+    }
+
+    inline int getRoom(){ return room; }
+
+    void setRoom( int rm )
+    {
+        if( rm&lt;room ){
+            return;
+        }
+        // We assume malloc throws an OutOfMemoryError
+        // if necessary.
+        if( t == null )
+            mem = malloc( t, rm );
+        else {
+            mem = realloc( mem, t, rm );
+            // Some fairly difficult reshuffling goes here.
+        }
+        room = rm;
+    }
+
+    inline void setRoom( int^n sz ){ setRoom( vecProd( sz ); }
+
+    void fitRoom()
+    {
+        int rm = vecProd( sz );
+        if( mem != null )
+            // As if it really shrinks. Hah!
+            mem = realloc( mem, t, rm );
+        room = rm;
+    }
+
+    // This method is invoked when the array is destroyed.
+    void finalize()
+    {
+        if( mem != null )
+            free( mem );
+    }
+}
+</pre>
+<hr class="empty" />
+<p style="font-size: 70%;">
+Last modified Tue Jan 23 17:05:37 2001 UT by
+<a href="mailto:C.vanReeuwijk@its.tudelft.nl">Kees van Reeuwijk</a>.
+</p>
+</body>
+</html>

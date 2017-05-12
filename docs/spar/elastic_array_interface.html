@@ -1,0 +1,98 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML r1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+<title>Spar - the ElasticArray interface</title>
+<link rev="made" href="mailto:C.vanReeuwijk@its.tudelft.nl" />
+<meta name="generator" content="Perl" />
+<link rel="stylesheet" href="../timber.css" type="text/css" />
+</head>
+<body>
+<table class="navigation">
+<tr>
+<td class="parent"><a href="../index.html">Timber</a></td>
+<td class="parent"><a href="../implementation.html">Implementation</a></td>
+<td class="parent"><a href="index.html">Spar</a></td>
+<td class="parent"><a href="overview.html">Overview</a></td>
+<td class="brother"><a href="foreach.html">foreach</a></td>
+<td class="brother"><a href="arrays.html">arrays</a></td>
+<td class="brother"><a href="array_expressions.html">array expressions</a></td>
+<td class="brother"><a href="macros.html">inline</a></td>
+<td class="brother"><a href="vectors.html">Vectors</a></td>
+<td class="brother"><a href="templates.html">Templates</a></td>
+<td class="brother"><a href="array_interface.html">array interface</a></td>
+<td class="brother">elastic array interface</td>
+<td class="brother"><a href="simple_array.html">example</a></td>
+<td class="brother"><a href="sins.html">Sins</a></td>
+
+</tr>
+</table>
+<h1>Spar - the ElasticArray interface</h1>
+<a href="index.html"><img class="noborder" src="../povray/icon_spar.jpg" alt="spar" width="80" height="70" /></a><p>
+If a class wants to allow growing and shrinking like that of ordinary
+arrays, it should implement the <code>ElasticArray</code> interface:        
+<pre>
+interface ElasticArray(| type t, int n |) extends Array(| t, n |)
+{
+    void setSize( [int^n] sz ) throws NegativeArraySizeException;
+    int getRoom();                                                  
+    void setRoom( int rm );                                         
+    void setRoom( [int^n] rm );                               
+    void fitRoom();              
+}
+</pre>
+The main difference with normal arrays is that the user can specify a new
+array size with the <code>setSize</code> method. This will grow or shrink
+the array, while preserving elements that are visible before and after
+the change of size.
+<p>
+For efficiency reasons it is possible to allocate more more elements to
+an array than is necessary to store an array of the current size. The
+user can request more room with the <code>setRoom</code> methods, query the
+current room with the <code>getRoom</code> method, or release superfluous
+room with the <code>fitRoom</code> method.
+<p>
+Standard Spar <a href="arrays.html">arrays</a> implement this interface,
+but it can also be implemented by user-defined classes.
+See the <a href="simple_array.html"><code>SimpleArray</code></a> class
+definition for an example.
+<p>
+To demonstrate the use of the <code>ElasticArray</code> interface, the
+function <code>listPositives</code> below returns a new array of appropriate
+size that contains all positive elements of the given array.
+<p>
+Note that in this example the array grows one element a time. A real-life
+function will try to be smarter than that by reserving room in the array
+in advance.
+<pre>
+public class Demo
+{
+    public static double[] listPositives( double l[] )
+    {
+	double res[] = new double[0];
+	int pos = 0;
+
+	for( int ix=0; i&lt;l.size; ix++ ){
+	    if( l[ix]&gt;0 ){
+		res.setSize( [pos+1] );
+		res[pos++] = l[ix];
+	    }
+	}
+	return res;
+    }
+
+    static void main( String argv[] )
+    {
+	double arr[] = { 1, -1, 3, -66, 2, 0, -3, 2, 6 };
+
+	System.out.println( "Result: "+listPositives( arr ) );
+    }
+}
+</pre>
+<hr class="empty" />
+<p style="font-size: 70%;">
+Last modified Mon Feb 21 13:24:47 2000 UT by
+<a href="mailto:C.vanReeuwijk@its.tudelft.nl">Kees van Reeuwijk</a>.
+</p>
+</body>
+</html>

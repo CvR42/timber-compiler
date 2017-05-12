@@ -1,0 +1,58 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML r1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+<title>Implementation of the Timber compiler</title>
+<link rev="made" href="mailto:C.vanReeuwijk@its.tudelft.nl" />
+<meta name="generator" content="Perl" />
+<link rel="stylesheet" href="timber.css" type="text/css" />
+</head>
+<body>
+<table class="navigation">
+<tr>
+<td class="parent"><a href="index.html">Timber</a></td>
+<td class="brother"><a href="news.html">News</a></td>
+<td class="brother"><a href="downloading.html">Downloading</a></td>
+<td class="brother"><a href="documents.html">Information</a></td>
+<td class="brother"><a href="people.html">People</a></td>
+<td class="brother">Implementation</td>
+<td class="brother"><a href="jacks.html">Conformance</a></td>
+<td class="brother"><a href="related.html">Links</a></td>
+
+</tr>
+</table>
+<h1>Implementation of the Timber compiler</h1>
+<img class="noborder" src="pictures/constr-ani.gif" alt="under construction" width="40" height="40" /><p>
+This page is under construction.
+</p>
+<h2>Implementation</h2>
+<p>
+The Timber compiler consists of the following components:
+</p>
+<ul>
+<li><a href="spar/index.html">Spar</a>, a set of language extensions to Java, and a frontend to Vnus that implements this language.</li>
+<li><a href="vnus/index.html">Vnus</a>: an intermediate language, currently supported by a backend that generates C++.</li>
+</ul>
+<p>
+These components are supported by two of code-generation tools:
+</p>
+<ul>
+<li><a href="rotan/index.html">Rotan</a>: a rule-based transformation system.</li>
+<li><a href="http://www.pds.its.tudelft.nl/~reeuwijk/software/Tm/">Tm</a>: a macro language for the generation of
+tree manipulation code.</li>
+</ul>
+<p>
+Tm is used extensively in the current implementation. For example,
+it is estimated that 30% of the code of the Spar frontend is generated
+by Tm.
+</p>
+
+<p>| <a href="spar/index.html">Spar</a> |<a href="vnus/index.html">Vnus</a> |<a href="rotan/index.html">Rotan</a> |
+</p>
+<hr class="empty" />
+<p style="font-size: 70%;">
+Last modified Mon Mar  5 15:18:09 2001 UT by
+<a href="mailto:C.vanReeuwijk@its.tudelft.nl">Kees van Reeuwijk</a>.
+</p>
+</body>
+</html>

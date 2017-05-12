@@ -1,0 +1,83 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML r1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+<title>The Timber compiler</title>
+<link rev="made" href="mailto:C.vanReeuwijk@its.tudelft.nl" />
+<meta name="generator" content="Perl" />
+<link rel="stylesheet" href="timber.css" type="text/css" />
+</head>
+<body>
+<h1>The Timber compiler</h1>
+<p>
+<img class="noborder" src="povray/logo_timber.jpg" alt="" width="600" height="200" /></p>
+
+<h2>Description</h2>
+<p>
+The Timber compiler is a parallelizing static compiler for a superset of Java.
+</p>
+<p>
+The Timber compiler has been developed to demonstrate, and experiment
+with, compilation techniques for parallel and distributed systems.
+Our research concentrates on annotation-based parallel programming,
+so that is what the compiler supports. To provide a realistic context
+for parallelization engines, sufficient optimizations for sequential
+programs have been implemented to achieve a respectable level of
+performance for sequential programs.
+</p>
+<p>
+The compiler implements most of Java, plus a set of additional language
+constructs for scientific programming. This set of extensions is called
+<em>Spar</em>. We only fundamentally deviate from the Java language
+specification on the following points:
+</p>
+<ul>
+<li>The compiler is a whole-program static compiler from Java/Spar source code
+to machine code, so JVM bytecode is not supported. In particular, dynamic
+class loading is not supported.</li>
+<li>Java threads are not supported. Instead, we provide our own
+language constructs for parallel programming.</li>
+<li>The <a href="spar/overview.html">Spar language extensions</a> introduce a number of additional keywords.
+</li>
+</ul>
+The additional language constructs are only recognized in files with
+the extension <code>.spar</code>. For code in <code>.java</code> and
+<code>.jav</code> files, the compiler behaves pretty much like an ordinary
+Java compiler. In fact, for the <a href="jacks.html">Jacks validation
+suite</a>, we have pretty much the same score as Sun's own compiler!
+
+
+<h2>Downloading</h2>
+<p>
+The compiler is available for downloading under the Gnu Public License
+(GPL). See the <a href="downloading.html">downloading</a> page for
+further details.
+</p>
+
+<h2>Further information</h2>
+<p>
+There are separate pages for 
+<a href="news.html">Timber News</a>;
+<a href="documents.html">Publications</a>;
+<a href="people.html">people</a>;
+an <a href="spar/overview.html">overview of Spar</a>;
+<a href="implementation.html">implementation</a> 
+and <a href="jacks.html">language compliance</a> of the Timber compiler</a>;
+and <a href="related.html">related websites</a>.
+</p>
+
+<h2>Affiliation</h2>
+<p>
+The Timber compiler is a long-term project of the <a
+href="http://www.pds.its.tudelft.nl/">Parallel and Distributed Systems</a>
+group of <a href="http://www.tudelft.nl/">Delft University of
+Technology</a>.
+</p>
+
+<hr class="empty" />
+<p style="font-size: 70%;">
+Last modified Wed Dec 17 18:29:55 2003 UT by
+<a href="mailto:C.vanReeuwijk@its.tudelft.nl">Kees van Reeuwijk</a>.
+</p>
+</body>
+</html>

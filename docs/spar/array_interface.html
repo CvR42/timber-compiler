@@ -1,0 +1,156 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML r1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+<title>Spar - the Array interface</title>
+<link rev="made" href="mailto:C.vanReeuwijk@its.tudelft.nl" />
+<meta name="generator" content="Perl" />
+<link rel="stylesheet" href="../timber.css" type="text/css" />
+</head>
+<body>
+<table class="navigation">
+<tr>
+<td class="parent"><a href="../index.html">Timber</a></td>
+<td class="parent"><a href="../implementation.html">Implementation</a></td>
+<td class="parent"><a href="index.html">Spar</a></td>
+<td class="parent"><a href="overview.html">Overview</a></td>
+<td class="brother"><a href="foreach.html">foreach</a></td>
+<td class="brother"><a href="arrays.html">arrays</a></td>
+<td class="brother"><a href="array_expressions.html">array expressions</a></td>
+<td class="brother"><a href="macros.html">inline</a></td>
+<td class="brother"><a href="vectors.html">Vectors</a></td>
+<td class="brother"><a href="templates.html">Templates</a></td>
+<td class="brother">array interface</td>
+<td class="brother"><a href="elastic_array_interface.html">elastic array interface</a></td>
+<td class="brother"><a href="simple_array.html">example</a></td>
+<td class="brother"><a href="sins.html">Sins</a></td>
+
+</tr>
+</table>
+<h1>Spar - the Array interface</h1>
+<table>
+<tr>
+<td>
+<a href="index.html"><img class="noborder" src="../povray/icon_spar.jpg" alt="spar" width="80" height="70" /></a><p>
+To support sparse matrices and other specialized array implementations,
+Spar allows any class that implements the <code>Array</code> interface
+to use the array access syntax.
+</table>
+<h2>Definition</h2>
+The <code>Array</code> interface is defined as follows
+(note that the interface implements
+<a href="arrays.html">multi-dimensional arrays</a>, and uses <a href="vectors.html">vectors</a> and
+<a href="templates.html">parameterized types</a>):
+<pre>
+interface Array(| type t, int n |)
+{
+    t getElement( [int^n] index )
+        throws IndexOutOfBoundsException;
+    void storeElement( [int^n] index, t elm )
+        throws IndexOutOfBoundsException,
+               ArrayStoreException;
+    [int^n] getSize();
+}
+</pre>
+<p>
+If a class wants to allow growing and shrinking of its
+arrays, it should implement the <code>ElasticArray</code> interface:
+<pre>
+interface ElasticArray(| type t, int n |)
+    extends Array(| t, n |)
+{
+    void setSize( [int^n] sz )
+        throws NegativeArraySizeException;
+    int getRoom();
+    void setRoom( int rm );
+    void setRoom( [int^n] rm );
+    void fitRoom();
+}
+</pre>
+<h2>Example - diagonal view</h2>
+The following class defines a `view' on the diagonal of
+a two-dimensional array:
+<pre>
+class DiagonalView(| type t |) implements Array(| t, 1 |)
+{
+    Array(| t, 2 |) ref;
+<p>
+    DiagonalView( Array(| t, 2 |) a ){ ref = a; }
+    t getElement( [int^1] ix ){
+        return ref[ix[0],ix[0]];
+    }
+    void storeElement( [int^1] ix, t elm ) {
+        ref[ix[0],ix[0]] = elm;
+    }
+    [int^1] getSize() {
+        [int^2] dims = ref.getSize();
+        return [Math.min( dims[0], dims[1] )];
+    }
+}
+</pre>
+This class can now be used as follows:
+<pre>
+int[*,*] a = new double[5,5];
+DiagonalView(| double |) v = DiagonalView(| double |)( a );
+a[:,:] = 0;
+v[:] = 1;
+</pre>
+This will construct and fill `<code>a</code>' with the identity matrix
+(1 on the diagonal, 0 elsewhere).
+<h2>Example - transpose view</h2>
+As another example, the following class 
+implements a transpose view on an array of arbitrary size.
+<pre>
+class TransposeView(| type t, int n |)
+    implements Array(| t, n |)
+{
+    Array(| t, n |) ref;
+
+    TransposeView( Array(| t, n |) a ){ ref = a; }
+    t getElement( [int^n] ix ){
+        return ref revVector( n, ix );
+    }
+    void storeElement( [int^n] ix, t elm ){
+        ref revVector( n, ix ) = elm;
+    }
+    [int^n] getSize(){
+        return revVector( n, ref.getSize() );
+    }
+    static [int^n] revVector( int n, [int^n] v ){
+        int ix;
+        [int^n] res;
+
+        macro for( ix :- 0:n; ix++ ){
+            res[(n-ix)-1] = v[ix];
+        }
+        return res;
+    }
+}
+</pre>
+Note that this class even works for 0-dimensional and 1-dimensional
+arrays.  Also note that since this class allows a view on an arbitrary
+<code>Array</code> class it is possible to <dfn>compose</dfn> views. 
+This is demonstrated below, where two transpose views are composed.
+<p>
+This could be used as follows:
+<pre>
+int[*,*] a = new double[5,5];
+TransposeView(|double|) v = TransposeView(|double|)( a );
+TransposeView(|double|) w = TransposeView(|double|)( v );
+a[:,:] = 0;
+v[:,0] = 1;
+w[:,0] = 2;
+</pre>
+This results in a matrix `<code>a</code>' where all elements are set to 0,
+except that the first <em>column</em> (apart from <code>a[0,0]</code>) is set
+to 1 through the transpose view `<code>v</code>` on `<code>a</code>', and the
+first <em>row</em> is set to 2 through the transpose view `<code>w</code>' on
+`<code>v</code>'. Note that since `<code>w</code>' is a transpose view on a
+transpose view, it is in effect an identity view.
+<hr class="empty" />
+<p style="font-size: 70%;">
+Last modified Tue Jan 23 17:05:36 2001 UT by
+<a href="mailto:C.vanReeuwijk@its.tudelft.nl">Kees van Reeuwijk</a>.
+</p>
+</body>
+</html>

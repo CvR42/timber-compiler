@@ -1,0 +1,105 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML r1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+<title>Timber - requirements</title>
+<link rev="made" href="mailto:C.vanReeuwijk@its.tudelft.nl" />
+<meta name="generator" content="Perl" />
+<link rel="stylesheet" href="timber.css" type="text/css" />
+</head>
+<body>
+<table class="navigation">
+<tr>
+<td class="parent"><a href="index.html">Timber</a></td>
+<td class="parent"><a href="downloading.html">Downloading</a></td>
+<td class="brother"><a href="spar/licence.html">Licence</a></td>
+<td class="brother">Requirements</td>
+<td class="brother"><a href="spar/newfeatures.html">New features</a></td>
+<td class="brother"><a href="spar/missingfeatures.html">Missing features</a></td>
+
+</tr>
+</table>
+<h1>Timber - requirements</h1>
+
+<h2>Platform</h2>
+
+<p>
+The Timber compiler has been tested extensively on Linux systems with
+gcc 2.95.2, and is also known to work on Windows NT 4.0 with the <a
+href="http://www.cygwin.com/">CygWin</a> compiler and
+toolset.
+</p>
+
+<p>
+The Timber compiler is intended to be portable to a large number of
+platforms. Until now we have only tested it on the platforms mentioned
+above, but we wouldn't be surprised if it would work on other platforms,
+perhaps with a few patches. Any reports on the success or failure on
+other platforms are welcome. Patches will be gratefully accepted.
+</p>
+
+<p>
+For the moment only the GNU compiler is supported, but this is only
+because the configuration scripts are not yet smart enough to generate
+the correct options for other compilers. We hope to correct that
+restriction soon.
+</p>
+
+<h2>Requirements</h2>
+
+<p>
+To be able to compile the Timber compiler, you must have <a
+href="http://www.pds.its.tudelft.nl/~reeuwijk/software/Tm/">Tm</a>
+installed (at least version 2.0.10 is required). Make sure that the
+directory where the program 'tm' is installed is in your search
+path. (In other words, you must be able to invoke 'tm' without prefixing
+the full path to the program.)
+</p>
+<blockquote>
+<p>
+<img class="noborder" src="pictures/download.gif" alt="Tm download page" width="16" height="16" />
+<a href="http://www.pds.its.tudelft.nl/~reeuwijk/software/Tm/downloading.html">Tm download page</a>
+</p>
+</blockquote>
+<p>
+Also, the Timber compiler requires an implementations of the functions in the
+Java standard library.  We use the implementation provided by <a
+href="http://www.kaffe.org">Kaffe</a>. In particular, we require `Desktop'
+version 1.0.6 of the Kaffe library.  You can download this version from
+the <a href="http://www.kaffe.org/ftp/pub/kaffe/kaffe-1.0.6.tar.gz">Kaffe
+website</a>, or you can download a copy from our website:
+</p>
+
+<blockquote>
+<p>
+<img class="noborder" src="pictures/download.gif" alt="" width="16" height="16" />
+<a href="spar/kaffe-1.0.6.tar.gz">kaffe-1.0.6.tar.gz</a>, gzip compressed tar file (4M)
+</p>
+</blockquote>
+
+<p>
+The Timber compiler requires that the environment variable <tt>KAFFEROOT</tt>
+points to the directory where you have installed Kaffe. For example,
+if you unpacked the Kaffe distribution in your home directory, you would
+set the <tt>KAFFEROOT</tt> environment variable like this:
+</p>
+
+<pre>
+setenv KAFFEROOT $HOME/kaffe-1.0.6</pre>
+
+<p>
+If you are using a Bourne-like shell such as <tt>sh</tt> or <tt>bash</tt>,
+the command <tt>setenv</tt> is not available, and you must use the
+<tt>export</tt> command. For example:
+</p>
+
+<pre>
+export KAFFEROOT=$HOME/kaffe-1.0.6</pre>
+ 
+<hr class="empty" />
+<p style="font-size: 70%;">
+Last modified Wed Dec 17 18:29:55 2003 UT by
+<a href="mailto:C.vanReeuwijk@its.tudelft.nl">Kees van Reeuwijk</a>.
+</p>
+</body>
+</html>

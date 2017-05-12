@@ -1,0 +1,78 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML r1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
+<title>Spar - inlingin</title>
+<link rev="made" href="mailto:C.vanReeuwijk@its.tudelft.nl" />
+<meta name="generator" content="Perl" />
+<link rel="stylesheet" href="../timber.css" type="text/css" />
+</head>
+<body>
+<table class="navigation">
+<tr>
+<td class="parent"><a href="../index.html">Timber</a></td>
+<td class="parent"><a href="../implementation.html">Implementation</a></td>
+<td class="parent"><a href="index.html">Spar</a></td>
+<td class="parent"><a href="overview.html">Overview</a></td>
+<td class="brother"><a href="foreach.html">foreach</a></td>
+<td class="brother"><a href="arrays.html">arrays</a></td>
+<td class="brother"><a href="array_expressions.html">array expressions</a></td>
+<td class="brother">inline</td>
+<td class="brother"><a href="vectors.html">Vectors</a></td>
+<td class="brother"><a href="templates.html">Templates</a></td>
+<td class="brother"><a href="array_interface.html">array interface</a></td>
+<td class="brother"><a href="elastic_array_interface.html">elastic array interface</a></td>
+<td class="brother"><a href="simple_array.html">example</a></td>
+<td class="brother"><a href="sins.html">Sins</a></td>
+
+</tr>
+</table>
+<h1>Spar - inlingin</h1>
+<p>
+<a href="index.html"><img class="noborder" src="../povray/icon_spar.jpg" alt="spar" width="80" height="70" /></a></p>
+<p>
+Spar supports inlining for two different reasons:
+</p>
+<ul>
+<li>To allow the
+abstraction of simple constructs without paying the cost of a function
+call.</li>
+<li>To allow type abstraction, so that part of
+the functionality of C++ templates can be provided.</li>
+</ul>
+<p>
+An inlined method, or constructor is similar to an ordinary one, but it is
+declared to be a inlined with the <code>inline</code> keyword. For example:
+</p>
+<pre>
+class Stats {
+    long sum;
+    int n;
+
+    inline Stats() { sum = 0; n = 0; }
+    inline void update( int val ) {
+        n++;
+        sum += val;
+    }
+    inline float average() {
+        return ((float) val)/((float) n);
+    }
+}</pre>
+<p>
+Inlined methods are very similar to ordinary methods, but the compiler
+is will expand them at compile time. Moreover, inlined methods can
+have <code>type</code> parameters, which is not allowed in ordinary methods.
+</p>
+<p>
+For example, classes such as the <code>DiagonalView</code>
+and <code>TransposeView</code> classes shown on the <a
+href="array_interface.html">Array interface</a> page usually declare
+most of their methods as inlined for increased efficiency.
+</p>
+<hr class="empty" />
+<p style="font-size: 70%;">
+Last modified Mon Mar  5 15:18:14 2001 UT by
+<a href="mailto:C.vanReeuwijk@its.tudelft.nl">Kees van Reeuwijk</a>.
+</p>
+</body>
+</html>
