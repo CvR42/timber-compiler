@@ -1,10 +1,12 @@
-# timber-compiler
+# The timber compiler
 
 The Timber compiler implements Spar/Java, a superset of Java with
 additional language constructs for high-performance computation. The
 additions include support for data parallelism and task parallelism,
 tuples, multi-dimensional arrays, generic classes and interfaces through
-templates, complex numbers, and subscript operator overloading.
+templates, complex numbers, and subscript operator overloading. See the
+Timber website at https://cvr42.github.io/timber-compiler/index.html for
+a detailed description of the compiler.
 
 Timber is implemented as a static whole-program compiler, using a standard
 C++ compiler to generate machine code. For now only Gnu C compilers are
