@@ -15,10 +15,5 @@ Rotan is a rule-base code transformation system. It is part of the
 Leo Breebaart (Design and implementation)<br>
 <a href="http://www.pds.its.tudelft.nl/~frits/">Frits Kuijlman</a> (Maintainer)<br>
 
-<h2>Publications</h2>
-Publications related to Rotan <a
-href="$publication_search_url?query=rotan&title=yes">are listed
-in the PDS publication database</a>.
-
 EOF
 &generateFooter($0);

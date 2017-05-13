@@ -1,19 +1,19 @@
-$myEmailAddress = 'C.vanReeuwijk@its.tudelft.nl';
+$myEmailAddress = 'keesvr@xs4all.nl';
 $navigator_bar_brother_bgcolor = "#EBC79E";
 $navigator_bar_parent_bgcolor = "#D9D9F3";
-$tm_url = "http://www.pds.its.tudelft.nl/~reeuwijk/software/Tm/";
-$tm_download_url = "http://www.pds.its.tudelft.nl/~reeuwijk/software/Tm/downloading.html";
+$tm_url = "https://github.com/CvR42/template-manager";
+#$tm_download_url = "http://www.pds.its.tudelft.nl/~reeuwijk/software/Tm/downloading.html";
 $tm_min_version = "2.0.10";
-$joses_url = "http://joses.pds.twi.tudelft.nl/";
-$kaffe_download_url = "http://www.kaffe.org/ftp/pub/kaffe/kaffe-1.0.6.tar.gz";
+#$joses_url = "http://joses.pds.twi.tudelft.nl/";
+#$kaffe_download_url = "http://www.kaffe.org/ftp/pub/kaffe/kaffe-1.0.6.tar.gz";
 $spar_version = "2.0.1";
 # Only define the pre_version if there is one.
 #$spar_pre_version = "2.0-pre3";
 $spar_langspec_version = "2.0";
 #$spar_langspec_pre_version = "2.0-pre1";
 $spar_release_date = "13 December 2002";
-$publication_search_url="http://www.pds.its.tudelft.nl/cgi-bin/publications.pl";
-$timberAnnounceRequestEmailAddress='timber-announce-request@pds.its.tudelft.nl';
+#$publication_search_url="http://www.pds.its.tudelft.nl/cgi-bin/publications.pl";
+#$timberAnnounceRequestEmailAddress='timber-announce-request@pds.its.tudelft.nl';
 $warp_time = 5;
 $maintainer = "Kees van Reeuwijk";
 $stylesheet = "timber.css";

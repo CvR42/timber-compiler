@@ -13,6 +13,8 @@ print <<EOF;
 
 EOF
 
+&generate_news_item( $webpage, "13 May 2017", "The Timber compiler is noew available on GitHub." ); 
+
 &generate_news_item( $webpage, "13 December 2002", "Version 2.0.1 of the Timber compiler is available for <a href=\"$download_url\">downloading</a>. See the <a href=\"$version_history_url\">version history</a> page for a list of new features." ); 
 
 &generate_news_item( $webpage, "28 March 2002", "Version 2.0 of the Timber compiler is available for <a href=\"$download_url\">downloading</a>. See the <a href=\"$version_history_url\">version history</a> page for a list of new features." ); 
@@ -28,36 +30,5 @@ EOF
 &generate_news_item( $webpage, "14 Feb 2001", "The website has been overhauled completedly. New features include a more obvious structure of the website, and this news page." );
 
 &generate_news_item( $webpage, "24 Jan 2001", "Version 1.3 of the Timber compiler is available for <a href=\"$download_url\">downloading</a>. See the <a href=\"$version_history_url\">version history</a> page for a list of new features." );
-
-print <<EOF;
-<h2>Timber announcements mailing list</h2>
-<p>
-If you want to keep informed about the development of the Timber 
-compiler, you may want to subscribe to the announcements mailing list.
-This is a low-volume mailing list to announce updates of the Timber
-compiler.
-</p>
-<p>
-You can subscribe or unsubscribe to the mailing list by
-clicking one of the buttons below:
-</p>
- 
-<form action="mailto:$timberAnnounceRequestEmailAddress" method="post" enctype="text/plain">
-<p> 
-<input type="submit" name="subscribe " value=" Subscribe" />
-<input type="submit" name="unsubscribe " value=" Unsubscribe" />
-</p>
-</form>
-<p>
-Note: this does not work on all web browsers, and may require the
-installation of additional software.
-</p>
-<p> 
-Alternatively, send an email with the subject <tt>subscribe</tt>
-or <tt>unsubscribe</tt> to the email address <a
-href="mailto:$timberAnnounceRequestEmailAddress?subject=subscribe">$timberAnnounceRequestEmailAddress</a>.
-</p>
-
-EOF
 
 &generateFooter($0);

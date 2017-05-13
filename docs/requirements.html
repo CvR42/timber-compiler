@@ -3,7 +3,7 @@
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1" />
 <title>Timber - requirements</title>
-<link rev="made" href="mailto:C.vanReeuwijk@its.tudelft.nl" />
+<link rev="made" href="mailto:keesvr@xs4all.nl" />
 <meta name="generator" content="Perl" />
 <link rel="stylesheet" href="timber.css" type="text/css" />
 </head>
@@ -49,25 +49,20 @@ restriction soon.
 
 <p>
 To be able to compile the Timber compiler, you must have <a
-href="http://www.pds.its.tudelft.nl/~reeuwijk/software/Tm/">Tm</a>
+href="https://github.com/CvR42/template-manager">Tm</a>
 installed (at least version 2.0.10 is required). Make sure that the
 directory where the program 'tm' is installed is in your search
 path. (In other words, you must be able to invoke 'tm' without prefixing
 the full path to the program.)
+You can clone and compile Tm from the <a href="https://github.com/CvR42/template-manager">Tm github site</a>.
 </p>
-<blockquote>
-<p>
-<img class="noborder" src="pictures/download.gif" alt="Tm download page" width="16" height="16" />
-<a href="http://www.pds.its.tudelft.nl/~reeuwijk/software/Tm/downloading.html">Tm download page</a>
-</p>
-</blockquote>
 <p>
 Also, the Timber compiler requires an implementations of the functions in the
 Java standard library.  We use the implementation provided by <a
 href="http://www.kaffe.org">Kaffe</a>. In particular, we require `Desktop'
-version 1.0.6 of the Kaffe library.  You can download this version from
-the <a href="http://www.kaffe.org/ftp/pub/kaffe/kaffe-1.0.6.tar.gz">Kaffe
-website</a>, or you can download a copy from our website:
+version 1.0.6 of the Kaffe library. Unfortunately this version is so
+old that it is no longer available from the Kaffe website, but you
+can download a copy from our website:
 </p>
 
 <blockquote>
@@ -98,8 +93,8 @@ export KAFFEROOT=$HOME/kaffe-1.0.6</pre>
  
 <hr class="empty" />
 <p style="font-size: 70%;">
-Last modified Wed Dec 17 18:29:55 2003 UT by
-<a href="mailto:C.vanReeuwijk@its.tudelft.nl">Kees van Reeuwijk</a>.
+Last modified Sat May 13 18:50:28 2017 UT by
+<a href="mailto:keesvr@xs4all.nl">Kees van Reeuwijk</a>.
 </p>
 </body>
 </html>

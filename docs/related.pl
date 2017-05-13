@@ -26,11 +26,6 @@ print <<EOF;
 <a href="http://stork.ukc.ac.uk/computer_science/Html/Jones/GC/gcbook.html">Garbage Collection</a> |
 </p>
 
-<h2>Affiliated projects</h2>
-
-<p>
-The <a href="$joses_url">Joses</a> project.
-</p>
 EOF
 
 

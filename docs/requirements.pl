@@ -41,17 +41,15 @@ installed (at least version $tm_min_version is required). Make sure that the
 directory where the program 'tm' is installed is in your search
 path. (In other words, you must be able to invoke 'tm' without prefixing
 the full path to the program.)
+You can clone and compile Tm from the <a href="$tm_url">Tm github site</a>.
 </p>
-EOF
-&generate_url_download( $webpage, $tm_download_url, "Tm download page" );
-print <<EOF;
 <p>
 Also, the Timber compiler requires an implementations of the functions in the
 Java standard library.  We use the implementation provided by <a
 href="http://www.kaffe.org">Kaffe</a>. In particular, we require `Desktop'
-version 1.0.6 of the Kaffe library.  You can download this version from
-the <a href="$kaffe_download_url">Kaffe
-website</a>, or you can download a copy from our website:
+version 1.0.6 of the Kaffe library. Unfortunately this version is so
+old that it is no longer available from the Kaffe website, but you
+can download a copy from our website:
 </p>
 
 EOF

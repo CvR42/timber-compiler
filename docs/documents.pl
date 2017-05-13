@@ -6,18 +6,6 @@ $title = "Documents about the Timber compiler";
 
 print <<EOF;
 
-<h2>All publications</h2>
-
-<p>
-An overview of all publications related to the Timber compiler
-and to the Spar language extensions can be found by searching
-for
-<a href="$publication_search_url?project=Timber">Timber</a>
-resp.
-<a href="$publication_search_url?project=Spar">Spar</a>
-in the PDS publication database.
-</p>
-
 <h2>Selected publications</h2>
 
 EOF

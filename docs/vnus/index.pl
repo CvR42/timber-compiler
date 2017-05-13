@@ -39,11 +39,6 @@ EOF
 &generate_downloads( $webpage, "vnus/vnus-reference" );
 
 print <<EOF;
-<p>
-Further publications related to Vnus <a
-href="$publication_search_url?title=yes&query=vnus">are listed
-in the PDS publication database</a>.
-</p>
 <h2>Availability</h2>
 <p>
 The Vnus to C++ converter can be <a href="$timber_download_url">downloaded</a>

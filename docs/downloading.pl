@@ -86,35 +86,6 @@ In the unpacked directory there is a README file that describes how
 to compile and install the package.
 </p>
 
-<h2>Keeping up to date</h2>
-
-<p>
-There is a low-volume mailing list to announce updates of the Timber
-compiler. You can subscribe or unsubscribe to the mailing list by
-clicking one of the buttons below:
-</p>
- 
-<form action="mailto:$timberAnnounceRequestEmailAddress" method="post" enctype="text/plain">
-<p> 
-<input type="submit" name="subscribe " value=" Subscribe" />
-<input type="submit" name="unsubscribe " value=" Unsubscribe" />
-</p>
-</form>
-<p>
-Note: this does not work on all web browsers, and may require the
-installation of additional software.
-</p>
- 
-<p>
-Alternatively, send an email with the subject <tt>subscribe</tt>
-or <tt>unsubscribe</tt> to the email address <a
-href="mailto:$timberAnnounceRequestEmailAddress?subject=subscribe">$timberAnnounceRequestEmailAddress</a>.
-</p>
-<p>
-Feel free to <a href="mailto:$myEmailAddress">email me</a> with bug
-reports, suggestions and remarks.                                               
-</p>
-
 <h2>Documentation</h2>
 <p>
 You can download the Spar Language Specification here:

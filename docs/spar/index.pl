@@ -44,10 +44,4 @@ EOF
 
 &generate_downloads( $webpage, "spar/spar-langspec-$spar_langspec_version" );
 
-print <<EOF;
-Further publications related to Spar <a
-href="$publication_search_url?project=spar">are listed
-in the PDS publication database</a>.
-
-EOF
 &generateFooter($0);

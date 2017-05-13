@@ -28,10 +28,5 @@ developed as the Hazel parallelization engine.
 Automap provides a significant contribution to the <a
 href="$timber_link">Timber</a> project.
 
-<h2>Publications</h2>
-Publications related to Automap <a
-href="$publication_search_url?query=automap&match=project">are listed
-in the PDS publication database</a>.
-
 EOF
 &generateFooter($0);
