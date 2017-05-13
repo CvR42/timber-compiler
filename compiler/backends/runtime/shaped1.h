@@ -10,6 +10,7 @@
 #include "arrayboundviolated.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 
 template<class T> class ShapeD1 : public ShapeBase<T>
 {
@@ -29,7 +30,7 @@ private:
 	if( VNUS_UNLIKELY( this->length != theShape.GetSize0() ) ){
 	    fprintf(stderr, "*** ERROR -- \n");
 	    fprintf(stderr, "    Sizes don't match in dimension 0 (%d != %d)\n",this->length,theShape.GetSize0());
-	    _exit(1);
+	    exit(EXIT_FAILURE);
 	}
         ShapeBase<T>::operator=(theShape);
         return *this;

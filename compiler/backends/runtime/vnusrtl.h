@@ -151,7 +151,7 @@ inline void vnus_clus(
 /* Allocator functions */
 inline VnusByte* vnus_new(VnusInt nelm, VnusInt elmsz)
      //{ return (VnusByte*)calloc(nelm, elmsz); }
-{ return (VnusByte*)malloc(nelm * elmsz); }
+{ return (VnusByte*)malloc((size_t) (nelm * elmsz)); }
 
 inline void vnus_delete(VnusByte* ptr)
 { free(ptr); }

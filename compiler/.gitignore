@@ -1,7 +1,10 @@
 configure
+.DS_Store
 config.status
 config.cache
 config.log
 Makefile
 dist.lst
 distlist
+Makefile.d
+*.a

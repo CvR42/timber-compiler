@@ -47,6 +47,7 @@ public:
 
     inline bool isShape() const { return true; }
 
+#if 0
     void Print( FILE *out ) const
     {
         for( VnusInt i = 0; i<length; i++ ){
@@ -55,6 +56,7 @@ public:
         }
         fprintf(out,"\n");
     }
+#endif
 };
 
 inline VnusBase *vnus_get_shape_buffer( VnusBase *arr )
