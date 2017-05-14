@@ -11,7 +11,7 @@ LFCLIB=/usr/local/package/lfc/lib
 LFCVERSION=optimized
 
 # Clear flags to the various phases
-CPLUSFLAGS="-g -I$SPARRUNTIMEINCLUDE -I$VNUSRUNTIMEINCLUDE"
+CPLUSFLAGS="-g -I$SPARRUNTIMEINCLUDE -I$VNUSRUNTIMEINCLUDE -Wno-parentheses-equality"
 VNUSFLAGS="-Ispar-rtl.h"
 FRONTFLAGS=
 LDFLAGS=
