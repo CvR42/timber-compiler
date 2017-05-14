@@ -1,12 +1,13 @@
 *-g.cc
-autom4te.cache
+error.h
+error.cc
 Makefile
 align
 tmadmin.h
-tmadmin.cc
 *.d
 config.cache
-config.log
-config.status
 configure
 dist.lst
+defs.h
+tmadmin.ct
+tmadmin.cc

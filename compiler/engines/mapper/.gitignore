@@ -1,8 +1,5 @@
 Makefile
-autom4te.cache
 Make.vars
-config.cache
-config.status
 config.log
 configure
 dist.lst
@@ -14,3 +11,7 @@ old2new
 tmadmin.h
 tmadmin.cc
 *.d
+tmadmin.ct
+error.cc
+error.h
+defs.h

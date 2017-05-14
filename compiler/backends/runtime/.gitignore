@@ -1,8 +1,6 @@
 Makefile
-autom4te.cache
 config.cache
-config.log
-config.status
+ctests-s
 configure
 dist.lst
 iopar.cc
