@@ -29,7 +29,7 @@ class signed_longlong {
   signed_longlong(const long x)
     {
       hi = -(x<0);
-      lo = x;
+      lo = (unsigned long) x;
     };
   //  operator unsigned long ()
   //    {

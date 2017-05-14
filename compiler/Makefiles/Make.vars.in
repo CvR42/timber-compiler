@@ -120,8 +120,6 @@ EXTRAFLAGS  += -march=pentium -mcpu=pentium
 ifeq ($(USEPANDATRACE),yes)
 EXTRAFLAGS  += -DTRACING
 endif
-else
-EXTRAFLAGS  += -fno-default-inline
 endif
 
 # Flags used as basis for all targets

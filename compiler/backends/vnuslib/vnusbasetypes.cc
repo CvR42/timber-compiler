@@ -49,7 +49,7 @@ void print_vnus_float( TMPRINTSTATE *st, const vnus_float e )
 
 tmbool fscan_vnus_boolean( FILE *f, vnus_boolean *b )
 {
-    int n;
+    unsigned int n;
     char word[10];
 
     n = tm_fscanopenbrac( f );
@@ -90,7 +90,7 @@ void print_BASETYPE( TMPRINTSTATE *st, BASETYPE t )
 
 tmbool fscan_BASETYPE( FILE *f, BASETYPE *b )
 {
-    int n;
+    unsigned int n;
     char word[10];
 
     n = tm_fscanopenbrac( f );
@@ -165,7 +165,7 @@ void print_BINOP( TMPRINTSTATE *st, BINOP t )
 
 tmbool fscan_BINOP( FILE *f, BINOP *b )
 {
-    int n;
+    unsigned int n;
     char word[20];
 
     n = tm_fscanopenbrac( f );
@@ -251,7 +251,7 @@ void print_UNOP( TMPRINTSTATE *st, UNOP t )
 
 tmbool fscan_UNOP( FILE *f, UNOP *b )
 {
-    int n;
+    unsigned int n;
     char word[20];
 
     n = tm_fscanopenbrac( f );
@@ -313,7 +313,7 @@ tmbool fscan_vnus_float( FILE *f, vnus_float *b )
 
 tmbool fscan_vnus_long( FILE *f, vnus_long *v )
 {
-    int brac = tm_fscanopenbrac( f );
+    unsigned int brac = tm_fscanopenbrac( f );
     char buf[MAX_LONG_DIGITS+2];
     char *bufp = buf;
 
@@ -342,7 +342,7 @@ tmbool fscan_vnus_long( FILE *f, vnus_long *v )
 
 tmbool fscan_vnus_double( FILE *f, vnus_double *v )
 {
-    int brac = tm_fscanopenbrac( f );
+    unsigned int brac = tm_fscanopenbrac( f );
     char buf[MAX_LONG_DIGITS+2];
     char *bufp = buf;
 
