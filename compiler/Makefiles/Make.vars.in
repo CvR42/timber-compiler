@@ -125,7 +125,7 @@ EXTRAFLAGS  += -fno-default-inline
 endif
 
 # Flags used as basis for all targets
-WFLAGS	    = -Wall -W -Wno-long-long -Wundef -Wpointer-arith -Wcast-qual -Wcast-align -Wwrite-strings -Wconversion -Wstrict-prototypes -Wmissing-prototypes -Winline -Woverloaded-virtual -Wsynth -ansi -pedantic
+WFLAGS	    = -Wall -W -Wundef -Wpointer-arith -Wcast-qual -Wcast-align -Wwrite-strings -Wconversion -Winline -Woverloaded-virtual -Wsynth -ansi -pedantic
 
 UNUSEDWFLAGS = -Waggregate-return -Wold-style-cast -Wredundant-decls -Wshadow -Wlong-long 
 

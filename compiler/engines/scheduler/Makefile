@@ -13,7 +13,7 @@ ECHO	= echo
 -include $(COMPILERSRCROOT)/Makefiles/Make.rules
 -include $(COMPILERSRCROOT)/Makefiles/Make.vars
 
-WFLAGS   = -Wall -W -Wtraditional -Wpointer-arith -Wbad-function-cast -Wcast-align -Wmissing-prototypes -Wmissing-declarations -Wnested-externs -Woverloaded-virtual -Wstrict-prototypes -Wsynth # -ansi -pedantic
+WFLAGS   = -Wall -W -Wtraditional -Wpointer-arith -Wbad-function-cast -Wcast-align -Wmissing-declarations -Wnested-externs -Woverloaded-virtual -Wsynth # -ansi -pedantic
 GNUWFLAGS = # -Waggregate-return # -Wconversion
 ERRWFLAGS = # -Werror -pedantic-errors
 

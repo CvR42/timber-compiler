@@ -47,17 +47,17 @@ void print_vnus_float( TMPRINTSTATE *st, const vnus_float e )
     print_long( st, vnus_float_bits_to_int( e ) );
 }
 
-int fscan_vnus_boolean( FILE *f, vnus_boolean *b )
+tmbool fscan_vnus_boolean( FILE *f, vnus_boolean *b )
 {
     int n;
     char word[10];
 
     n = tm_fscanopenbrac( f );
     if( tm_fscanspace( f ) ){
-	return 1;
+	return TMTRUE;
     }
     if( tm_fscancons( f, word, 10 ) ){
-	return 1;
+	return TMTRUE;
     }
     if( 0 == strcmp( word, "TRUE" ) ){
 	*b = true;
@@ -67,7 +67,7 @@ int fscan_vnus_boolean( FILE *f, vnus_boolean *b )
     }
     else {
 	(void) sprintf( tm_errmsg, "Not a boolean: %s", word );
-	return 1;
+	return TMTRUE;
     }
     return tm_fscanclosebrac( f, n );
 }
@@ -88,17 +88,17 @@ void print_BASETYPE( TMPRINTSTATE *st, BASETYPE t )
     }
 }
 
-int fscan_BASETYPE( FILE *f, BASETYPE *b )
+tmbool fscan_BASETYPE( FILE *f, BASETYPE *b )
 {
     int n;
     char word[10];
 
     n = tm_fscanopenbrac( f );
     if( tm_fscanspace( f ) ){
-	return 1;
+	return TMTRUE;
     }
     if( tm_fscancons( f, word, 10 ) ){
-	return 1;
+	return TMTRUE;
     }
     if( 0 == strcmp( word, "BOOLEAN" ) ){
 	*b = BT_BOOLEAN;
@@ -132,7 +132,7 @@ int fscan_BASETYPE( FILE *f, BASETYPE *b )
     }
     else {
 	(void) sprintf( tm_errmsg, "Not a BASETYPE: %s", word );
-	return 1;
+	return TMTRUE;
     }
     return tm_fscanclosebrac( f, n );
 }
@@ -163,17 +163,17 @@ void print_BINOP( TMPRINTSTATE *st, BINOP t )
     }
 }
 
-int fscan_BINOP( FILE *f, BINOP *b )
+tmbool fscan_BINOP( FILE *f, BINOP *b )
 {
     int n;
     char word[20];
 
     n = tm_fscanopenbrac( f );
     if( tm_fscanspace( f ) ){
-	return 1;
+	return TMTRUE;
     }
     if( tm_fscancons( f, word, 20 ) ){
-	return 1;
+	return TMTRUE;
     }
     if( 0 == strcmp( word, "AND" ) ){
 	*b = BINOP_AND;
@@ -234,7 +234,7 @@ int fscan_BINOP( FILE *f, BINOP *b )
     }
     else {
 	(void) sprintf( tm_errmsg, "Not a BINOP: %s", word );
-	return 1;
+	return TMTRUE;
     }
     return tm_fscanclosebrac( f, n );
 }
@@ -249,17 +249,17 @@ void print_UNOP( TMPRINTSTATE *st, UNOP t )
     }
 }
 
-int fscan_UNOP( FILE *f, UNOP *b )
+tmbool fscan_UNOP( FILE *f, UNOP *b )
 {
     int n;
     char word[20];
 
     n = tm_fscanopenbrac( f );
     if( tm_fscanspace( f ) ){
-	return 1;
+	return TMTRUE;
     }
     if( tm_fscancons( f, word, 20 ) ){
-	return 1;
+	return TMTRUE;
     }
     if( 0 == strcmp( word, "NOT" ) ){
 	*b = UNOP_NOT;
@@ -272,46 +272,46 @@ int fscan_UNOP( FILE *f, UNOP *b )
     }
     else {
 	(void) sprintf( tm_errmsg, "Not an UNOP: %s", word );
-	return 1;
+	return TMTRUE;
     }
     return tm_fscanclosebrac( f, n );
 }
 
-int fscan_vnus_byte( FILE *f, vnus_byte *b )
+tmbool fscan_vnus_byte( FILE *f, vnus_byte *b )
 {
     tmshort n;
-    int res = fscan_tmshort( f, &n );
+    tmbool res = fscan_tmshort( f, &n );
     *b = n;
     return res;
 }
 
-int fscan_vnus_short( FILE *f, vnus_short *b )
+tmbool fscan_vnus_short( FILE *f, vnus_short *b )
 {
     int n;
-    int res = fscan_int( f, &n );
+    tmbool res = fscan_int( f, &n );
     *b = n;
     return res;
 }
 
-int fscan_vnus_int( FILE *f, vnus_int *b )
+tmbool fscan_vnus_int( FILE *f, vnus_int *b )
 {
     long n;
-    int res = fscan_long( f, &n );
+    tmbool res = fscan_long( f, &n );
     *b = n;
     return res;
 }
 
-int fscan_vnus_float( FILE *f, vnus_float *b )
+tmbool fscan_vnus_float( FILE *f, vnus_float *b )
 {
     long n;
-    int res = fscan_long( f, &n );
+    tmbool res = fscan_long( f, &n );
     *b = intbits_to_vnus_float( n );
     return res;
 }
 
 #define MAX_LONG_DIGITS 200
 
-int fscan_vnus_long( FILE *f, vnus_long *v )
+tmbool fscan_vnus_long( FILE *f, vnus_long *v )
 {
     int brac = tm_fscanopenbrac( f );
     char buf[MAX_LONG_DIGITS+2];
@@ -327,20 +327,20 @@ int fscan_vnus_long( FILE *f, vnus_long *v )
 	c = fgetc( f );
 	if( bufp>=buf+MAX_LONG_DIGITS ){
 	    strcpy( tm_errmsg, "vnus_long has too many digits" );
-	    return 1;
+	    return TMTRUE;
 	}
     }
     ungetc( c, f );
     if( bufp == buf ){
 	strcpy( tm_errmsg, "vnus_long expected" );
-	return 1;
+	return TMTRUE;
     }
     *bufp = '\0';
     *v = string_to_vnus_long( buf );
     return tm_fscanclosebrac( f, brac );
 }
 
-int fscan_vnus_double( FILE *f, vnus_double *v )
+tmbool fscan_vnus_double( FILE *f, vnus_double *v )
 {
     int brac = tm_fscanopenbrac( f );
     char buf[MAX_LONG_DIGITS+2];
@@ -356,13 +356,13 @@ int fscan_vnus_double( FILE *f, vnus_double *v )
 	c = fgetc( f );
 	if( bufp>=buf+MAX_LONG_DIGITS ){
 	    strcpy( tm_errmsg, "vnus_double has too many digits" );
-	    return 1;
+	    return TMTRUE;
 	}
     }
     ungetc( c, f );
     if( bufp == buf ){
 	strcpy( tm_errmsg, "vnus_double expected" );
-	return 1;
+	return TMTRUE;
     }
     *bufp = '\0';
     vnus_long n = string_to_vnus_long( buf );

@@ -26,26 +26,14 @@
  * that name. Return false if it cannot be found. Return true if
  * it can be found. Assign the position in the table where the entry
  * is or should be to '*pos'.
- *
- * Since this function was very high in the profile, the 'data' field
- * of each symbol is abused to store a guess of the position of that
- * symbol in the symboltable.
- *
- * Also, the function is inlined.
  */
 static bool search_Entry_list( const_Entry_list symtab, const tmsymbol name, unsigned int *pos )
 {
-    unsigned int oldix = reinterpret_cast<unsigned int> (name->data);
-    if( oldix<symtab->sz && symtab->arr[oldix]->name == name ){
-	*pos = oldix;
-	return true;
-    }
     for( unsigned int ix = 0; ix<symtab->sz; ix++ ){
 	const_Entry e = symtab->arr[ix];
 
 	if( name == e->name ){
 	    *pos = ix;
-	    name->data = reinterpret_cast< void * >( ix );
 	    return true;
 	}
     }

@@ -18,7 +18,7 @@ UNINSTALL_PROGRAM = rm -f
 
 YACC	 = @YACC@ -v -d
 
-WFLAGS   = -Wall -W -Wno-long-long -Wshadow -Wpointer-arith -Wcast-qual -Wcast-align -Wwrite-strings -Wmissing-prototypes -Winline -Woverloaded-virtual -Wstrict-prototypes -Wsynth -pedantic -ansi -Wsign-compare
+WFLAGS   = -Wall -W -Wno-long-long -Wshadow -Wpointer-arith -Wcast-qual -Wcast-align -Wwrite-strings -Winline -Woverloaded-virtual -Wsynth -pedantic -ansi -Wsign-compare
 
 GNUWFLAGS = -Waggregate-return # -Wconversion
 

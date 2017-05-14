@@ -11,7 +11,7 @@
 ..
 .append wantdefs stat_$(basename)
 .append wantdefs get_balance_$(basename)
-.append wantdefs flush_$(basename)
+..append wantdefs flush_$(basename)
 ..
 .append wantdefs new_origin
 .append wantdefs rdup_origin

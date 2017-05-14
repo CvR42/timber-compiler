@@ -25,7 +25,7 @@ typedef enum en_BASETYPE {
 #define isequal_BASETYPE(a,b) ((a)==(b))
 #define BASETYPENIL ((BASETYPE) 0)
 extern void print_BASETYPE( TMPRINTSTATE *st, BASETYPE t );
-extern int fscan_BASETYPE( FILE *f, BASETYPE *b );
+extern tmbool fscan_BASETYPE( FILE *f, BASETYPE *b );
 
 typedef enum en_binop {
     BINOP_AND,
@@ -50,7 +50,7 @@ typedef enum en_binop {
 } BINOP;
 
 extern void print_BINOP( TMPRINTSTATE *st, BINOP t );
-extern int fscan_BINOP( FILE *f, BINOP *b );
+extern tmbool fscan_BINOP( FILE *f, BINOP *b );
 #define isequal_BINOP(a,b) ((a)==(b))
 #define BINOPNIL ((BINOP) 0)
 
@@ -72,7 +72,7 @@ typedef enum en_unop {
 #define isequal_UNOP(a,b) ((a)==(b))
 #define UNOPNIL ((UNOP) 0)
 extern void print_UNOP( TMPRINTSTATE *st, UNOP t );
-extern int fscan_UNOP( FILE *f, UNOP *b );
+extern tmbool fscan_UNOP( FILE *f, UNOP *b );
 
 /* Flags for declaration modifiers. */
 #define MOD_FINAL	0x0001
@@ -92,7 +92,7 @@ typedef signed char vnus_byte;
 #define VNUS_BYTE_MAX 127
 #define VNUS_BYTE_MIN -128
 #define vnus_byteNIL ((vnus_byte) 0)
-extern int fscan_vnus_byte( FILE *f, vnus_byte *b );
+extern tmbool fscan_vnus_byte( FILE *f, vnus_byte *b );
 
 typedef tmshort vnus_short;
 #define rfre_vnus_short(e)
@@ -102,7 +102,7 @@ typedef tmshort vnus_short;
 #define VNUS_SHORT_MAX 32767
 #define VNUS_SHORT_MIN -32768
 #define vnus_shortNIL ((vnus_short) 0)
-extern int fscan_vnus_short( FILE *f, vnus_short *b );
+extern tmbool fscan_vnus_short( FILE *f, vnus_short *b );
 
 typedef int vnus_char;
 #define rfre_vnus_char(e) 
@@ -134,7 +134,7 @@ typedef bool vnus_boolean;
 #define isequal_vnus_boolean(a,b) ((a)==(b))
 #define vnus_booleanNIL false
 extern void print_vnus_boolean( TMPRINTSTATE *st, vnus_boolean b );
-extern int fscan_vnus_boolean( FILE *f, vnus_boolean *b ); 
+extern tmbool fscan_vnus_boolean( FILE *f, vnus_boolean *b ); 
 
 typedef int vnus_int;
 #define rfre_vnus_int(e)
@@ -144,7 +144,7 @@ typedef int vnus_int;
 #define VNUS_INT_MAX 2147483647L
 #define VNUS_INT_MIN (-2147483647L-1)
 #define vnus_intNIL (0)
-extern int fscan_vnus_int( FILE *f, vnus_int *b ); 
+extern tmbool fscan_vnus_int( FILE *f, vnus_int *b ); 
 
 typedef tmstring vnus_string;
 #define rfre_vnus_string(e) rfre_tmstring(e)
@@ -153,10 +153,10 @@ typedef tmstring vnus_string;
 
 extern vnus_long string_to_vnus_long( const char *p );
 extern vnus_int string_to_vnus_int( const char *p );
-extern int fscan_vnus_long( FILE *f, vnus_long *b ); 
+extern tmbool fscan_vnus_long( FILE *f, vnus_long *b ); 
 
 typedef float vnus_float;
-extern int fscan_vnus_float( FILE *f, vnus_float *v );
+extern tmbool fscan_vnus_float( FILE *f, vnus_float *v );
 #define rfre_vnus_float(e)
 #define rdup_vnus_float(e) (e)
 extern void print_vnus_float( TMPRINTSTATE *st, vnus_float b );
@@ -164,7 +164,7 @@ extern void print_vnus_float( TMPRINTSTATE *st, vnus_float b );
 #define isequal_vnus_float(a,b) ((a)==(b))
 
 typedef double vnus_double;
-extern int fscan_vnus_double( FILE *f, vnus_double *v );
+extern tmbool fscan_vnus_double( FILE *f, vnus_double *v );
 #define rfre_vnus_double(e)
 #define rdup_vnus_double(e) (e)
 extern void print_vnus_double( TMPRINTSTATE *st, vnus_double b );

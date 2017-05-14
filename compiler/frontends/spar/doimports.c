@@ -81,7 +81,7 @@ static tmstring probe_file( const char *path, const char *suffix )
 // it is a java file (as opposed to a spar file).
 bool has_java_suffix( const char *fnm )
 {
-    char *xp = strrchr( fnm, '.' );
+    const char *xp = strrchr( fnm, '.' );
     if( xp == NULL ){
 	return false;
     }
@@ -92,7 +92,7 @@ bool has_java_suffix( const char *fnm )
 // it is a spar file (as opposed to a java file).
 static bool has_spar_suffix( const char *fnm )
 {
-    char *xp = strrchr( fnm, '.' );
+    const char *xp = strrchr( fnm, '.' );
     if( xp == NULL ){
 	return false;
     }

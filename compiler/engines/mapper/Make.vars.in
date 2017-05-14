@@ -11,7 +11,7 @@ ECHO	= echo
 LEX	 = flex -b -i
 YACC	 = bison -v -d -y
 
-WFLAGS   = -Wall -W -Wtraditional -Wpointer-arith -Wbad-function-cast -Wcast-align -Wmissing-prototypes -Wmissing-declarations -Wnested-externs -Winline -Woverloaded-virtual -Wstrict-prototypes -Wsynth -ansi -pedantic
+WFLAGS   = -Wall -W -Wtraditional -Wpointer-arith -Wbad-function-cast -Wcast-align -Wmissing-declarations -Wnested-externs -Winline -Woverloaded-virtual -Wsynth -ansi -pedantic
 
 GNUWFLAGS = -Waggregate-return # -Wconversion
 

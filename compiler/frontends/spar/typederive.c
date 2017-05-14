@@ -72,7 +72,7 @@ BASETYPE get_BASETYPE( const_type t )
  */
 type max_types( const_type ta, const_type tb )
 {
-    if( ta == typeNIL || ta->tag == TAGNullType && is_ReferenceType( tb ) ){
+    if( ta == typeNIL || (ta->tag == TAGNullType && is_ReferenceType( tb )) ){
 	return rdup_type( tb );
     }
     if( ta->tag == TAGPragmaType ){
