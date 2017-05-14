@@ -3,4 +3,5 @@ config.log
 config.status
 configure
 .DS_Store
+*.o
 
